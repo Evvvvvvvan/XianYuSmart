@@ -1382,6 +1382,44 @@ function handleBackupMenuEnter() {
           <p class="settings__desc">单商家私有化的闲鱼虚拟商品经营系统，聚焦卡密库存、可恢复发货、客服自动化和异常待办。</p>
         </div>
 
+        <!-- 许可证与使用限制 -->
+        <div class="settings__section">
+          <div class="settings__section-title">许可证与使用限制</div>
+          <p class="settings__desc">本项目采用 PolyForm Noncommercial License 1.0.0，仅授权个人学习、技术研究、实验和其他非商业用途。</p>
+
+          <div class="settings__warning-box">
+            <div class="settings__warning-icon">⚠️</div>
+            <div class="settings__warning-content">
+              <strong>禁止商业用途</strong>
+              <ul>
+                <li>禁止销售、收费部署、托管服务、SaaS、代运营和收费培训</li>
+                <li>禁止通过广告、订阅、佣金或增值服务直接或间接获利</li>
+                <li>禁止删除、隐藏或误导许可证、版权和免责声明信息</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- 免责声明 -->
+        <div class="settings__section">
+          <div class="settings__section-title">免责声明</div>
+          <p class="settings__desc">本项目仅供技术学习和研究，不代表闲鱼平台，也未获得相关平台的官方授权或认可。</p>
+
+          <div class="settings__warning-box">
+            <div class="settings__warning-icon">⚠️</div>
+            <div class="settings__warning-content">
+              <strong>使用前须知</strong>
+              <ul>
+                <li>使用行为必须遵守法律法规、平台服务协议和账号使用规则</li>
+                <li>严禁用于欺诈、骚扰、垃圾信息、虚假交易、恶意营销或规避平台安全机制</li>
+                <li>自动化操作可能触发验证、登录失效、账号限制或封禁</li>
+                <li>Cookie、Token、密码、API Key 和卡密必须妥善保管并定期备份</li>
+                <li>项目按“现状”提供，相关账号、数据、交易和业务风险由实际使用方承担</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
         <!-- 更新教程 -->
         <div class="settings__section">
           <div class="settings__section-title">更新教程</div>

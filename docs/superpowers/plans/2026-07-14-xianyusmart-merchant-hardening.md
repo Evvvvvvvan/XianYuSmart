@@ -696,7 +696,7 @@ git commit -m "feat: 增加商家待办总览与简约商用界面"
 
 - [ ] **Step 1: 统一产品名称与许可信息**
 
-README 必须包含 XianYuSmart 定位、能力矩阵与 Apache-2.0 许可。Java 包路径保持不变，避免无业务收益的大规模差异。
+README 必须包含 XianYuSmart 定位、能力矩阵与 PolyForm 非商业许可。Java 包路径保持不变，避免无业务收益的大规模差异。
 
 Run: `rg -n "XianYuSmart|xianyusmart" README.md vue-code/src vue-code/index.html Dockerfile install.sh pom.xml`
 

@@ -45,7 +45,7 @@ FROM eclipse-temurin:21-jre-jammy
 LABEL org.opencontainers.image.title="XianYuSmart"
 LABEL org.opencontainers.image.description="单商家私有化闲鱼虚拟商品经营助手"
 LABEL org.opencontainers.image.version="1.0.0"
-LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 
 WORKDIR /app
 

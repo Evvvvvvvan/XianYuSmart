@@ -4,13 +4,13 @@
 [![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-2f6f5e)](https://spring.io/projects/spring-boot)
 [![Vue 3](https://img.shields.io/badge/Vue-3-2f6f5e)](https://vuejs.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-5.7%2B-2f6f5e)](https://www.mysql.com/)
-[![License](https://img.shields.io/badge/License-Apache--2.0-2f6f5e)](LICENSE)
+[![License](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-2f6f5e)](LICENSE)
 
 面向单商家私有部署的闲鱼虚拟商品经营系统，聚焦卡密库存、自动交付、客服自动化和异常待办，在有限服务器资源下保持可恢复、可追踪、易运维。
 
 当前版本：`1.0.0`
 
-[核心价值](#核心价值) · [能力范围](#能力范围) · [业务流程](#业务流程) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [配置说明](#配置说明) · [开发构建](#开发构建) · [日常运维](#日常运维)
+[核心价值](#核心价值) · [能力范围](#能力范围) · [业务流程](#业务流程) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [配置说明](#配置说明) · [开发构建](#开发构建) · [日常运维](#日常运维) · [许可证与免责声明](#许可证与免责声明)
 
 ## 核心价值
 
@@ -318,6 +318,16 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 - 公网部署必须启用 HTTPS、强密码、主机防火墙和定期备份。
 - 全新环境使用 MySQL，不提供 SQLite 历史数据自动迁移。
 
-## 许可证
+## 许可证与免责声明
 
-本项目遵循仓库中的 [Apache License 2.0](LICENSE)。
+本项目采用 [PolyForm Noncommercial License 1.0.0](LICENSE)，仅授权个人学习、技术研究、实验和其他非商业用途。
+
+**禁止任何商业用途**，包括销售、收费部署、托管服务、SaaS、代运营、商业获客、收费培训，以及通过广告、订阅、佣金或增值服务直接或间接获利。
+
+- 使用行为必须遵守法律法规、闲鱼平台服务协议和账号使用规则。
+- 严禁用于欺诈、骚扰、垃圾信息、虚假交易、恶意营销、批量账号控制或规避平台安全机制。
+- 自动化操作可能触发验证码、滑块验证、登录失效、账号限制或封禁。
+- Cookie、Token、密码、API Key 和卡密属于敏感数据，必须妥善保管并定期备份。
+- 本项目按“现状”提供，在适用法律允许的最大范围内不对账号、数据、交易或业务损失承担责任。
+
+下载、复制、修改、部署、运行或分发本项目，即表示已阅读并接受 [完整使用限制与免责声明](DISCLAIMER.md)。
