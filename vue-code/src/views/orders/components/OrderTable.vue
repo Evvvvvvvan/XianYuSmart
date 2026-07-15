@@ -4,7 +4,7 @@ import { formatTime } from '@/utils'
 import { showSuccess, showError } from '@/utils'
 import { getOrderDetail } from '@/api/order'
 import type { DeliveryRecordItem } from '../useOrderManager'
-import { getDeliveryStatusMeta } from '../order-status'
+import { getDeliveryStatusMeta, shouldShowDeliveryError } from '../order-status'
 
 import IconEmpty from '@/components/icons/IconEmpty.vue'
 import IconCopy from '@/components/icons/IconCopy.vue'
@@ -122,6 +122,8 @@ const getStatusText = (state: number) => {
 }
 
 const getDeliveryMeta = (order: DeliveryRecordItem) => getDeliveryStatusMeta(order.deliveryStatus, order.state)
+const showFailReason = (order: DeliveryRecordItem) => Boolean(order.failReason)
+  && shouldShowDeliveryError(order.deliveryStatus, order.state)
 
 const getConfirmText = (state: number) => {
   return state === 1 ? '已确认' : '未确认'
@@ -155,7 +157,7 @@ const getConfirmBg = (state: number) => {
           >
             {{ getDeliveryMeta(order).text }}
           </span>
-          <span v-if="order.failReason" class="order-card__fail-reason">{{ order.failReason }}</span>
+          <span v-if="showFailReason(order)" class="order-card__fail-reason">{{ order.failReason }}</span>
           <span
             class="order-card__status"
             :style="{
@@ -278,7 +280,7 @@ const getConfirmBg = (state: number) => {
             >
               {{ getDeliveryMeta(order).text }}
             </span>
-            <span v-if="order.failReason" class="fail-reason" :title="order.failReason">{{ order.failReason }}</span>
+            <span v-if="showFailReason(order)" class="fail-reason" :title="order.failReason">{{ order.failReason }}</span>
           </td>
           <td class="table__td table__td--center">
             <span

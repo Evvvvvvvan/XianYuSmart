@@ -174,7 +174,8 @@ public interface XianyuGoodsOrderMapper {
     int requeueTask(@Param("id") Long id);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'PENDING', next_retry_time = NOW(3), " +
-            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL " +
+            "state = 0, fail_reason = NULL, attempt_count = 0, lease_owner = NULL, lease_expire_time = NULL, " +
+            "last_error_code = NULL, last_error_message = NULL " +
             "WHERE id = #{id} AND xianyu_account_id = #{accountId} AND state <> 1 AND delivery_status = 'FAILED'")
     int requeueFailedTask(@Param("id") Long id, @Param("accountId") Long accountId);
     

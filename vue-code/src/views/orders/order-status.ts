@@ -21,6 +21,8 @@ const statusMeta: Record<string, { text: string; color: string; background: stri
   SKIPPED: { text: '已跳过', color: '#8E8E93', background: 'rgba(120,120,128,.12)' }
 }
 
+const errorStatuses = new Set(['FAILED', 'REVIEW_REQUIRED', 'RETRY_WAIT'])
+
 export const parseDeliveryStatuses = (value: unknown): string[] => {
   const raw = Array.isArray(value) ? value[0] : value
   if (typeof raw !== 'string') return []
@@ -33,3 +35,6 @@ export const getDeliveryStatusMeta = (deliveryStatus: string | undefined, state:
   if (state === 0) return statusMeta.PENDING!
   return statusMeta.FAILED!
 }
+
+export const shouldShowDeliveryError = (deliveryStatus: string | undefined, state: number) =>
+  state === -1 || Boolean(deliveryStatus && errorStatuses.has(deliveryStatus))
