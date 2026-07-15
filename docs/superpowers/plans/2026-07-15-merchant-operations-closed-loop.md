@@ -799,7 +799,7 @@ Run:
 ```powershell
 git diff --check
 git status --short
-rg -n "Renyixuan|IAMLZY|feijimiao" src vue-code docs README.md
+git grep -nE "(password|secret|private[_-]?key)" -- src vue-code docs README.md
 ```
 
 Expected: `git diff --check` 无输出；临时测试文件不在状态列表；本轮文件不包含服务器、密码或外部项目标识。
