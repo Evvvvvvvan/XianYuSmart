@@ -32,6 +32,11 @@ public interface ItemService {
      * @return 商品详情
      */
     ResultObject<ItemDetailRespDTO> getItemDetail(ItemDetailReqDTO reqDTO);
+
+    /**
+     * 更新本地商品资料
+     */
+    ResultObject<String> updateItemInfo(UpdateItemInfoReqDTO reqDTO);
     
     /**
      * 更新商品自动发货状态

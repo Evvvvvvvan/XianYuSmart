@@ -45,6 +45,15 @@ export interface GoodsDetailResponse {
   itemWithConfig: GoodsItemWithConfig;
 }
 
+export interface UpdateGoodsInfoReq {
+  xianyuAccountId: number;
+  xyGoodsId: string;
+  title: string;
+  soldPrice: string;
+  detailInfo: string;
+  coverPic: string;
+}
+
 // 刷新商品响应
 export interface RefreshItemsResponse {
   success: boolean;
@@ -99,6 +108,14 @@ export function getGoodsDetail(xyGoodId: string) {
     url: '/items/detail',
     method: 'POST',
     data: { xyGoodId }
+  });
+}
+
+export function updateGoodsInfo(data: UpdateGoodsInfoReq) {
+  return request<string>({
+    url: '/items/updateInfo',
+    method: 'POST',
+    data
   });
 }
 

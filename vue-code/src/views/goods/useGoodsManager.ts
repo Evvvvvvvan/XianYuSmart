@@ -9,6 +9,7 @@ import {
   updateAutoReplyStatus,
   deleteItem,
   syncSingleItem,
+  updateGoodsInfo,
   getSyncProgress,
   checkSyncing
 } from '@/api/goods'
@@ -16,6 +17,8 @@ import { showSuccess, showError, showInfo, showConfirm } from '@/utils'
 import { getGoodsStatusText, formatPrice, formatTime } from '@/utils'
 import type { Account } from '@/types'
 import type { GoodsItemWithConfig, SyncProgressResponse } from '@/api/goods'
+import type { GoodsEditForm } from './goods-edit'
+import { resolvePlatformItemUrl } from './goods-edit'
 
 export function useGoodsManager() {
   const router = useRouter()
@@ -32,12 +35,15 @@ export function useGoodsManager() {
 
   const dialogs = reactive({
     detail: false,
+    edit: false,
     deleteConfirm: false,
     filter: false
   })
 
   const selectedGoodsId = ref<string>('')
   const selectedGoods = ref<GoodsItemWithConfig | null>(null)
+  const editingGoods = ref<GoodsItemWithConfig | null>(null)
+  const editSaving = ref(false)
   const deleteTarget = ref<{ id: string; title: string } | null>(null)
 
   const syncProgress = ref<SyncProgressResponse | null>(null)
@@ -192,6 +198,44 @@ export function useGoodsManager() {
     dialogs.detail = true
   }
 
+  const editGoods = (item: GoodsItemWithConfig) => {
+    editingGoods.value = item
+    dialogs.edit = true
+  }
+
+  const saveGoodsInfo = async (form: GoodsEditForm) => {
+    if (!selectedAccountId.value || !editingGoods.value) return
+    editSaving.value = true
+    try {
+      await updateGoodsInfo({
+        xianyuAccountId: selectedAccountId.value,
+        xyGoodsId: editingGoods.value.item.xyGoodId,
+        ...form
+      })
+      showSuccess('本地商品资料已保存')
+      dialogs.edit = false
+      editingGoods.value = null
+      await loadGoods()
+    } catch (error: any) {
+      if (!error.messageShown) {
+        showError(error.message || '保存本地商品资料失败')
+      }
+    } finally {
+      editSaving.value = false
+    }
+  }
+
+  const openPlatformGoods = () => {
+    if (!editingGoods.value) return
+    const item = editingGoods.value.item
+    const opened = window.open(resolvePlatformItemUrl(item.detailUrl, item.xyGoodId), '_blank')
+    if (opened) {
+      opened.opener = null
+    } else {
+      showError('浏览器阻止了新窗口，请允许弹窗后重试')
+    }
+  }
+
   // 配置自动发货
   const configAutoDelivery = (item: GoodsItemWithConfig) => {
     router.push({
@@ -292,6 +336,14 @@ export function useGoodsManager() {
     }
   }
 
+  const syncEditingGoods = async () => {
+    if (!editingGoods.value) return
+    const xyGoodsId = editingGoods.value.item.xyGoodId
+    dialogs.edit = false
+    editingGoods.value = null
+    await syncSingleGoods(xyGoodsId)
+  }
+
   return {
     loading,
     refreshing,
@@ -309,6 +361,8 @@ export function useGoodsManager() {
     dialogs,
     selectedGoodsId,
     selectedGoods,
+    editingGoods,
+    editSaving,
     deleteTarget,
     loadAccounts,
     loadGoods,
@@ -317,6 +371,10 @@ export function useGoodsManager() {
     handleStatusFilter,
     handlePageChange,
     viewDetail,
+    editGoods,
+    saveGoodsInfo,
+    openPlatformGoods,
+    syncEditingGoods,
     configAutoDelivery,
     toggleAutoDelivery,
     toggleAutoReply,

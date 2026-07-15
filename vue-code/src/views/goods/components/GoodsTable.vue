@@ -10,6 +10,7 @@ import IconRobot from '@/components/icons/IconRobot.vue'
 import IconImage from '@/components/icons/IconImage.vue'
 import IconCheck from '@/components/icons/IconCheck.vue'
 import IconSparkle from '@/components/icons/IconSparkle.vue'
+import IconEdit from '@/components/icons/IconEdit.vue'
 
 interface Props {
   goodsList: GoodsItemWithConfig[]
@@ -19,6 +20,7 @@ interface Props {
 interface Emits {
   (e: 'view', xyGoodId: string): void
   (e: 'sync', xyGoodId: string): void
+  (e: 'edit', item: GoodsItemWithConfig): void
   (e: 'toggleAutoDelivery', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoReply', item: GoodsItemWithConfig, value: boolean): void
   (e: 'configAutoDelivery', item: GoodsItemWithConfig): void
@@ -120,6 +122,13 @@ const handleImgError = (e: Event) => {
       <!-- 底部操作栏 -->
       <div class="goods-card__actions">
         <button
+          class="goods-card__action goods-card__action--edit"
+          @click.stop="emit('edit', item)"
+        >
+          <IconEdit />
+          <span>编辑</span>
+        </button>
+        <button
           class="goods-card__action goods-card__action--config"
           @click.stop="emit('configAutoDelivery', item)"
         >
@@ -210,6 +219,10 @@ const handleImgError = (e: Event) => {
             </div>
           </td>
           <td class="table__td table__td--actions">
+            <button class="table__action table__action--edit" @click="emit('edit', item)">
+              <IconEdit />
+              <span>编辑</span>
+            </button>
             <button class="table__action table__action--detail" @click="emit('view', item.item.xyGoodId)">
               <IconCheck />
               <span>详情</span>
@@ -470,6 +483,11 @@ const handleImgError = (e: Event) => {
   border-color: rgba(0, 122, 255, 0.2);
 }
 
+.goods-card__action--edit {
+  color: var(--c-accent);
+  border-color: rgba(0, 122, 255, 0.2);
+}
+
 @media (hover: hover) {
   .goods-card__action--config:hover {
     background: rgba(0, 122, 255, 0.06);
@@ -532,7 +550,7 @@ const handleImgError = (e: Event) => {
 .table__th--sku { width: 70px; text-align: center; }
 .table__th--status { width: 80px; }
 .table__th--switch { width: 90px; text-align: center; }
-.table__th--actions { width: 130px; text-align: center; }
+.table__th--actions { width: 220px; text-align: center; }
 
 /* Table Body */
 .table__tr {
@@ -742,6 +760,10 @@ const handleImgError = (e: Event) => {
 }
 
 .table__action--config {
+  color: var(--c-accent);
+}
+
+.table__action--edit {
   color: var(--c-accent);
 }
 

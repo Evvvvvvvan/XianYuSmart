@@ -87,6 +87,20 @@ public class ItemController {
             return ResultObject.failed("获取商品详情失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 更新本地商品资料
+     */
+    @PostMapping("/updateInfo")
+    public ResultObject<String> updateItemInfo(@RequestBody UpdateItemInfoReqDTO reqDTO) {
+        try {
+            return itemService.updateItemInfo(reqDTO);
+        } catch (Exception e) {
+            log.error("更新本地商品资料失败: xianyuAccountId={}, xyGoodsId={}",
+                    reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId(), e);
+            return ResultObject.failed("更新本地商品资料失败: " + e.getMessage());
+        }
+    }
     
     /**
      * 更新商品自动发货状态

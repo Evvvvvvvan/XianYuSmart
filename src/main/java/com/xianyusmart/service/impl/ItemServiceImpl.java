@@ -14,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.net.URI;
 import java.util.*;
 
 /**
@@ -1014,6 +1016,63 @@ public class ItemServiceImpl implements ItemService {
             log.error("删除商品异常: xianyuAccountId={}, xyGoodsId={}", 
                     reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId(), e);
             return ResultObject.failed("删除商品异常: " + e.getMessage());
+        }
+    }
+
+    @Override
+    public ResultObject<String> updateItemInfo(UpdateItemInfoReqDTO reqDTO) {
+        if (reqDTO == null || reqDTO.getXianyuAccountId() == null) {
+            return ResultObject.failed("账号ID不能为空");
+        }
+        String xyGoodsId = reqDTO.getXyGoodsId() == null ? "" : reqDTO.getXyGoodsId().trim();
+        String title = reqDTO.getTitle() == null ? "" : reqDTO.getTitle().trim();
+        String detailInfo = reqDTO.getDetailInfo() == null ? "" : reqDTO.getDetailInfo().trim();
+        String coverPic = reqDTO.getCoverPic() == null ? "" : reqDTO.getCoverPic().trim();
+        if (xyGoodsId.isEmpty()) {
+            return ResultObject.failed("商品ID不能为空");
+        }
+        if (title.isEmpty() || title.length() > 256) {
+            return ResultObject.failed("商品标题长度应为1至256个字符");
+        }
+        if (detailInfo.length() > 5000) {
+            return ResultObject.failed("商品描述不能超过5000个字符");
+        }
+        if (coverPic.length() > 2000 || !isValidHttpUrl(coverPic)) {
+            return ResultObject.failed("封面地址必须为空或使用HTTP/HTTPS协议");
+        }
+
+        String soldPrice;
+        try {
+            BigDecimal price = new BigDecimal(reqDTO.getSoldPrice() == null ? "" : reqDTO.getSoldPrice().trim());
+            if (price.compareTo(BigDecimal.ZERO) < 0 || price.compareTo(new BigDecimal("9999999.99")) > 0
+                    || Math.max(price.stripTrailingZeros().scale(), 0) > 2) {
+                return ResultObject.failed("商品价格应为0至9999999.99且最多保留两位小数");
+            }
+            soldPrice = price.stripTrailingZeros().toPlainString();
+        } catch (NumberFormatException e) {
+            return ResultObject.failed("商品价格格式不正确");
+        }
+
+        boolean updated = goodsInfoService.updateEditableInfo(
+                reqDTO.getXianyuAccountId(), xyGoodsId, title, soldPrice, detailInfo, coverPic);
+        if (!updated) {
+            return ResultObject.failed("商品不存在或已被删除");
+        }
+        log.info("更新本地商品资料成功: xianyuAccountId={}, xyGoodsId={}",
+                reqDTO.getXianyuAccountId(), xyGoodsId);
+        return ResultObject.success("本地商品资料已保存");
+    }
+
+    private boolean isValidHttpUrl(String value) {
+        if (value.isEmpty()) {
+            return true;
+        }
+        try {
+            URI uri = URI.create(value);
+            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                    && uri.getHost() != null;
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
     

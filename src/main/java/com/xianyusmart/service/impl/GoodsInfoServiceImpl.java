@@ -1,6 +1,7 @@
 package com.xianyusmart.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xianyusmart.entity.XianyuGoodsInfo;
 import com.xianyusmart.mapper.XianyuGoodsInfoMapper;
@@ -288,6 +289,22 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
         queryWrapper.eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
         XianyuGoodsInfo goods = goodsInfoMapper.selectOne(queryWrapper);
         return goods != null ? goods.getDetailInfo() : null;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean updateEditableInfo(Long xianyuAccountId, String xyGoodId, String title,
+                                      String soldPrice, String detailInfo, String coverPic) {
+        // 只更新本地展示字段，避免并发覆盖平台状态和履约配置。
+        LambdaUpdateWrapper<XianyuGoodsInfo> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsInfo::getXyGoodId, xyGoodId)
+                .set(XianyuGoodsInfo::getTitle, title)
+                .set(XianyuGoodsInfo::getSoldPrice, soldPrice)
+                .set(XianyuGoodsInfo::getDetailInfo, detailInfo)
+                .set(XianyuGoodsInfo::getCoverPic, coverPic)
+                .set(XianyuGoodsInfo::getUpdatedTime, getCurrentTimeString());
+        return goodsInfoMapper.update(null, updateWrapper) == 1;
     }
     
     @Override

@@ -118,6 +118,12 @@ public interface GoodsInfoService {
      * @return 商品详情信息
      */
     String getDetailInfoByGoodsId(String xyGoodId);
+
+    /**
+     * 按账号归属更新本地可编辑资料
+     */
+    boolean updateEditableInfo(Long xianyuAccountId, String xyGoodId, String title,
+                               String soldPrice, String detailInfo, String coverPic);
     
     /**
      * 删除商品信息

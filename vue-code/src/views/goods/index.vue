@@ -13,6 +13,7 @@ import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 
 import GoodsTable from './components/GoodsTable.vue'
 import GoodsDetail from './components/GoodsDetail.vue'
+import GoodsEditDialog from './components/GoodsEditDialog.vue'
 
 const {
   loading,
@@ -29,6 +30,8 @@ const {
   totalPages,
   dialogs,
   selectedGoodsId,
+  editingGoods,
+  editSaving,
   deleteTarget,
   loadAccounts,
   loadGoods,
@@ -37,6 +40,10 @@ const {
   handleStatusFilter,
   handlePageChange,
   viewDetail,
+  editGoods,
+  saveGoodsInfo,
+  openPlatformGoods,
+  syncEditingGoods,
   configAutoDelivery,
   toggleAutoDelivery,
   toggleAutoReply,
@@ -304,6 +311,7 @@ const getPageButtons = () => {
           :goods-list="goodsList"
           :loading="loading"
           @view="viewDetail"
+          @edit="editGoods"
           @sync="syncSingleGoods"
           @toggle-auto-delivery="toggleAutoDelivery"
           @toggle-auto-reply="toggleAutoReply"
@@ -343,6 +351,16 @@ const getPageButtons = () => {
         <span class="goods__page-info">{{ currentPage }} / {{ totalPages }}</span>
       </div>
     </div>
+
+    <!-- Edit Dialog -->
+    <GoodsEditDialog
+      v-model="dialogs.edit"
+      :goods="editingGoods"
+      :saving="editSaving"
+      @save="saveGoodsInfo"
+      @open-platform="openPlatformGoods"
+      @sync-platform="syncEditingGoods"
+    />
 
     <!-- Detail Dialog -->
     <GoodsDetail
