@@ -44,7 +44,7 @@ const handleSubmit = async () => {
     })
 
     if (response.code === 200) {
-      showSuccess('Cookie更新成功')
+      showSuccess(response.data?.message || 'Cookie更新成功')
       handleClose()
       emit('success')
     }

@@ -4,6 +4,7 @@ import com.xianyusmart.common.ResultObject;
 import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.controller.dto.UpdateCookieReqDTO;
 import com.xianyusmart.controller.dto.UpdateCookieRespDTO;
+import com.xianyusmart.service.CaptchaSessionService;
 import com.xianyusmart.service.CookieRefreshService;
 import com.xianyusmart.service.WebSocketService;
 import lombok.Data;
@@ -30,6 +31,9 @@ public class WebSocketController {
     
     @Autowired
     private CookieRefreshService cookieRefreshService;
+
+    @Autowired
+    private CaptchaSessionService captchaSessionService;
     
     @Autowired
     private com.xianyusmart.service.SentMessageSaveService sentMessageSaveService;
@@ -453,6 +457,53 @@ public class WebSocketController {
     }
 
     /**
+     * 创建服务器滑块验证会话
+     */
+    @PostMapping("/captcha/session/start")
+    public ResultObject<CaptchaSessionService.CaptchaSessionResult> startCaptchaSession(
+            @RequestBody StartCaptchaSessionReqDTO reqDTO) {
+        try {
+            CaptchaSessionService.CaptchaSessionResult result = captchaSessionService.startSession(
+                    reqDTO.getXianyuAccountId(), reqDTO.getCaptchaUrl());
+            return ResultObject.success(result);
+        } catch (Exception e) {
+            log.error("创建服务器滑块验证会话失败: accountId={}", reqDTO.getXianyuAccountId(), e);
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    /**
+     * 回放滑块拖动轨迹并同步验证Cookie
+     */
+    @PostMapping("/captcha/session/drag")
+    public ResultObject<CaptchaSessionService.CaptchaSessionResult> replayCaptchaDrag(
+            @RequestBody ReplayCaptchaDragReqDTO reqDTO) {
+        try {
+            java.util.List<CaptchaSessionService.DragPoint> points = reqDTO.getPoints() == null
+                    ? java.util.List.of()
+                    : reqDTO.getPoints().stream()
+                            .map(point -> new CaptchaSessionService.DragPoint(
+                                    point.getX(), point.getY(), point.getDelayMs()))
+                            .toList();
+            CaptchaSessionService.CaptchaSessionResult result = captchaSessionService.replayDrag(
+                    reqDTO.getXianyuAccountId(), reqDTO.getSessionId(), points);
+            return ResultObject.success(result);
+        } catch (Exception e) {
+            log.error("回放滑块拖动轨迹失败: accountId={}", reqDTO.getXianyuAccountId(), e);
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    /**
+     * 释放服务器滑块验证会话
+     */
+    @PostMapping("/captcha/session/close")
+    public ResultObject<String> closeCaptchaSession(@RequestBody CloseCaptchaSessionReqDTO reqDTO) {
+        captchaSessionService.closeSession(reqDTO.getXianyuAccountId(), reqDTO.getSessionId());
+        return ResultObject.success("滑块验证会话已释放");
+    }
+
+    /**
      * 更新Cookie
      */
     @PostMapping("/updateCookie")
@@ -485,7 +536,13 @@ public class WebSocketController {
             // 更新Cookie
             com.xianyusmart.service.AccountService accountService = 
                     applicationContext.getBean(com.xianyusmart.service.AccountService.class);
-            accountService.updateAccountCookie(reqDTO.getXianyuAccountId(), unb, reqDTO.getCookieText());
+            boolean updated = accountService.updateAccountCookie(reqDTO.getXianyuAccountId(), unb, reqDTO.getCookieText());
+            if (!updated) {
+                return ResultObject.failed("Cookie更新失败");
+            }
+
+            // Cookie保存成功后立即清理旧凭证状态并重建连接
+            boolean connected = webSocketService.restartAfterCredentialUpdate(reqDTO.getXianyuAccountId());
             
             // 记录操作日志
             operationLogService.log(reqDTO.getXianyuAccountId(),
@@ -498,7 +555,7 @@ public class WebSocketController {
                     null, null, null, null);
             
             UpdateCookieRespDTO respDTO = new UpdateCookieRespDTO();
-            respDTO.setMessage("Cookie更新成功");
+            respDTO.setMessage(connected ? "Cookie更新成功，WebSocket已重连" : "Cookie更新成功，WebSocket正在重连");
             return ResultObject.success(respDTO);
         } catch (Exception e) {
             log.error("更新Cookie失败", e);
@@ -766,6 +823,44 @@ public class WebSocketController {
     @Data
     public static class ClearCaptchaWaitReqDTO {
         private Long xianyuAccountId;  // 账号ID
+    }
+
+    /**
+     * 创建滑块验证会话请求DTO
+     */
+    @Data
+    public static class StartCaptchaSessionReqDTO {
+        private Long xianyuAccountId;  // 账号ID
+        private String captchaUrl;     // 风控验证链接
+    }
+
+    /**
+     * 回放滑块轨迹请求DTO
+     */
+    @Data
+    public static class ReplayCaptchaDragReqDTO {
+        private Long xianyuAccountId;             // 账号ID
+        private String sessionId;                 // 验证会话ID
+        private java.util.List<CaptchaDragPointDTO> points; // 拖动轨迹
+    }
+
+    /**
+     * 滑块轨迹坐标DTO
+     */
+    @Data
+    public static class CaptchaDragPointDTO {
+        private double x;      // 浏览器横坐标
+        private double y;      // 浏览器纵坐标
+        private int delayMs;   // 与上一坐标的间隔
+    }
+
+    /**
+     * 关闭滑块验证会话请求DTO
+     */
+    @Data
+    public static class CloseCaptchaSessionReqDTO {
+        private Long xianyuAccountId;  // 账号ID
+        private String sessionId;      // 验证会话ID
     }
     
     /**

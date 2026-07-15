@@ -29,6 +29,14 @@ public interface WebSocketService {
      * @return 是否成功
      */
     boolean stopWebSocket(Long accountId);
+
+    /**
+     * 凭证更新后立即重建WebSocket连接
+     *
+     * @param accountId 账号ID
+     * @return 是否已立即连接
+     */
+    boolean restartAfterCredentialUpdate(Long accountId);
     
     /**
      * 检查WebSocket连接状态

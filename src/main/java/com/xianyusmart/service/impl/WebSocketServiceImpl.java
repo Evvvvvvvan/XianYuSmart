@@ -80,6 +80,9 @@ public class WebSocketServiceImpl implements WebSocketService {
     
     // Token刷新任务
     private final Map<Long, ScheduledFuture<?>> tokenRefreshTasks = new ConcurrentHashMap<>();
+
+    // Token刷新失败后的延迟重试任务
+    private final Map<Long, ScheduledFuture<?>> tokenRetryTasks = new ConcurrentHashMap<>();
     
     // 心跳响应时间记录
     private final Map<Long, Long> lastHeartbeatResponseTimes = new ConcurrentHashMap<>();
@@ -434,6 +437,33 @@ public class WebSocketServiceImpl implements WebSocketService {
     }
 
     @Override
+    public boolean restartAfterCredentialUpdate(Long accountId) {
+        try {
+            log.info("凭证已更新，立即重建WebSocket连接: accountId={}", accountId);
+
+            // 清除旧凭证状态，确保新Cookie立即参与Token获取和连接建立
+            tokenService.clearCaptchaWait(accountId);
+            stopWebSocket(accountId);
+            tokenService.clearToken(accountId);
+
+            boolean success = startWebSocket(accountId);
+            if (!success) {
+                scheduleReconnect(accountId, config.getReconnectDelay(), false);
+            } else {
+                AtomicInteger attemptCount = reconnectAttemptCounts.get(accountId);
+                if (attemptCount != null) {
+                    attemptCount.set(0);
+                }
+            }
+            return success;
+        } catch (Exception e) {
+            log.error("凭证更新后重建WebSocket连接失败: accountId={}", accountId, e);
+            scheduleReconnect(accountId, config.getReconnectDelay(), false);
+            return false;
+        }
+    }
+
+    @Override
     public boolean isConnected(Long accountId) {
         XianyuWebSocketClient client = webSocketClients.get(accountId);
         return client != null && client.isConnected();
@@ -641,21 +671,32 @@ public class WebSocketServiceImpl implements WebSocketService {
                         accountId, config.getTokenRetryInterval());
                 
                 // 参考Python: Token刷新失败后，在token_retry_interval后重试
-                webSocketScheduler.schedule(() -> {
-                    log.info("【账号{}】Token刷新重试间隔已到，开始重试...", accountId);
-                    refreshTokenAndReconnect(accountId);
-                }, config.getTokenRetryInterval(), TimeUnit.SECONDS);
+                scheduleTokenRefreshRetry(accountId);
             }
         } catch (Exception e) {
             log.error("【账号{}】Token刷新并重连异常，将在{}秒后重试", 
                     accountId, config.getTokenRetryInterval(), e);
             
             // 参考Python: 异常后也要重试
-            webSocketScheduler.schedule(() -> {
-                log.info("【账号{}】Token刷新重试间隔已到，开始重试...", accountId);
-                refreshTokenAndReconnect(accountId);
-            }, config.getTokenRetryInterval(), TimeUnit.SECONDS);
+            scheduleTokenRefreshRetry(accountId);
         }
+    }
+
+    /**
+     * 调度Token刷新重试
+     */
+    private void scheduleTokenRefreshRetry(Long accountId) {
+        // 同一账号只保留一个任务，凭证更新或连接停止时可立即取消
+        tokenRetryTasks.compute(accountId, (id, existingTask) -> {
+            if (existingTask != null && !existingTask.isDone()) {
+                return existingTask;
+            }
+            return webSocketScheduler.schedule(() -> {
+                tokenRetryTasks.remove(id);
+                log.info("【账号{}】Token刷新重试间隔已到，开始重试...", id);
+                refreshTokenAndReconnect(id);
+            }, config.getTokenRetryInterval(), TimeUnit.SECONDS);
+        });
     }
     
     /**
@@ -800,6 +841,13 @@ public class WebSocketServiceImpl implements WebSocketService {
         if (tokenRefreshTask != null) {
             tokenRefreshTask.cancel(false);
             log.info("Token刷新任务已停止: accountId={}", accountId);
+        }
+
+        // 取消Token刷新失败后的延迟重试
+        ScheduledFuture<?> tokenRetryTask = tokenRetryTasks.remove(accountId);
+        if (tokenRetryTask != null) {
+            tokenRetryTask.cancel(false);
+            log.info("Token刷新重试任务已取消: accountId={}", accountId);
         }
         
         // 取消重连任务

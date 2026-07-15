@@ -77,6 +77,48 @@ export function clearCaptchaWait(accountId: number) {
   });
 }
 
+export interface CaptchaSessionResult {
+  sessionId: string;
+  screenshot?: string;
+  success: boolean;
+  connected: boolean;
+  message: string;
+}
+
+export interface CaptchaDragPoint {
+  x: number;
+  y: number;
+  delayMs: number;
+}
+
+// 创建服务器滑块验证会话
+export function startCaptchaSession(accountId: number, captchaUrl: string) {
+  return request<CaptchaSessionResult>({
+    url: '/websocket/captcha/session/start',
+    method: 'POST',
+    timeout: 45000,
+    data: { xianyuAccountId: accountId, captchaUrl }
+  });
+}
+
+// 回放滑块拖动轨迹
+export function replayCaptchaDrag(accountId: number, sessionId: string, points: CaptchaDragPoint[]) {
+  return request<CaptchaSessionResult>({
+    url: '/websocket/captcha/session/drag',
+    method: 'POST',
+    data: { xianyuAccountId: accountId, sessionId, points }
+  });
+}
+
+// 释放服务器滑块验证会话
+export function closeCaptchaSession(accountId: number, sessionId: string) {
+  return request<string>({
+    url: '/websocket/captcha/session/close',
+    method: 'POST',
+    data: { xianyuAccountId: accountId, sessionId }
+  });
+}
+
 // 刷新Token响应
 export interface RefreshTokenResponse {
   mh5tkRefreshed: boolean;    // _m_h5_tk是否刷新成功

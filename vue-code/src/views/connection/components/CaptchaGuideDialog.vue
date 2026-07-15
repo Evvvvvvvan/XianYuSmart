@@ -1,40 +1,175 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, watch, onUnmounted } from 'vue';
+import {
+  closeCaptchaSession,
+  replayCaptchaDrag,
+  startCaptchaSession,
+  type CaptchaDragPoint
+} from '@/api/websocket';
+import { showError, showSuccess } from '@/utils';
 
 interface Props {
   modelValue: boolean;
+  accountId: number;
+  captchaUrl: string;
 }
 
 interface Emits {
   (e: 'update:modelValue', value: boolean): void;
-  (e: 'confirm'): void;
+  (e: 'success'): void;
 }
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
-const isMobile = ref(false);
+const imageRef = ref<HTMLImageElement | null>(null);
+const sessionId = ref('');
+const screenshot = ref('');
+const statusText = ref('正在加载验证页面...');
+const loading = ref(false);
+const submitting = ref(false);
+let dragging = false;
+let dragPoints: CaptchaDragPoint[] = [];
+let lastPointTime = 0;
+let requestSequence = 0;
 
-const checkDevice = () => {
-  isMobile.value = window.innerWidth < 768;
+const getErrorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
+
+const releaseSession = () => {
+  const currentSessionId = sessionId.value;
+  sessionId.value = '';
+  if (currentSessionId) {
+    closeCaptchaSession(props.accountId, currentSessionId).catch(() => undefined);
+  }
+};
+
+const loadCaptchaSession = async () => {
+  const currentSequence = ++requestSequence;
+  releaseSession();
+  screenshot.value = '';
+  statusText.value = '正在加载验证页面...';
+  loading.value = true;
+  try {
+    const response = await startCaptchaSession(props.accountId, props.captchaUrl);
+    if (currentSequence !== requestSequence || !props.modelValue) {
+      if (response.data?.sessionId) {
+        closeCaptchaSession(props.accountId, response.data.sessionId).catch(() => undefined);
+      }
+      return;
+    }
+    if ((response.code === 0 || response.code === 200) && response.data) {
+      sessionId.value = response.data.sessionId;
+      screenshot.value = response.data.screenshot || '';
+      statusText.value = response.data.message || '请在验证画面中拖动滑块';
+    } else {
+      throw new Error(response.msg || '加载验证页面失败');
+    }
+  } catch (error: unknown) {
+    statusText.value = getErrorMessage(error, '加载验证页面失败');
+    showError(statusText.value);
+  } finally {
+    if (currentSequence === requestSequence) {
+      loading.value = false;
+    }
+  }
+};
+
+const getDragPoint = (event: PointerEvent): CaptchaDragPoint | null => {
+  const image = imageRef.value;
+  if (!image) return null;
+  const rect = image.getBoundingClientRect();
+  if (!rect.width || !rect.height || !image.naturalWidth || !image.naturalHeight) return null;
+
+  const now = performance.now();
+  const point = {
+    x: Math.max(0, Math.min(image.naturalWidth, (event.clientX - rect.left) * image.naturalWidth / rect.width)),
+    y: Math.max(0, Math.min(image.naturalHeight, (event.clientY - rect.top) * image.naturalHeight / rect.height)),
+    delayMs: lastPointTime ? Math.max(0, Math.min(40, Math.round(now - lastPointTime))) : 0
+  };
+  lastPointTime = now;
+  return point;
+};
+
+const handlePointerDown = (event: PointerEvent) => {
+  if (submitting.value || !sessionId.value) return;
+  const point = getDragPoint(event);
+  if (!point) return;
+
+  dragging = true;
+  dragPoints = [point];
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+};
+
+const handlePointerMove = (event: PointerEvent) => {
+  if (!dragging || dragPoints.length >= 159) return;
+  const point = getDragPoint(event);
+  const previous = dragPoints[dragPoints.length - 1];
+  if (!point || !previous || (Math.abs(point.x - previous.x) < 1 && Math.abs(point.y - previous.y) < 1)) return;
+  dragPoints.push(point);
+};
+
+const handlePointerUp = async (event: PointerEvent) => {
+  if (!dragging) return;
+  dragging = false;
+  const finalPoint = getDragPoint(event);
+  if (finalPoint) {
+    if (dragPoints.length >= 160) {
+      dragPoints[159] = finalPoint;
+    } else {
+      dragPoints.push(finalPoint);
+    }
+  }
+  if (dragPoints.length < 2 || !sessionId.value) return;
+
+  submitting.value = true;
+  statusText.value = '正在提交验证结果...';
+  try {
+    const response = await replayCaptchaDrag(props.accountId, sessionId.value, dragPoints);
+    if ((response.code === 0 || response.code === 200) && response.data) {
+      statusText.value = response.data.message;
+      if (response.data.success) {
+        showSuccess(response.data.message);
+        sessionId.value = '';
+        emit('success');
+        emit('update:modelValue', false);
+        return;
+      }
+      screenshot.value = response.data.screenshot || screenshot.value;
+    } else {
+      throw new Error(response.msg || '滑块验证失败');
+    }
+  } catch (error: unknown) {
+    statusText.value = getErrorMessage(error, '滑块验证失败');
+    showError(statusText.value);
+  } finally {
+    submitting.value = false;
+    dragPoints = [];
+  }
+};
+
+const handlePointerCancel = () => {
+  dragging = false;
+  dragPoints = [];
 };
 
 const handleClose = () => {
+  requestSequence++;
+  releaseSession();
   emit('update:modelValue', false);
 };
 
-const handleConfirm = () => {
-  emit('confirm');
-  emit('update:modelValue', false);
-};
-
-onMounted(() => {
-  checkDevice();
-  window.addEventListener('resize', checkDevice);
+watch(() => props.modelValue, (visible) => {
+  if (visible) {
+    loadCaptchaSession();
+  } else {
+    requestSequence++;
+    releaseSession();
+  }
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', checkDevice);
+  requestSequence++;
+  releaseSession();
 });
 </script>
 
@@ -42,42 +177,39 @@ onUnmounted(() => {
   <Teleport to="body">
     <Transition name="modal">
       <div v-if="modelValue" class="modal-overlay" @click.self="handleClose">
-        <div class="modal-container" :class="{ 'is-mobile': isMobile }">
+        <div class="modal-container">
           <div class="modal-header">
-            <h2 class="modal-title">需要滑块验证</h2>
-            <button class="modal-close" @click="handleClose">×</button>
+            <div>
+              <h2 class="modal-title">滑块验证</h2>
+              <p class="modal-subtitle">验证在服务器浏览器中完成，成功后自动更新Cookie并重连</p>
+            </div>
+            <button class="modal-close" type="button" aria-label="关闭" @click="handleClose">×</button>
           </div>
+
           <div class="modal-body">
-            <div class="captcha-alert">
-              <span class="alert-icon">⚠️</span>
-              <span class="alert-text">检测到账号需要完成滑块验证</span>
+            <div v-if="loading" class="captcha-state">正在加载验证页面...</div>
+            <div v-else-if="screenshot" class="captcha-viewer" :class="{ 'is-submitting': submitting }">
+              <img
+                ref="imageRef"
+                class="captcha-image"
+                :src="screenshot"
+                alt="滑块验证页面"
+                draggable="false"
+                @pointerdown.prevent="handlePointerDown"
+                @pointermove.prevent="handlePointerMove"
+                @pointerup.prevent="handlePointerUp"
+                @pointercancel="handlePointerCancel"
+              >
             </div>
-            <div class="captcha-steps">
-              <div class="step-item">
-                <span class="step-number">1</span>
-                <span class="step-text">点击下方按钮访问闲鱼IM页面</span>
-              </div>
-              <div class="step-item">
-                <span class="step-number">2</span>
-                <span class="step-text">在闲鱼页面完成滑块验证</span>
-              </div>
-              <div class="step-item">
-                <span class="step-number">3</span>
-                <span class="step-text">按F12打开开发者工具，复制Cookie</span>
-              </div>
-              <div class="step-item">
-                <span class="step-number">4</span>
-                <span class="step-text">返回本页面，点击"手动更新"粘贴Cookie</span>
-              </div>
-            </div>
-            <div class="captcha-tip">
-              <span class="tip-icon">💡</span>
-              <span class="tip-text">更新Cookie后点击"启动连接"，会自动更新WebSocket Token，滑块校验生效会延迟，稍等片刻会自动连接闲鱼服务器</span>
-            </div>
+            <div v-else class="captcha-state captcha-state--error">{{ statusText }}</div>
+            <p v-if="screenshot" class="captcha-status">{{ statusText }}</p>
           </div>
+
           <div class="modal-footer">
-            <button class="btn btn-secondary" @click="handleClose">取消</button>
-            <button class="btn btn-primary" @click="handleConfirm">访问闲鱼IM</button>
+            <button class="btn btn-secondary" type="button" @click="handleClose">取消</button>
+            <button class="btn btn-secondary" type="button" :disabled="loading || submitting" @click="loadCaptchaSession">
+              重新加载
+            </button>
           </div>
         </div>
       </div>
@@ -89,193 +221,151 @@ onUnmounted(() => {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.20);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 2000;
-  padding: 24px;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
 }
 
 .modal-container {
-  background: rgba(255,255,255,0.72);
-  border-radius: 20px;
-  width: 100%;
-  max-width: 420px;
-  box-shadow: 0 32px 100px rgba(0, 0, 0, 0.14), 0 12px 32px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  width: min(920px, 96vw);
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
-}
-
-.modal-container.is-mobile {
-  max-width: 94vw;
+  overflow: hidden;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
 }
 
 .modal-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 14px 20px;
-  flex-shrink: 0;
+  gap: 20px;
+  padding: 18px 20px;
+  border-bottom: 1px solid #eef0f3;
 }
 
 .modal-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1c1c1e;
   margin: 0;
+  color: #111827;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.modal-subtitle {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .modal-close {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  border: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
   background: transparent;
-  color: rgba(28,28,30,.55);
-  font-size: 18px;
-  line-height: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  color: #6b7280;
+  font-size: 20px;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 
 .modal-close:hover {
-  background: rgba(60,60,67,.12);
-  color: #1c1c1e;
+  background: #f3f4f6;
+  color: #111827;
 }
 
 .modal-body {
-  padding: 0 20px 20px;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+}
+
+.captcha-viewer {
+  overflow: hidden;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #f7f8fa;
+  line-height: 0;
+}
+
+.captcha-viewer.is-submitting {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.captcha-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  touch-action: none;
+  cursor: grab;
+}
+
+.captcha-image:active {
+  cursor: grabbing;
+}
+
+.captcha-state {
+  min-height: 260px;
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.captcha-state--error {
+  color: #b42318;
+}
+
+.captcha-status {
+  margin: 12px 0 0;
+  color: #4b5563;
+  font-size: 13px;
 }
 
 .modal-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 12px 20px;
-  flex-shrink: 0;
-}
-
-.captcha-alert {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  background: rgba(255,255,255,0.55)3cd;
-  border-radius: 10px;
-}
-
-.alert-icon {
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.alert-text {
-  font-size: 13px;
-  color: #856404;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.captcha-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.step-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #f5f5f7;
-  border-radius: 10px;
-}
-
-.step-number {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: #0071e3;
-  color: rgba(255,255,255,0.55);
-  font-size: 12px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.step-text {
-  font-size: 13px;
-  color: #1c1c1e;
-}
-
-.captcha-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  background: rgba(0, 113, 227, 0.06);
-  border-radius: 10px;
-}
-
-.tip-icon {
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-.tip-text {
-  font-size: 12px;
-  color: #1c1c1e;
-  line-height: 1.5;
+  padding: 14px 20px;
+  border-top: 1px solid #eef0f3;
 }
 
 .btn {
-  padding: 8px 18px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s ease;
-  border: none;
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .btn-secondary {
-  background: rgba(60,60,67,.12);
-  color: #1c1c1e;
+  background: #ffffff;
+  color: #374151;
 }
 
-.btn-secondary:hover {
-  background: rgba(0, 0, 0, 0.1);
-}
-
-.btn-primary {
-  background: #0071e3;
-  color: rgba(255,255,255,0.55);
-}
-
-.btn-primary:hover {
-  background: #0077ed;
+.btn-secondary:hover:not(:disabled) {
+  background: #f7f8fa;
 }
 
 .modal-enter-active,
 .modal-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.modal-enter-active .modal-container,
-.modal-leave-active .modal-container {
-  transition: transform 0.3s cubic-bezier(0.32, 0.94, 0.6, 1), opacity 0.2s ease;
+  transition: opacity 0.16s ease;
 }
 
 .modal-enter-from,
@@ -283,9 +373,16 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-.modal-enter-from .modal-container,
-.modal-leave-to .modal-container {
-  transform: scale(0.92) translateY(8px);
-  opacity: 0;
+@media (max-width: 640px) {
+  .modal-overlay {
+    padding: 10px;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
 }
 </style>

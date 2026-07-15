@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { generateQRCode, getQRCodeStatus, getQRCodeCookies } from '@/api/qrlogin'
-import { updateCookie, updateToken, startConnection } from '@/api/websocket'
+import { updateCookie } from '@/api/websocket'
 import { showSuccess, showError } from '@/utils'
 import type { QRLoginSession } from '@/types'
 
@@ -23,6 +23,7 @@ const sessionId = ref('')
 const status = ref<QRLoginSession['status']>('pending')
 const statusText = ref('正在生成二维码...')
 let pollTimer: number | null = null
+let pollRequestPending = false
 
 watch(() => props.modelValue, (newVal) => {
   if (newVal) {
@@ -54,7 +55,8 @@ const startPolling = () => {
     return
   }
   pollTimer = window.setInterval(async () => {
-    if (!sessionId.value) return
+    if (!sessionId.value || pollRequestPending) return
+    pollRequestPending = true
     try {
       const response = await getQRCodeStatus(sessionId.value)
       if (response.code === 0 || response.code === 200) {
@@ -70,6 +72,7 @@ const startPolling = () => {
             break
           case 'confirmed':
             statusText.value = '登录成功！正在更新Cookie和Token...'
+            stopPolling()
             await handleLoginSuccess()
             break
           case 'expired':
@@ -80,6 +83,8 @@ const startPolling = () => {
       }
     } catch (error) {
       console.error('检查登录状态失败:', error)
+    } finally {
+      pollRequestPending = false
     }
   }, 2000)
 }
@@ -103,8 +108,6 @@ const handleLoginSuccess = async () => {
 
     // 2. 直接使用返回的Cookie字符串和UNB
     const cookieText = cookieRes.data?.cookies || ''
-    const unb = cookieRes.data?.unb || ''
-
     if (!cookieText) {
       showError('Cookie为空，请重试')
       handleClose()
@@ -123,18 +126,8 @@ const handleLoginSuccess = async () => {
       return
     }
 
-    // 4. 自动启动连接
-    statusText.value = 'Cookie更新成功，正在启动连接...'
-    try {
-      const startRes = await startConnection(props.accountId)
-      if (startRes.code === 0 || startRes.code === 200) {
-        showSuccess('Cookie更新成功，连接已启动')
-      } else {
-        showSuccess('Cookie更新成功，请手动启动连接')
-      }
-    } catch (startError) {
-      showSuccess('Cookie更新成功，请手动启动连接')
-    }
+    // 4. 后端已使用最新Cookie完成连接刷新
+    showSuccess(cookieUpdateRes.data?.message || 'Cookie更新成功，连接已刷新')
 
     emit('success')
     handleClose()
