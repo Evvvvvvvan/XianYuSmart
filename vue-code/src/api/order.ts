@@ -5,6 +5,7 @@ export interface DeliveryRecordQueryReq {
   xianyuAccountId?: number
   xyGoodsId?: string
   keyword?: string
+  deliveryStatuses?: string[]
   pageNum?: number
   pageSize?: number
 }
@@ -18,6 +19,7 @@ export interface DeliveryRecordVO {
   sid?: string
   content?: string
   state: number
+  deliveryStatus?: string
   failReason?: string
   confirmState: number
   orderId?: string
@@ -48,6 +50,14 @@ export function queryDeliveryRecordList(data: DeliveryRecordQueryReq) {
 export function confirmShipment(data: { xianyuAccountId: number; orderId: string }) {
   return request<string>({
     url: '/order/confirmShipment',
+    method: 'POST',
+    data
+  })
+}
+
+export function requeueDelivery(data: { id: number; xianyuAccountId: number }) {
+  return request<string>({
+    url: '/order/requeueDelivery',
     method: 'POST',
     data
   })

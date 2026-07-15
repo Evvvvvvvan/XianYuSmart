@@ -4,6 +4,7 @@ import { formatTime } from '@/utils'
 import { showSuccess, showError } from '@/utils'
 import { getOrderDetail } from '@/api/order'
 import type { DeliveryRecordItem } from '../useOrderManager'
+import { getDeliveryStatusMeta } from '../order-status'
 
 import IconEmpty from '@/components/icons/IconEmpty.vue'
 import IconCopy from '@/components/icons/IconCopy.vue'
@@ -21,6 +22,7 @@ interface Props {
 interface Emits {
   (e: 'copySid', sid: string): void
   (e: 'confirmShipment', item: DeliveryRecordItem): void
+  (e: 'retryDelivery', item: DeliveryRecordItem): void
   (e: 'viewDetail', item: DeliveryRecordItem): void
 }
 
@@ -119,23 +121,7 @@ const getStatusText = (state: number) => {
   return state === 1 ? '成功' : '失败'
 }
 
-const getDeliveryText = (state: number) => {
-  if (state === 1) return '已发货'
-  if (state === 0) return '待发货'
-  return '失败'
-}
-
-const getDeliveryColor = (state: number) => {
-  if (state === 1) return '#30D158'
-  if (state === 0) return '#FF9F0A'
-  return '#FF453A'
-}
-
-const getDeliveryBg = (state: number) => {
-  if (state === 1) return 'rgba(48,209,88,.2)'
-  if (state === 0) return 'rgba(255,159,10,.18)'
-  return 'rgba(255,69,58,.15)'
-}
+const getDeliveryMeta = (order: DeliveryRecordItem) => getDeliveryStatusMeta(order.deliveryStatus, order.state)
 
 const getConfirmText = (state: number) => {
   return state === 1 ? '已确认' : '未确认'
@@ -163,13 +149,13 @@ const getConfirmBg = (state: number) => {
           <span
             class="order-card__status"
             :style="{
-              color: getDeliveryColor(order.state),
-              background: getDeliveryBg(order.state)
+              color: getDeliveryMeta(order).color,
+              background: getDeliveryMeta(order).background
             }"
           >
-            {{ getDeliveryText(order.state) }}
+            {{ getDeliveryMeta(order).text }}
           </span>
-          <span v-if="order.state === -1 && order.failReason" class="order-card__fail-reason">{{ order.failReason }}</span>
+          <span v-if="order.failReason" class="order-card__fail-reason">{{ order.failReason }}</span>
           <span
             class="order-card__status"
             :style="{
@@ -209,6 +195,16 @@ const getConfirmBg = (state: number) => {
         <button class="order-card__action order-card__action--copy" @click="emit('copySid', order.orderId || '')">
           <IconCopy />
           <span>复制订单ID</span>
+        </button>
+        <button
+          v-if="order.deliveryStatus === 'FAILED'"
+          class="order-card__action order-card__action--retry"
+          :class="{ 'order-card__action--loading': order.retrying }"
+          :disabled="order.retrying"
+          @click="emit('retryDelivery', order)"
+        >
+          <IconTruck />
+          <span>{{ order.retrying ? '处理中' : '重新排队' }}</span>
         </button>
         <button
           v-if="order.orderId"
@@ -276,13 +272,13 @@ const getConfirmBg = (state: number) => {
             <span
               class="status-tag"
               :style="{
-                color: getDeliveryColor(order.state),
-                background: getDeliveryBg(order.state)
+                color: getDeliveryMeta(order).color,
+                background: getDeliveryMeta(order).background
               }"
             >
-              {{ getDeliveryText(order.state) }}
+              {{ getDeliveryMeta(order).text }}
             </span>
-            <span v-if="order.state === -1 && order.failReason" class="fail-reason" :title="order.failReason">{{ order.failReason }}</span>
+            <span v-if="order.failReason" class="fail-reason" :title="order.failReason">{{ order.failReason }}</span>
           </td>
           <td class="table__td table__td--center">
             <span
@@ -299,6 +295,16 @@ const getConfirmBg = (state: number) => {
             <span class="time-text">{{ formatTime(order.orderCreateTime || order.createTime) }}</span>
           </td>
           <td class="table__td table__td--actions">
+            <button
+              v-if="order.deliveryStatus === 'FAILED'"
+              class="table__action table__action--retry"
+              :class="{ 'table__action--loading': order.retrying }"
+              :disabled="order.retrying"
+              @click="emit('retryDelivery', order)"
+            >
+              <IconTruck />
+              <span>{{ order.retrying ? '处理中' : '重新排队' }}</span>
+            </button>
             <button
               v-if="order.orderId"
               class="table__action table__action--detail"
@@ -617,6 +623,11 @@ const getConfirmBg = (state: number) => {
   border-color: rgba(52, 199, 89, 0.2);
 }
 
+.order-card__action--retry {
+  color: #ff9500;
+  border-color: rgba(255, 149, 0, 0.2);
+}
+
 @media (hover: hover) {
   .order-card__action--ship:hover {
     background: rgba(52, 199, 89, 0.06);
@@ -834,6 +845,11 @@ const getConfirmBg = (state: number) => {
 .table__action--detail {
   border-color: rgba(0, 122, 255, 0.2);
   color: var(--c-accent);
+}
+
+.table__action--retry {
+  border-color: rgba(255, 149, 0, 0.2);
+  color: #ff9500;
 }
 
 @media (hover: hover) {

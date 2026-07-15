@@ -29,6 +29,8 @@ const {
   goodsListRef,
   onlyOnSale,
   selectedGoodsId,
+  selectedDeliveryStatus,
+  deliveryStatusOptions,
   queryParams,
   totalPages,
   loadAccounts,
@@ -36,9 +38,11 @@ const {
   loadGoods,
   handleAccountChange,
   handleReset,
+  handleDeliveryStatusChange,
   handlePageChange,
   copySId,
   handleConfirmShipment,
+  handleRetryDelivery,
   handleGoodsScroll,
   selectGoods,
   clearGoodsFilter,
@@ -105,21 +109,24 @@ onMounted(async () => {
 })
 
 const filterKeyword = ref('')
+const filterDeliveryStatus = ref('')
 
 const openFilterSheet = () => {
   filterKeyword.value = queryParams.keyword || ''
+  filterDeliveryStatus.value = selectedDeliveryStatus.value
   showFilterSheet.value = true
 }
 
 const applyFilter = () => {
   queryParams.keyword = filterKeyword.value || undefined
-  queryParams.pageNum = 1
+  selectedDeliveryStatus.value = filterDeliveryStatus.value
   showFilterSheet.value = false
-  loadOrders()
+  handleDeliveryStatusChange()
 }
 
 const resetFilter = () => {
   filterKeyword.value = ''
+  filterDeliveryStatus.value = ''
   handleReset()
   showFilterSheet.value = false
 }
@@ -179,6 +186,20 @@ const executeConfirmShipment = async () => {
           </span>
         </div>
         <template v-if="!isMobile">
+          <div class="orders__select-wrap orders__select-wrap--status">
+            <select
+              v-model="selectedDeliveryStatus"
+              class="orders__select"
+              @change="handleDeliveryStatusChange"
+            >
+              <option v-for="option in deliveryStatusOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
+            <span class="orders__select-icon">
+              <IconChevronDown />
+            </span>
+          </div>
           <div class="orders__input-wrap">
             <input
               v-model="queryParams.keyword"
@@ -314,6 +335,7 @@ const executeConfirmShipment = async () => {
           :loading="loading"
           @copy-sid="copySId"
           @confirm-shipment="openConfirmDialog"
+          @retry-delivery="handleRetryDelivery"
         />
       </div>
 
@@ -366,6 +388,15 @@ const executeConfirmShipment = async () => {
               class="orders__filter-input"
               placeholder="商品名称/规格/买家/发货内容"
             />
+          </div>
+
+          <div class="orders__filter-group">
+            <label class="orders__filter-label">履约状态</label>
+            <select v-model="filterDeliveryStatus" class="orders__filter-input">
+              <option v-for="option in deliveryStatusOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
           </div>
 
           <div class="orders__filter-actions">

@@ -1,17 +1,22 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
-import { queryDeliveryRecordList, confirmShipment } from '@/api/order'
+import { useRoute, useRouter } from 'vue-router'
+import { queryDeliveryRecordList, confirmShipment, requeueDelivery } from '@/api/order'
 import { getAccountList } from '@/api/account'
 import { getGoodsList, type GoodsItemWithConfig } from '@/api/goods'
 import type { DeliveryRecordVO, DeliveryRecordQueryReq } from '@/api/order'
 import type { Account } from '@/types'
 import { showSuccess, showError, showConfirm, showInfo } from '@/utils'
 import { formatTime } from '@/utils'
+import { deliveryStatusOptions, parseDeliveryStatuses } from './order-status'
 
 export interface DeliveryRecordItem extends DeliveryRecordVO {
   confirming?: boolean
+  retrying?: boolean
 }
 
 export function useOrderManager() {
+  const route = useRoute()
+  const router = useRouter()
   const loading = ref(false)
   const orderList = ref<DeliveryRecordItem[]>([])
   const total = ref(0)
@@ -24,8 +29,10 @@ export function useOrderManager() {
   const goodsCurrentPage = ref(1)
   const onlyOnSale = ref(true)
   const selectedGoodsId = ref<string | null>(null)
+  const selectedDeliveryStatus = ref(parseDeliveryStatuses(route.query.deliveryStatus).join(','))
 
   const queryParams = reactive<DeliveryRecordQueryReq>({
+    deliveryStatuses: parseDeliveryStatuses(route.query.deliveryStatus),
     pageNum: 1,
     pageSize: 20
   })
@@ -163,7 +170,8 @@ export function useOrderManager() {
       const response = await queryDeliveryRecordList(queryParams)
       orderList.value = (response.data?.records || []).map(item => ({
         ...item,
-        confirming: false
+        confirming: false,
+        retrying: false
       }))
       total.value = response.data?.total || 0
     } catch (error: any) {
@@ -180,7 +188,20 @@ export function useOrderManager() {
 
   const handleReset = () => {
     queryParams.keyword = undefined
+    queryParams.deliveryStatuses = undefined
+    selectedDeliveryStatus.value = ''
     queryParams.pageNum = 1
+    router.replace({ query: { ...route.query, deliveryStatus: undefined } })
+    loadOrders()
+  }
+
+  const handleDeliveryStatusChange = () => {
+    const statuses = parseDeliveryStatuses(selectedDeliveryStatus.value)
+    queryParams.deliveryStatuses = statuses.length > 0 ? statuses : undefined
+    queryParams.pageNum = 1
+    router.replace({
+      query: { ...route.query, deliveryStatus: selectedDeliveryStatus.value || undefined }
+    })
     loadOrders()
   }
 
@@ -224,6 +245,28 @@ export function useOrderManager() {
     }
   }
 
+  const handleRetryDelivery = async (row: DeliveryRecordItem) => {
+    if (!row.xianyuAccountId) {
+      showError('账号ID为空')
+      return
+    }
+    try {
+      await showConfirm(`确认将订单「${row.orderId || row.id}」重新加入发货队列？`, '重新排队')
+    } catch {
+      return
+    }
+    row.retrying = true
+    try {
+      await requeueDelivery({ id: row.id, xianyuAccountId: row.xianyuAccountId })
+      showSuccess('订单已重新进入发货队列')
+      loadOrders()
+    } catch (error: any) {
+      showError(error.message || '重新排队失败')
+    } finally {
+      row.retrying = false
+    }
+  }
+
   return {
     loading,
     orderList,
@@ -236,6 +279,8 @@ export function useOrderManager() {
     goodsCurrentPage,
     onlyOnSale,
     selectedGoodsId,
+    selectedDeliveryStatus,
+    deliveryStatusOptions,
     queryParams,
     dialogs,
     confirmTarget,
@@ -245,10 +290,12 @@ export function useOrderManager() {
     loadGoods,
     handleAccountChange,
     handleReset,
+    handleDeliveryStatusChange,
     handlePageChange,
     handleSizeChange,
     copySId,
     handleConfirmShipment,
+    handleRetryDelivery,
     handleGoodsScroll,
     selectGoods,
     clearGoodsFilter,

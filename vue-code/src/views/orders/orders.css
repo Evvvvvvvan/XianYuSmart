@@ -109,6 +109,10 @@
   border-color: rgba(10,132,255,0.4);
 }
 
+.orders__select-wrap--status .orders__select {
+  min-width: 150px;
+}
+
 .orders__select:focus {
   outline: none;
   border-color: rgba(10,132,255,0.5);
