@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, inject, defineComponent, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, inject, defineComponent, h } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from '@/utils/toast'
 import { showConfirm } from '@/utils/confirm'
 import '@/styles/header-selectors.css'
@@ -19,11 +20,16 @@ import {
 import { getAccountList } from '@/api/account'
 import type { Account } from '@/types'
 import IconChevronDown from '@/components/icons/IconChevronDown.vue'
+import { isLowStockConfig } from './kami-stock'
+
+const route = useRoute()
+const router = useRouter()
 
 const accounts = ref<Account[]>([])
 const selectedAccountId = ref<number | null>(null)
 const kamiConfigs = ref<KamiConfig[]>([])
 const configLoading = ref(false)
+const lowStockOnly = ref(route.query.lowStock === '1')
 
 const selectedConfigId = ref<number | null>(null)
 const kamiItems = ref<KamiItem[]>([])
@@ -97,6 +103,19 @@ const selectedConfig = computed(() => {
   return kamiConfigs.value.find(c => c.id === selectedConfigId.value)
 })
 
+const visibleKamiConfigs = computed(() => lowStockOnly.value
+  ? kamiConfigs.value.filter(isLowStockConfig)
+  : kamiConfigs.value)
+
+const clearLowStockFilter = () => {
+  lowStockOnly.value = false
+  router.replace({ query: { ...route.query, lowStock: undefined } })
+  if (!selectedConfigId.value && !isMobile.value && visibleKamiConfigs.value[0]) {
+    selectedConfigId.value = visibleKamiConfigs.value[0].id
+    loadKamiItems()
+  }
+}
+
 const loadAccounts = async () => {
   try {
     const res = await getAccountList()
@@ -118,10 +137,14 @@ const loadKamiConfigs = async () => {
     const res = await getKamiConfigsByAccountId(selectedAccountId.value)
     if (res.code === 200) {
       kamiConfigs.value = res.data || []
-      if (kamiConfigs.value.length > 0 && !selectedConfigId.value && !isMobile.value) {
-        selectedConfigId.value = kamiConfigs.value[0]!.id
+      if (selectedConfigId.value && !visibleKamiConfigs.value.some(config => config.id === selectedConfigId.value)) {
+        selectedConfigId.value = null
+        kamiItems.value = []
+      }
+      if (visibleKamiConfigs.value.length > 0 && !selectedConfigId.value && !isMobile.value) {
+        selectedConfigId.value = visibleKamiConfigs.value[0]!.id
         loadKamiItems()
-      } else if (kamiConfigs.value.length === 0) {
+      } else if (visibleKamiConfigs.value.length === 0) {
         selectedConfigId.value = null
         kamiItems.value = []
       }
@@ -400,10 +423,19 @@ onMounted(async () => {
   if (setHeaderContent) setHeaderContent(HeaderSelectors)
   await loadAccounts()
 })
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkScreenSize)
+})
 </script>
 
 <template>
   <div class="kami-page">
+
+    <div v-if="lowStockOnly" class="kami-page__filter-notice">
+      <span>当前仅显示已触发预警的低库存仓库</span>
+      <button class="btn-text" @click="clearLowStockFilter">查看全部</button>
+    </div>
 
     <!-- ===== 手机端 ===== -->
     <template v-if="isMobile">
@@ -421,9 +453,9 @@ onMounted(async () => {
 
         <div class="kami-mobile__list">
           <div v-if="configLoading" class="kami-page__empty">加载中...</div>
-          <div v-else-if="kamiConfigs.length === 0" class="kami-page__empty">暂无配置，点击右上角新建</div>
+          <div v-else-if="visibleKamiConfigs.length === 0" class="kami-page__empty">{{ lowStockOnly ? '暂无低库存仓库' : '暂无配置，点击右上角新建' }}</div>
           <div
-            v-for="config in kamiConfigs"
+            v-for="config in visibleKamiConfigs"
             :key="config.id"
             class="config-card"
             @click="selectConfig(config)"
@@ -433,7 +465,7 @@ onMounted(async () => {
               <span class="config-card__stat">总量 {{ config.totalCount }}</span>
               <span class="config-card__stat used">已用 {{ config.usedCount }}</span>
               <span class="config-card__stat avail">可用 {{ config.availableCount }}</span>
-              <span v-if="config.alertEnabled === 1" class="tag tag--warning" style="margin-left: 4px;">预警</span>
+              <span v-if="isLowStockConfig(config)" class="tag tag--warning" style="margin-left: 4px;">低库存</span>
             </div>
             <button
               class="config-card__del btn-danger btn-text btn-sm"
@@ -533,9 +565,9 @@ onMounted(async () => {
       <div class="kami-page__body">
         <div class="kami-page__sidebar">
           <div v-if="configLoading" class="kami-page__empty">加载中...</div>
-          <div v-else-if="kamiConfigs.length === 0" class="kami-page__empty">暂无配置，点击右上角新建</div>
+          <div v-else-if="visibleKamiConfigs.length === 0" class="kami-page__empty">{{ lowStockOnly ? '暂无低库存仓库' : '暂无配置，点击右上角新建' }}</div>
           <div
-            v-for="config in kamiConfigs"
+            v-for="config in visibleKamiConfigs"
             :key="config.id"
             class="config-card"
             :class="{ 'config-card--active': selectedConfigId === config.id }"
@@ -546,7 +578,7 @@ onMounted(async () => {
               <span class="config-card__stat">总量 {{ config.totalCount }}</span>
               <span class="config-card__stat used">已用 {{ config.usedCount }}</span>
               <span class="config-card__stat avail">可用 {{ config.availableCount }}</span>
-              <span v-if="config.alertEnabled === 1" class="tag tag--warning" style="margin-left: 4px;">预警</span>
+              <span v-if="isLowStockConfig(config)" class="tag tag--warning" style="margin-left: 4px;">低库存</span>
             </div>
             <button
               class="config-card__del btn-danger btn-text btn-sm"
@@ -791,6 +823,20 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  flex-shrink: 0;
+}
+.kami-page__filter-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(255,159,10,0.2);
+  border-radius: 8px;
+  background: rgba(255,159,10,0.08);
+  color: #8a5a00;
+  font-size: 13px;
   flex-shrink: 0;
 }
 .kami-page__title {

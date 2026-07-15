@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDashboard } from './useDashboard'
 
@@ -15,9 +15,24 @@ const money = (value: number) => Number(value || 0).toLocaleString('zh-CN', {
   maximumFractionDigits: 2
 })
 
-const go = (path: string) => router.push(path)
+const go = (path: string, query?: Record<string, string>) => router.push({ path, query })
 
-onMounted(loadStatistics)
+const refreshWhenVisible = () => {
+  if (document.visibilityState === 'visible') loadStatistics()
+}
+
+let refreshTimer: ReturnType<typeof setInterval> | undefined
+
+onMounted(() => {
+  loadStatistics()
+  refreshTimer = setInterval(refreshWhenVisible, 60000)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
+})
 </script>
 
 <template>
@@ -63,25 +78,25 @@ onMounted(loadStatistics)
         </div>
       </div>
       <div class="todo-list">
-        <button class="todo-row" @click="go('/orders')">
+        <button class="todo-row" @click="go('/orders', { deliveryStatus: 'PENDING,PROCESSING,RETRY_WAIT' })">
           <span class="status-dot status-dot--blue"></span>
           <span class="todo-row__label">等待履约</span>
           <strong>{{ stats.pendingTaskCount }}</strong>
           <span class="todo-row__action">查看订单</span>
         </button>
-        <button class="todo-row" @click="go('/orders')">
+        <button class="todo-row" @click="go('/orders', { deliveryStatus: 'REVIEW_REQUIRED' })">
           <span class="status-dot status-dot--orange"></span>
           <span class="todo-row__label">需要人工核对</span>
           <strong>{{ stats.reviewRequiredCount }}</strong>
           <span class="todo-row__action">立即核对</span>
         </button>
-        <button class="todo-row" @click="go('/orders')">
+        <button class="todo-row" @click="go('/orders', { deliveryStatus: 'FAILED' })">
           <span class="status-dot status-dot--red"></span>
           <span class="todo-row__label">履约失败</span>
           <strong>{{ stats.failedTaskCount }}</strong>
           <span class="todo-row__action">处理失败</span>
         </button>
-        <button class="todo-row" @click="go('/kami-config')">
+        <button class="todo-row" @click="go('/kami-config', { lowStock: '1' })">
           <span class="status-dot status-dot--orange"></span>
           <span class="todo-row__label">卡密库存预警</span>
           <strong>{{ stats.lowStockConfigCount }}</strong>

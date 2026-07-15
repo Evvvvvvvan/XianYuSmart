@@ -21,6 +21,7 @@ export function useDashboard() {
   })
 
   const loadStatistics = async () => {
+    if (loading.value) return
     loading.value = true
     try {
       const res = await getDashboardStats()
