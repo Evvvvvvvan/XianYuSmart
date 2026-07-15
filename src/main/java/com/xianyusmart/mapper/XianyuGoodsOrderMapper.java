@@ -172,6 +172,11 @@ public interface XianyuGoodsOrderMapper {
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'PENDING', next_retry_time = NOW(3), " +
             "lease_owner = NULL, lease_expire_time = NULL WHERE id = #{id} AND state <> 1 AND delivery_status IN ('FAILED', 'RETRY_WAIT')")
     int requeueTask(@Param("id") Long id);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_status = 'PENDING', next_retry_time = NOW(3), " +
+            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL " +
+            "WHERE id = #{id} AND xianyu_account_id = #{accountId} AND state <> 1 AND delivery_status = 'FAILED'")
+    int requeueFailedTask(@Param("id") Long id, @Param("accountId") Long accountId);
     
     @Update("UPDATE xianyu_goods_order SET confirm_state = 1 WHERE xianyu_account_id = #{accountId} AND order_id = #{orderId}")
     int updateConfirmState(@Param("accountId") Long accountId, @Param("orderId") String orderId);

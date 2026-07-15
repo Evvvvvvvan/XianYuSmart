@@ -18,4 +18,6 @@ public interface DeliveryTaskService {
     void markReviewRequired(Long taskId, String errorMessage);
 
     void requeue(Long taskId);
+
+    boolean requeueFailed(Long taskId, Long accountId);
 }

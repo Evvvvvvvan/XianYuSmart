@@ -100,4 +100,10 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
     public void requeue(Long taskId) {
         orderMapper.requeueTask(taskId);
     }
+
+    @Override
+    public boolean requeueFailed(Long taskId, Long accountId) {
+        // 账号和失败状态同时进入更新条件，保证并发重试只成功一次。
+        return orderMapper.requeueFailedTask(taskId, accountId) == 1;
+    }
 }

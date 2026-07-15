@@ -9,6 +9,7 @@ import com.xianyusmart.controller.dto.OrderDTO;
 import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.OrderService;
+import com.xianyusmart.service.DeliveryTaskService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -30,6 +31,9 @@ public class OrderController {
 
     @Autowired
     private XianyuGoodsOrderMapper orderMapper;
+
+    @Autowired
+    private DeliveryTaskService deliveryTaskService;
 
     @Autowired
     private com.xianyusmart.service.PendingOrderPollService pendingOrderPollService;
@@ -152,6 +156,32 @@ public class OrderController {
             log.error("获取订单详情失败", e);
             return ResultObject.failed("获取订单详情失败: " + e.getMessage());
         }
+    }
+
+    /**
+     * 将明确失败的履约任务重新加入队列
+     */
+    @PostMapping("/requeueDelivery")
+    public ResultObject<String> requeueDelivery(@RequestBody RequeueDeliveryReqDTO reqDTO) {
+        try {
+            if (reqDTO.getId() == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("订单记录ID和账号ID不能为空");
+            }
+            if (!deliveryTaskService.requeueFailed(reqDTO.getId(), reqDTO.getXianyuAccountId())) {
+                return ResultObject.failed("订单状态已变化，请刷新后重试");
+            }
+            return ResultObject.success("订单已重新进入发货队列");
+        } catch (Exception e) {
+            log.error("失败订单重新排队异常: id={}, xianyuAccountId={}",
+                    reqDTO.getId(), reqDTO.getXianyuAccountId(), e);
+            return ResultObject.failed("重新排队失败: " + e.getMessage());
+        }
+    }
+
+    @lombok.Data
+    public static class RequeueDeliveryReqDTO {
+        private Long id;
+        private Long xianyuAccountId;
     }
 
     @PostMapping("/pendingOrders")
