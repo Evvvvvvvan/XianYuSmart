@@ -4,6 +4,7 @@ import com.xianyusmart.entity.XianyuGoodsAutoDeliveryConfig;
 import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.entity.XianyuGoodsAutoReplyRecord;
 import com.xianyusmart.entity.XianyuGoodsConfig;
+import com.xianyusmart.enums.DeliveryStatus;
 import com.xianyusmart.mapper.XianyuGoodsAutoDeliveryConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
@@ -227,15 +228,24 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
         Long accountId = reqDTO.getXianyuAccountId();
         String xyGoodsId = reqDTO.getXyGoodsId();
         String keyword = reqDTO.getKeyword();
-        int pageNum = reqDTO.getPageNum() != null ? reqDTO.getPageNum() : 1;
-        int pageSize = reqDTO.getPageSize() != null ? reqDTO.getPageSize() : 20;
+        int pageNum = Math.max(reqDTO.getPageNum() != null ? reqDTO.getPageNum() : 1, 1);
+        int pageSize = Math.min(Math.max(reqDTO.getPageSize() != null ? reqDTO.getPageSize() : 20, 1), 100);
+        List<String> deliveryStatuses = reqDTO.getDeliveryStatuses() == null ? List.of() :
+                reqDTO.getDeliveryStatuses().stream().map(status -> {
+                    try {
+                        return DeliveryStatus.valueOf(status).name();
+                    } catch (Exception e) {
+                        throw new IllegalArgumentException("无效的履约状态: " + status);
+                    }
+                }).distinct().toList();
         
-        int offset = (pageNum - 1) * pageSize;
+        // 使用长整型计算偏移，避免异常页码触发整数溢出。
+        long offset = (long) (pageNum - 1) * pageSize;
         
         List<XianyuGoodsOrder> records = orderMapper.selectByAccountIdWithPage(
-                accountId, xyGoodsId, keyword, pageSize, offset);
+                accountId, xyGoodsId, keyword, deliveryStatuses, pageSize, offset);
         
-        long total = orderMapper.countByAccountId(accountId, xyGoodsId, keyword);
+        long total = orderMapper.countByAccountId(accountId, xyGoodsId, keyword, deliveryStatuses);
         
         List<com.xianyusmart.controller.dto.AutoDeliveryRecordDTO> recordDTOs = new ArrayList<>();
         for (XianyuGoodsOrder record : records) {
@@ -248,6 +258,9 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             dto.setBuyerUserName(record.getBuyerUserName());
             dto.setContent(record.getContent());
             dto.setState(record.getState());
+            dto.setDeliveryStatus(record.getDeliveryStatus());
+            dto.setFailReason(record.getFailReason() != null && !record.getFailReason().isBlank()
+                    ? record.getFailReason() : record.getLastErrorMessage());
             dto.setConfirmState(record.getConfirmState());
             dto.setOrderId(record.getOrderId());
             dto.setSkuName(record.getSkuName());

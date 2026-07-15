@@ -36,6 +36,16 @@ public class AutoDeliveryRecordDTO {
      * 发货是否成功: 1-成功, 0-失败
      */
     private Integer state;
+
+    /**
+     * 履约任务状态
+     */
+    private String deliveryStatus;
+
+    /**
+     * 履约失败原因
+     */
+    private String failReason;
     
     /**
      * 确认发货状态: 0-未确认, 1-已确认

@@ -69,6 +69,9 @@ public interface XianyuGoodsOrderMapper {
             "<if test='keyword != null and keyword != \"\"'>" +
             "AND (g.title LIKE CONCAT('%', #{keyword}, '%') OR r.sku_name LIKE CONCAT('%', #{keyword}, '%') OR r.buyer_user_name LIKE CONCAT('%', #{keyword}, '%') OR r.content LIKE CONCAT('%', #{keyword}, '%')) " +
             "</if>" +
+            "<if test='deliveryStatuses != null and !deliveryStatuses.isEmpty()'>" +
+            "AND r.delivery_status IN <foreach collection='deliveryStatuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> " +
+            "</if>" +
             "ORDER BY r.create_time DESC " +
             "LIMIT #{limit} OFFSET #{offset}" +
             "</script>")
@@ -85,6 +88,8 @@ public interface XianyuGoodsOrderMapper {
         @Result(property = "content", column = "content"),
         @Result(property = "state", column = "state"),
         @Result(property = "failReason", column = "fail_reason"),
+        @Result(property = "deliveryStatus", column = "delivery_status"),
+        @Result(property = "lastErrorMessage", column = "last_error_message"),
         @Result(property = "confirmState", column = "confirm_state"),
         @Result(property = "createTime", column = "create_time"),
         @Result(property = "goodsTitle", column = "goods_title"),
@@ -99,8 +104,9 @@ public interface XianyuGoodsOrderMapper {
             @Param("accountId") Long accountId,
             @Param("xyGoodsId") String xyGoodsId,
             @Param("keyword") String keyword,
+            @Param("deliveryStatuses") List<String> deliveryStatuses,
             @Param("limit") int limit,
-            @Param("offset") int offset);
+            @Param("offset") long offset);
     
     @Select("<script>" +
             "SELECT COUNT(*) FROM xianyu_goods_order r " +
@@ -112,8 +118,12 @@ public interface XianyuGoodsOrderMapper {
             "<if test='keyword != null and keyword != \"\"'>" +
             "AND (g.title LIKE CONCAT('%', #{keyword}, '%') OR r.sku_name LIKE CONCAT('%', #{keyword}, '%') OR r.buyer_user_name LIKE CONCAT('%', #{keyword}, '%') OR r.content LIKE CONCAT('%', #{keyword}, '%')) " +
             "</if>" +
+            "<if test='deliveryStatuses != null and !deliveryStatuses.isEmpty()'>" +
+            "AND r.delivery_status IN <foreach collection='deliveryStatuses' item='status' open='(' separator=',' close=')'>#{status}</foreach> " +
+            "</if>" +
             "</script>")
-    long countByAccountId(@Param("accountId") Long accountId, @Param("xyGoodsId") String xyGoodsId, @Param("keyword") String keyword);
+    long countByAccountId(@Param("accountId") Long accountId, @Param("xyGoodsId") String xyGoodsId,
+                          @Param("keyword") String keyword, @Param("deliveryStatuses") List<String> deliveryStatuses);
     
     @Update("UPDATE xianyu_goods_order SET state = #{state}, delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END WHERE id = #{id}")
     int updateState(@Param("id") Long id, @Param("state") Integer state);

@@ -2,6 +2,8 @@ package com.xianyusmart.controller.dto;
 
 import lombok.Data;
 
+import java.util.List;
+
 /**
  * 获取自动发货记录请求DTO
  */
@@ -22,6 +24,11 @@ public class AutoDeliveryRecordReqDTO {
      * 模糊搜索关键词，匹配商品名称、规格、买家、发货内容
      */
     private String keyword;
+
+    /**
+     * 履约状态列表
+     */
+    private List<String> deliveryStatuses;
     
     /**
      * 页码
