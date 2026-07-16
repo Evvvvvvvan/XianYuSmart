@@ -8,6 +8,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
  */
 @Data
 public class XianyuGoodsConfig {
+
+    public static final String DEFAULT_AUTO_RATE_CONTENT = "交易愉快，感谢支持，期待再次合作。满意的话欢迎点亮小红花。";
     
     /**
      * 主键ID
@@ -46,6 +48,11 @@ public class XianyuGoodsConfig {
      * 自动评价开关：1-开启，0-关闭，默认关闭
      */
     private Integer xianyuAutoRateOn = 0;
+
+    /**
+     * 自动评价文案
+     */
+    private String xianyuAutoRateContent = DEFAULT_AUTO_RATE_CONTENT;
 
     /**
      * 自动擦亮开关：1-开启，0-关闭，默认关闭

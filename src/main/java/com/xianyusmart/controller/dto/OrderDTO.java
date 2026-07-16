@@ -2,6 +2,8 @@ package com.xianyusmart.controller.dto;
 
 import lombok.Data;
 
+import java.time.LocalDateTime;
+
 /**
  * 订单DTO（第三方调用）
  */
@@ -33,6 +35,14 @@ public class OrderDTO {
      * 确认发货状态：0=未确认, 1=已确认
      */
     private Integer confirmState;
+
+    private Integer rateStatus;
+
+    private LocalDateTime rateTime;
+
+    private String rateContent;
+
+    private String rateSource;
 
     private String goodsTitle;
 

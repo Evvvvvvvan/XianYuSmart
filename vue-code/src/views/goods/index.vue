@@ -10,6 +10,7 @@ import IconFilter from '@/components/icons/IconFilter.vue'
 import IconChevronDown from '@/components/icons/IconChevronDown.vue'
 import IconChevronLeft from '@/components/icons/IconChevronLeft.vue'
 import IconChevronRight from '@/components/icons/IconChevronRight.vue'
+import type { GoodsItemWithConfig } from '@/api/goods'
 
 import GoodsTable from './components/GoodsTable.vue'
 import GoodsDetail from './components/GoodsDetail.vue'
@@ -49,6 +50,7 @@ const {
   toggleAutoReply,
   toggleAutoRate,
   toggleAutoPolish,
+  saveRateSettings,
   confirmDelete,
   executeDelete,
   getGoodsStatusText,
@@ -56,6 +58,42 @@ const {
   formatTime,
   syncSingleGoods
 } = useGoodsManager()
+
+const ratePresets = [
+  '交易愉快，感谢支持，期待再次合作。满意的话欢迎点亮小红花。',
+  '感谢信任与支持，订单已顺利完成，期待下次继续合作。',
+  '很高兴为本次交易提供服务，感谢支持，祝使用愉快。'
+]
+const rateDialogVisible = ref(false)
+const rateTarget = ref<GoodsItemWithConfig | null>(null)
+const rateEnabled = ref(false)
+const rateContent = ref('')
+const rateSaving = ref(false)
+const rateError = computed(() => {
+  const length = rateContent.value.trim().length
+  if (!length) return '请输入评价内容'
+  if (length > 500) return '评价内容不能超过500个字符'
+  return ''
+})
+
+const openRateSettings = (item: GoodsItemWithConfig) => {
+  rateTarget.value = item
+  rateEnabled.value = item.xianyuAutoRateOn === 1
+  rateContent.value = item.xianyuAutoRateContent || ratePresets[0]!
+  rateDialogVisible.value = true
+}
+
+const submitRateSettings = async () => {
+  if (!rateTarget.value || rateError.value) return
+  rateSaving.value = true
+  try {
+    if (await saveRateSettings(rateTarget.value, rateEnabled.value, rateContent.value.trim())) {
+      rateDialogVisible.value = false
+    }
+  } finally {
+    rateSaving.value = false
+  }
+}
 
 // 下拉刷新相关状态
 const pullRefreshState = ref<'idle' | 'pulling' | 'ready' | 'refreshing'>('idle')
@@ -319,6 +357,7 @@ const getPageButtons = () => {
           @toggle-auto-reply="toggleAutoReply"
           @toggle-auto-rate="toggleAutoRate"
           @toggle-auto-polish="toggleAutoPolish"
+          @config-auto-rate="openRateSettings"
           @config-auto-delivery="configAutoDelivery"
           @delete="confirmDelete"
         />
@@ -374,6 +413,38 @@ const getPageButtons = () => {
       @refresh="loadGoods"
     />
 
+    <Transition name="overlay-fade">
+      <div v-if="rateDialogVisible" class="goods__dialog-overlay" @click.self="rateDialogVisible = false">
+        <form class="goods__dialog rate-dialog" @submit.prevent="submitRateSettings">
+          <div class="goods__dialog-header">
+            <div>
+              <h3 class="goods__dialog-title">自动评价设置</h3>
+              <p class="rate-dialog__subtitle">{{ rateTarget?.item.title }}</p>
+            </div>
+          </div>
+          <div class="goods__dialog-body rate-dialog__body">
+            <label class="rate-dialog__switch-row">
+              <span><strong>自动评价</strong><small>仅处理平台待评价且属于当前商品的订单</small></span>
+              <input v-model="rateEnabled" type="checkbox">
+            </label>
+            <label class="rate-dialog__field">
+              <span>评价内容</span>
+              <textarea v-model="rateContent" maxlength="500" rows="5" placeholder="输入订单完成后发送的评价内容"></textarea>
+              <small :class="{ error: rateError }">{{ rateError || `${rateContent.trim().length}/500，自动和手动评价均可继续编辑` }}</small>
+            </label>
+            <div class="rate-dialog__presets">
+              <span>快捷文案</span>
+              <button v-for="preset in ratePresets" :key="preset" type="button" @click="rateContent = preset">{{ preset }}</button>
+            </div>
+          </div>
+          <div class="goods__dialog-footer">
+            <button type="button" class="goods__dialog-btn goods__dialog-btn--cancel" @click="rateDialogVisible = false">取消</button>
+            <button type="submit" class="goods__dialog-btn goods__dialog-btn--confirm" :disabled="Boolean(rateError) || rateSaving">{{ rateSaving ? '保存中' : '保存设置' }}</button>
+          </div>
+        </form>
+      </div>
+    </Transition>
+
     <!-- Delete Confirm -->
     <Transition name="overlay-fade">
       <div v-if="dialogs.deleteConfirm" class="goods__dialog-overlay" @click.self="dialogs.deleteConfirm = false">
@@ -416,4 +487,6 @@ const getPageButtons = () => {
 .overlay-fade-leave-to {
   opacity: 0;
 }
+
+.rate-dialog{max-width:560px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:18px}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__field small.error{color:#ff3b30}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}
 </style>

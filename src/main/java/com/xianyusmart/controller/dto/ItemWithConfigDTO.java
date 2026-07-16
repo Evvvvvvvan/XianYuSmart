@@ -17,6 +17,8 @@ public class ItemWithConfigDTO {
      */
     private Integer xianyuAutoRateOn;
 
+    private String xianyuAutoRateContent;
+
     /**
      * 自动擦亮开关
      */

@@ -6,6 +6,7 @@ import com.xianyusmart.controller.dto.OrderDetailReqDTO;
 import com.xianyusmart.controller.dto.OrderListReqDTO;
 import com.xianyusmart.controller.dto.OrderListRespDTO;
 import com.xianyusmart.controller.dto.OrderDTO;
+import com.xianyusmart.controller.dto.ManualRateReqDTO;
 import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.OrderService;
@@ -34,6 +35,9 @@ public class OrderController {
 
     @Autowired
     private DeliveryTaskService deliveryTaskService;
+
+    @Autowired
+    private com.xianyusmart.service.GoodsAutomationService goodsAutomationService;
 
     @Autowired
     private com.xianyusmart.service.PendingOrderPollService pendingOrderPollService;
@@ -74,6 +78,10 @@ public class OrderController {
                 dto.setState(order.getState());
                 dto.setFailReason(order.getFailReason());
                 dto.setConfirmState(order.getConfirmState());
+                dto.setRateStatus(order.getRateStatus());
+                dto.setRateTime(order.getRateTime());
+                dto.setRateContent(order.getRateContent());
+                dto.setRateSource(order.getRateSource());
                 dto.setGoodsTitle(order.getGoodsTitle());
                 dto.setSkuName(order.getSkuName());
                 dto.setOrderCreateTime(order.getOrderCreateTime());
@@ -175,6 +183,21 @@ public class OrderController {
             log.error("失败订单重新排队异常: id={}, xianyuAccountId={}",
                     reqDTO.getId(), reqDTO.getXianyuAccountId(), e);
             return ResultObject.failed("重新排队失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 手动评价订单
+     */
+    @PostMapping("/rate")
+    public ResultObject<String> rateOrder(@RequestBody ManualRateReqDTO reqDTO) {
+        try {
+            goodsAutomationService.manualRate(reqDTO.getXianyuAccountId(), reqDTO.getOrderId(), reqDTO.getContent());
+            return ResultObject.success("评价成功");
+        } catch (Exception e) {
+            log.warn("手动评价失败: accountId={}, orderId={}, error={}",
+                    reqDTO.getXianyuAccountId(), reqDTO.getOrderId(), e.getMessage());
+            return ResultObject.failed(e.getMessage());
         }
     }
 

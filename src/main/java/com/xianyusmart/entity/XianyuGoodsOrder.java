@@ -43,6 +43,10 @@ public class XianyuGoodsOrder {
     private Integer rateStatus;
 
     private LocalDateTime rateTime;
+
+    private String rateContent;
+
+    private String rateSource;
     
     private String createTime;
     

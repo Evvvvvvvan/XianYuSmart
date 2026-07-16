@@ -26,6 +26,7 @@ export interface GoodsItemWithConfig {
   xianyuAutoReplyContextOn: number;
   xianyuKeywordReplyOn: number;
   xianyuAutoRateOn: number;
+  xianyuAutoRateContent: string;
   xianyuAutoPolishOn: number;
   lastPolishTime?: number;
   humanInterventionOn: number;
@@ -169,6 +170,7 @@ export function updateGoodsAutomationStatus(data: {
   xyGoodsId: string;
   xianyuAutoRateOn: number;
   xianyuAutoPolishOn: number;
+  xianyuAutoRateContent?: string;
 }) {
   return request({
     url: '/items/updateGoodsAutomationStatus',

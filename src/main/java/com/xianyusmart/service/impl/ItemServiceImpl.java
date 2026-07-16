@@ -350,6 +350,7 @@ public class ItemServiceImpl implements ItemService {
                         itemWithConfig.setXianyuAutoDeliveryOn(config.getXianyuAutoDeliveryOn());
                         itemWithConfig.setXianyuAutoReplyOn(config.getXianyuAutoReplyOn());
                         itemWithConfig.setXianyuAutoRateOn(config.getXianyuAutoRateOn());
+                        itemWithConfig.setXianyuAutoRateContent(config.getXianyuAutoRateContent());
                         itemWithConfig.setXianyuAutoPolishOn(config.getXianyuAutoPolishOn());
                         itemWithConfig.setXianyuAutoReplyContextOn(config.getXianyuAutoReplyContextOn());
                         itemWithConfig.setXianyuKeywordReplyOn(config.getXianyuKeywordReplyOn());
@@ -359,6 +360,7 @@ public class ItemServiceImpl implements ItemService {
                         itemWithConfig.setXianyuAutoDeliveryOn(0);
                         itemWithConfig.setXianyuAutoReplyOn(0);
                         itemWithConfig.setXianyuAutoRateOn(0);
+                        itemWithConfig.setXianyuAutoRateContent(com.xianyusmart.entity.XianyuGoodsConfig.DEFAULT_AUTO_RATE_CONTENT);
                         itemWithConfig.setXianyuAutoPolishOn(0);
                         itemWithConfig.setXianyuAutoReplyContextOn(0);
                         itemWithConfig.setXianyuKeywordReplyOn(0);
@@ -499,6 +501,7 @@ public class ItemServiceImpl implements ItemService {
                 itemWithConfig.setXianyuAutoDeliveryOn(config.getXianyuAutoDeliveryOn());
                 itemWithConfig.setXianyuAutoReplyOn(config.getXianyuAutoReplyOn());
                 itemWithConfig.setXianyuAutoRateOn(config.getXianyuAutoRateOn());
+                itemWithConfig.setXianyuAutoRateContent(config.getXianyuAutoRateContent());
                 itemWithConfig.setXianyuAutoPolishOn(config.getXianyuAutoPolishOn());
                 itemWithConfig.setXianyuAutoReplyContextOn(config.getXianyuAutoReplyContextOn() != null ? config.getXianyuAutoReplyContextOn() : 1);
                 itemWithConfig.setXianyuKeywordReplyOn(config.getXianyuKeywordReplyOn());
@@ -508,6 +511,7 @@ public class ItemServiceImpl implements ItemService {
                 itemWithConfig.setXianyuAutoDeliveryOn(0);
                 itemWithConfig.setXianyuAutoReplyOn(0);
                 itemWithConfig.setXianyuAutoRateOn(0);
+                itemWithConfig.setXianyuAutoRateContent(com.xianyusmart.entity.XianyuGoodsConfig.DEFAULT_AUTO_RATE_CONTENT);
                 itemWithConfig.setXianyuAutoPolishOn(0);
                 itemWithConfig.setXianyuAutoReplyContextOn(1);
                 itemWithConfig.setXianyuKeywordReplyOn(0);
@@ -527,6 +531,7 @@ public class ItemServiceImpl implements ItemService {
             itemWithConfig.setXianyuAutoDeliveryOn(0);
             itemWithConfig.setXianyuAutoReplyOn(0);
             itemWithConfig.setXianyuAutoRateOn(0);
+            itemWithConfig.setXianyuAutoRateContent(com.xianyusmart.entity.XianyuGoodsConfig.DEFAULT_AUTO_RATE_CONTENT);
             itemWithConfig.setXianyuAutoPolishOn(0);
             itemWithConfig.setXianyuAutoReplyContextOn(1);
             itemWithConfig.setXianyuKeywordReplyOn(0);
@@ -996,8 +1001,9 @@ public class ItemServiceImpl implements ItemService {
         if (reqDTO.getXianyuAccountId() == null || reqDTO.getXyGoodsId() == null || reqDTO.getXyGoodsId().isBlank()) {
             return ResultObject.failed("账号和商品不能为空");
         }
-        if (reqDTO.getXianyuAutoRateOn() == null && reqDTO.getXianyuAutoPolishOn() == null) {
-            return ResultObject.failed("至少需要更新一个自动化开关");
+        if (reqDTO.getXianyuAutoRateOn() == null && reqDTO.getXianyuAutoPolishOn() == null
+                && reqDTO.getXianyuAutoRateContent() == null) {
+            return ResultObject.failed("至少需要更新一项自动化设置");
         }
 
         com.xianyusmart.entity.XianyuGoodsConfig goodsConfig =
@@ -1010,6 +1016,13 @@ public class ItemServiceImpl implements ItemService {
         }
         if (reqDTO.getXianyuAutoRateOn() != null) {
             goodsConfig.setXianyuAutoRateOn(reqDTO.getXianyuAutoRateOn() == 1 ? 1 : 0);
+        }
+        if (reqDTO.getXianyuAutoRateContent() != null) {
+            String content = reqDTO.getXianyuAutoRateContent().trim();
+            if (content.isEmpty() || content.length() > 500) {
+                return ResultObject.failed("评价内容长度应为1至500个字符");
+            }
+            goodsConfig.setXianyuAutoRateContent(content);
         }
         if (reqDTO.getXianyuAutoPolishOn() != null) {
             goodsConfig.setXianyuAutoPolishOn(reqDTO.getXianyuAutoPolishOn() == 1 ? 1 : 0);

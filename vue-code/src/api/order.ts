@@ -24,6 +24,8 @@ export interface DeliveryRecordVO {
   confirmState: number
   rateStatus: number
   rateTime?: string
+  rateContent?: string
+  rateSource?: 'AUTO' | 'MANUAL'
   orderId?: string
   skuName?: string
   orderCreateTime?: string
@@ -60,6 +62,14 @@ export function confirmShipment(data: { xianyuAccountId: number; orderId: string
 export function requeueDelivery(data: { id: number; xianyuAccountId: number }) {
   return request<string>({
     url: '/order/requeueDelivery',
+    method: 'POST',
+    data
+  })
+}
+
+export function rateOrder(data: { xianyuAccountId: number; orderId: string; content: string }) {
+  return request<string>({
+    url: '/order/rate',
     method: 'POST',
     data
   })

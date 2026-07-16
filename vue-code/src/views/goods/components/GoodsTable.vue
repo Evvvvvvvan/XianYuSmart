@@ -25,6 +25,7 @@ interface Emits {
   (e: 'toggleAutoReply', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoRate', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoPolish', item: GoodsItemWithConfig, value: boolean): void
+  (e: 'configAutoRate', item: GoodsItemWithConfig): void
   (e: 'configAutoDelivery', item: GoodsItemWithConfig): void
   (e: 'delete', xyGoodId: string, title: string): void
 }
@@ -141,9 +142,9 @@ const handleImgError = (e: Event) => {
         </button>
         <button
           class="goods-card__action goods-card__action--config"
-          @click.stop="emit('toggleAutoRate', item, item.xianyuAutoRateOn !== 1)"
+          @click.stop="emit('configAutoRate', item)"
         >
-          <span>{{ item.xianyuAutoRateOn === 1 ? '关评价' : '开评价' }}</span>
+          <span>评价设置</span>
         </button>
         <button
           class="goods-card__action goods-card__action--config"
@@ -237,9 +238,12 @@ const handleImgError = (e: Event) => {
             </div>
           </td>
           <td class="table__td table__td--switch">
-            <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoRateOn === 1 }" @click="emit('toggleAutoRate', item, item.xianyuAutoRateOn !== 1)">
-              <span class="toggle-btn__track"><span class="toggle-btn__thumb"></span></span>
-            </button>
+            <div class="automation-setting">
+              <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoRateOn === 1 }" @click="emit('toggleAutoRate', item, item.xianyuAutoRateOn !== 1)">
+                <span class="toggle-btn__track"><span class="toggle-btn__thumb"></span></span>
+              </button>
+              <button class="automation-setting__link" @click="emit('configAutoRate', item)">设置文案</button>
+            </div>
           </td>
           <td class="table__td table__td--switch">
             <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoPolishOn === 1 }" @click="emit('toggleAutoPolish', item, item.xianyuAutoPolishOn !== 1)">
@@ -718,6 +722,21 @@ const handleImgError = (e: Event) => {
 /* Toggle Switch */
 .table__td--switch {
   text-align: center;
+}
+
+.automation-setting {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.automation-setting__link {
+  border: 0;
+  background: transparent;
+  color: var(--c-accent);
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .toggle-btn {

@@ -14,6 +14,9 @@ import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 import IconPackage from '@/components/icons/IconPackage.vue'
 
 import OrderTable from './components/OrderTable.vue'
+import { rateOrder } from '@/api/order'
+import { updateGoodsAutomationStatus, type GoodsItemWithConfig } from '@/api/goods'
+import { showError, showSuccess } from '@/utils'
 
 const goodsPanelCollapsed = ref(true)
 const isDesktopCollapsed = computed(() => !isMobile.value && goodsPanelCollapsed.value)
@@ -48,6 +51,83 @@ const {
   clearGoodsFilter,
   toggleOnlyOnSale
 } = useOrderManager()
+
+const ratePresets = [
+  '交易愉快，感谢支持，期待再次合作。满意的话欢迎点亮小红花。',
+  '感谢信任与支持，订单已顺利完成，期待下次继续合作。',
+  '很高兴为本次交易提供服务，感谢支持，祝使用愉快。'
+]
+const showRateRuleDialog = ref(false)
+const rateRuleGoodsId = ref('')
+const rateRuleEnabled = ref(false)
+const rateRuleContent = ref(ratePresets[0]!)
+const rateRuleSaving = ref(false)
+const showManualRateDialog = ref(false)
+const manualRateTarget = ref<any>(null)
+const manualRateContent = ref(ratePresets[0]!)
+const manualRateSaving = ref(false)
+const pendingRateCount = computed(() => orderList.value.filter(order => order.rateStatus !== 1).length)
+const selectedRateGoods = computed<GoodsItemWithConfig | undefined>(() => goodsList.value.find(goods => goods.item.xyGoodId === rateRuleGoodsId.value))
+
+const syncRateRuleForm = () => {
+  const goods = selectedRateGoods.value
+  rateRuleEnabled.value = goods?.xianyuAutoRateOn === 1
+  rateRuleContent.value = goods?.xianyuAutoRateContent || ratePresets[0]!
+}
+
+const openRateRuleDialog = () => {
+  const goods = goodsList.value.find(item => item.item.xyGoodId === selectedGoodsId.value) || goodsList.value[0]
+  if (!goods) return showError('暂无可配置商品，请先同步商品数据')
+  rateRuleGoodsId.value = goods.item.xyGoodId
+  syncRateRuleForm()
+  showRateRuleDialog.value = true
+}
+
+const saveRateRule = async () => {
+  const goods = selectedRateGoods.value
+  const content = rateRuleContent.value.trim()
+  if (!goods || !queryParams.xianyuAccountId) return showError('请选择商品和账号')
+  if (!content || content.length > 500) return showError('评价内容长度应为1至500个字符')
+  rateRuleSaving.value = true
+  try {
+    await updateGoodsAutomationStatus({
+      xianyuAccountId: queryParams.xianyuAccountId,
+      xyGoodsId: goods.item.xyGoodId,
+      xianyuAutoRateOn: rateRuleEnabled.value ? 1 : 0,
+      xianyuAutoPolishOn: goods.xianyuAutoPolishOn || 0,
+      xianyuAutoRateContent: content
+    })
+    goods.xianyuAutoRateOn = rateRuleEnabled.value ? 1 : 0
+    goods.xianyuAutoRateContent = content
+    showRateRuleDialog.value = false
+    showSuccess('评价规则已保存')
+  } finally {
+    rateRuleSaving.value = false
+  }
+}
+
+const openManualRate = (order: any) => {
+  manualRateTarget.value = order
+  const goods = goodsList.value.find(item => item.item.xyGoodId === order.xyGoodsId)
+  manualRateContent.value = goods?.xianyuAutoRateContent || ratePresets[0]!
+  showManualRateDialog.value = true
+}
+
+const submitManualRate = async () => {
+  const order = manualRateTarget.value
+  const content = manualRateContent.value.trim()
+  if (!order?.xianyuAccountId || !order.orderId) return showError('订单信息不完整')
+  if (!content || content.length > 500) return showError('评价内容长度应为1至500个字符')
+  manualRateSaving.value = true
+  try {
+    await rateOrder({ xianyuAccountId: order.xianyuAccountId, orderId: order.orderId, content })
+    showManualRateDialog.value = false
+    showSuccess('评价成功')
+    await loadOrders()
+  } finally {
+    manualRateSaving.value = false
+  }
+}
 
 const showFilterSheet = ref(false)
 const isMobile = ref(false)
@@ -228,11 +308,17 @@ const executeConfirmShipment = async () => {
           <IconRefresh />
           <span class="mobile-hidden">刷新</span>
         </button>
+        <button class="btn btn--primary" @click="openRateRuleDialog">评价规则</button>
         <button v-if="isMobile" class="btn btn--secondary" @click="openFilterSheet">
           <IconFilter />
           <span>筛选</span>
         </button>
       </div>
+    </div>
+
+    <div class="evaluation-guide">
+      <div><strong>评价处理</strong><span>每条待评价订单可直接手动评价；自动评价按商品独立开启并使用已保存文案。</span></div>
+      <span class="evaluation-guide__count">当前列表待处理 {{ pendingRateCount }} 条</span>
     </div>
 
     <div class="orders__body" :class="{ 'orders__body--no-goods': isMobile }">
@@ -336,6 +422,7 @@ const executeConfirmShipment = async () => {
           @copy-sid="copySId"
           @confirm-shipment="openConfirmDialog"
           @retry-delivery="handleRetryDelivery"
+          @rate="openManualRate"
         />
       </div>
 
@@ -408,6 +495,34 @@ const executeConfirmShipment = async () => {
     </Transition>
 
     <Transition name="overlay-fade">
+      <div v-if="showRateRuleDialog" class="orders__dialog-overlay" @click.self="showRateRuleDialog = false">
+        <form class="orders__dialog rate-dialog" @submit.prevent="saveRateRule">
+          <div class="orders__dialog-header"><div><h3 class="orders__dialog-title">自动评价规则</h3><p>按商品保存开关与固定评价文案</p></div></div>
+          <div class="orders__dialog-body rate-dialog__body">
+            <label class="rate-dialog__field"><span>商品</span><select v-model="rateRuleGoodsId" @change="syncRateRuleForm"><option v-for="goods in goodsList" :key="goods.item.xyGoodId" :value="goods.item.xyGoodId">{{ goods.item.title }}</option></select></label>
+            <label class="rate-dialog__switch"><span><strong>启用自动评价</strong><small>后台定期检查待评价订单，成功后立即回写状态</small></span><input v-model="rateRuleEnabled" type="checkbox"></label>
+            <label class="rate-dialog__field"><span>自动评价内容</span><textarea v-model="rateRuleContent" maxlength="500" rows="5"></textarea><small>{{ rateRuleContent.trim().length }}/500</small></label>
+            <div class="rate-dialog__presets"><span>快捷文案</span><button v-for="preset in ratePresets" :key="preset" type="button" @click="rateRuleContent = preset">{{ preset }}</button></div>
+          </div>
+          <div class="orders__dialog-footer"><button type="button" class="orders__dialog-btn orders__dialog-btn--cancel" @click="showRateRuleDialog = false">取消</button><button type="submit" class="orders__dialog-btn orders__dialog-btn--confirm" :disabled="rateRuleSaving">{{ rateRuleSaving ? '保存中' : '保存规则' }}</button></div>
+        </form>
+      </div>
+    </Transition>
+
+    <Transition name="overlay-fade">
+      <div v-if="showManualRateDialog" class="orders__dialog-overlay" @click.self="showManualRateDialog = false">
+        <form class="orders__dialog rate-dialog" @submit.prevent="submitManualRate">
+          <div class="orders__dialog-header"><div><h3 class="orders__dialog-title">手动评价</h3><p>订单 {{ manualRateTarget?.orderId }}</p></div></div>
+          <div class="orders__dialog-body rate-dialog__body">
+            <label class="rate-dialog__field"><span>评价内容</span><textarea v-model="manualRateContent" maxlength="500" rows="5" autofocus></textarea><small>{{ manualRateContent.trim().length }}/500，提交后不可在本系统撤回</small></label>
+            <div class="rate-dialog__presets"><span>快捷文案</span><button v-for="preset in ratePresets" :key="preset" type="button" @click="manualRateContent = preset">{{ preset }}</button></div>
+          </div>
+          <div class="orders__dialog-footer"><button type="button" class="orders__dialog-btn orders__dialog-btn--cancel" @click="showManualRateDialog = false">取消</button><button type="submit" class="orders__dialog-btn orders__dialog-btn--confirm" :disabled="manualRateSaving">{{ manualRateSaving ? '提交中' : '确认评价' }}</button></div>
+        </form>
+      </div>
+    </Transition>
+
+    <Transition name="overlay-fade">
       <div v-if="showConfirmDialog" class="orders__dialog-overlay" @click.self="showConfirmDialog = false">
         <div class="orders__dialog">
           <div class="orders__dialog-header">
@@ -448,4 +563,6 @@ const executeConfirmShipment = async () => {
 .overlay-fade-leave-to {
   opacity: 0;
 }
+
+.evaluation-guide{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 16px 12px;padding:12px 14px;border:1px solid rgba(0,122,255,.14);border-radius:10px;background:rgba(0,122,255,.04)}.evaluation-guide>div{display:flex;flex-direction:column;gap:3px}.evaluation-guide strong{font-size:13px}.evaluation-guide span{color:#6e6e73;font-size:12px}.evaluation-guide__count{white-space:nowrap}.rate-dialog{max-width:580px}.rate-dialog .orders__dialog-header p{margin:4px 0 0;color:#86868b;font-size:12px}.rate-dialog__body{display:flex;flex-direction:column;gap:16px}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field select,.rate-dialog__field textarea{box-sizing:border-box;width:100%;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;background:#fff;font:inherit}.rate-dialog__field textarea{resize:vertical}.rate-dialog__field small,.rate-dialog__switch small{color:#86868b;font-size:12px;font-weight:400}.rate-dialog__switch{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:13px;border:1px solid rgba(60,60,67,.12);border-radius:9px}.rate-dialog__switch span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch input{width:18px;height:18px}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);border-radius:8px;padding:9px 10px;cursor:pointer}.orders__dialog-btn:disabled{opacity:.5;cursor:not-allowed}@media(max-width:767px){.evaluation-guide{margin:0 10px 10px;align-items:flex-start;flex-direction:column}.evaluation-guide__count{white-space:normal}}
 </style>

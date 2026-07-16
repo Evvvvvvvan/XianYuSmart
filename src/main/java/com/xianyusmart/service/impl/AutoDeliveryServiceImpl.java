@@ -262,6 +262,10 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             dto.setFailReason(record.getFailReason() != null && !record.getFailReason().isBlank()
                     ? record.getFailReason() : record.getLastErrorMessage());
             dto.setConfirmState(record.getConfirmState());
+            dto.setRateStatus(record.getRateStatus());
+            dto.setRateTime(record.getRateTime());
+            dto.setRateContent(record.getRateContent());
+            dto.setRateSource(record.getRateSource());
             dto.setOrderId(record.getOrderId());
             dto.setSkuName(record.getSkuName());
             dto.setOrderCreateTime(record.getOrderCreateTime());

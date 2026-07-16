@@ -14,5 +14,7 @@ public class UpdateGoodsAutomationReqDTO {
 
     private Integer xianyuAutoRateOn;
 
+    private String xianyuAutoRateContent;
+
     private Integer xianyuAutoPolishOn;
 }

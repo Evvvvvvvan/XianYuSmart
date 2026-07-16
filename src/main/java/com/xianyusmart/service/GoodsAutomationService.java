@@ -16,10 +16,8 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -30,7 +28,6 @@ import java.util.stream.Collectors;
 public class GoodsAutomationService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
-    private static final String RATE_CONTENT = "交易愉快，感谢支持，期待再次合作。满意的话欢迎点亮小红花。";
     private static final int MAX_RATE_PER_ACCOUNT = 20;
 
     private final XianyuGoodsConfigMapper goodsConfigMapper;
@@ -106,45 +103,90 @@ public class GoodsAutomationService {
             return;
         }
 
-        Set<String> enabledGoodsIds = configs.stream()
-                .map(XianyuGoodsConfig::getXyGoodsId)
-                .collect(Collectors.toCollection(HashSet::new));
+        Map<String, XianyuGoodsConfig> configsByGoodsId = configs.stream()
+                .collect(Collectors.toMap(XianyuGoodsConfig::getXyGoodsId, config -> config, (left, right) -> left));
         for (Map<String, Object> item : extractItems(listResult.extractData())) {
             String orderId = extractOrderId(item);
             if (orderId == null) {
                 continue;
             }
             XianyuGoodsOrder order = goodsOrderMapper.selectByAccountIdAndOrderId(accountId, orderId);
-            if (order == null || !enabledGoodsIds.contains(order.getXyGoodsId())) {
+            XianyuGoodsConfig config = order == null ? null : configsByGoodsId.get(order.getXyGoodsId());
+            if (config == null) {
                 continue;
             }
-            if (!rateOrder(accountId, orderId, order.getXyGoodsId(), cookie)) {
+            XianyuApiCallUtils.ApiCallResult result = rateOrder(
+                    accountId, orderId, order.getXyGoodsId(), resolveRateContent(config), "AUTO", cookie);
+            if (!result.isSuccess() && isCredentialOrRiskFailure(result)) {
                 break;
             }
             pauseBetweenRequests();
         }
     }
 
-    private boolean rateOrder(Long accountId, String orderId, String goodsId, String cookie) {
+    /**
+     * 手动评价复用自动评价调用链并记录文案来源
+     */
+    public void manualRate(Long accountId, String orderId, String feedback) {
+        if (accountId == null || orderId == null || orderId.isBlank()) {
+            throw new IllegalArgumentException("账号和订单不能为空");
+        }
+        XianyuGoodsOrder order = goodsOrderMapper.selectByAccountIdAndOrderId(accountId, orderId.trim());
+        if (order == null) {
+            throw new IllegalArgumentException("订单不存在或无权操作");
+        }
+        if (Integer.valueOf(1).equals(order.getRateStatus())) {
+            throw new IllegalArgumentException("订单已经评价，无需重复操作");
+        }
+        String content = normalizeRateContent(feedback, false);
+        String cookie = accountService.getCookieByAccountId(accountId);
+        if (cookie == null || cookie.isBlank()) {
+            throw new IllegalStateException("账号 Cookie 无效，请先更新登录状态");
+        }
+        XianyuApiCallUtils.ApiCallResult result = rateOrder(
+                accountId, order.getOrderId(), order.getXyGoodsId(), content, "MANUAL", cookie);
+        if (!result.isSuccess()) {
+            throw new IllegalStateException(result.getErrorMessage() == null ? "评价失败，请稍后重试" : result.getErrorMessage());
+        }
+    }
+
+    private XianyuApiCallUtils.ApiCallResult rateOrder(Long accountId, String orderId, String goodsId, String feedback,
+                                                       String source, String cookie) {
         Map<String, Object> request = new HashMap<>();
         request.put("tradeId", orderId);
         request.put("rate", 1);
-        request.put("feedback", RATE_CONTENT);
+        request.put("feedback", feedback);
         request.put("createOrAppend", 0);
 
         XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
                 accountId, "mtop.taobao.idle.rate.create", "4.0", request, cookie,
                 sellerHeaders(), sellerQueryParams());
-        goodsOrderMapper.updateRateStatus(accountId, orderId, result.isSuccess() ? 1 : -1);
+        goodsOrderMapper.updateRateResult(accountId, orderId, result.isSuccess() ? 1 : -1, feedback, source);
+        String action = "MANUAL".equals(source) ? "手动评价" : "自动评价";
         operationLogService.log(accountId, OperationConstants.Type.SEND, OperationConstants.Module.AUTO_RATE,
-                result.isSuccess() ? "自动评价成功" : "自动评价失败",
+                result.isSuccess() ? action + "成功" : action + "失败",
                 result.isSuccess() ? OperationConstants.Status.SUCCESS : OperationConstants.Status.FAIL,
-                OperationConstants.TargetType.ORDER, orderId, null, result.getResponse(), result.getErrorMessage(), null);
+                OperationConstants.TargetType.ORDER, orderId, feedback, result.getResponse(), result.getErrorMessage(), null);
         if (!result.isSuccess()) {
-            log.warn("【账号{}】自动评价失败: orderId={}, goodsId={}, error={}",
-                    accountId, orderId, goodsId, result.getErrorMessage());
+            log.warn("【账号{}】{}失败: orderId={}, goodsId={}, error={}",
+                    accountId, action, orderId, goodsId, result.getErrorMessage());
         }
-        return result.isSuccess() || !isCredentialOrRiskFailure(result);
+        return result;
+    }
+
+    private String resolveRateContent(XianyuGoodsConfig config) {
+        return normalizeRateContent(config.getXianyuAutoRateContent(), true);
+    }
+
+    private String normalizeRateContent(String content, boolean useDefault) {
+        String normalized = content == null ? "" : content.trim();
+        if (normalized.isEmpty() && useDefault) {
+            return XianyuGoodsConfig.DEFAULT_AUTO_RATE_CONTENT;
+        }
+        if (normalized.isEmpty() || normalized.length() > 500) {
+            throw new IllegalArgumentException("评价内容长度应为1至500个字符");
+        }
+        return normalized;
     }
 
     private boolean polishGoods(XianyuGoodsConfig config) {

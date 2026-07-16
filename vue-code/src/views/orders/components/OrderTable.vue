@@ -23,6 +23,7 @@ interface Emits {
   (e: 'copySid', sid: string): void
   (e: 'confirmShipment', item: DeliveryRecordItem): void
   (e: 'retryDelivery', item: DeliveryRecordItem): void
+  (e: 'rate', item: DeliveryRecordItem): void
   (e: 'viewDetail', item: DeliveryRecordItem): void
 }
 
@@ -221,6 +222,13 @@ const getConfirmBg = (state: number) => {
           <span class="detail-tooltip">单击查询本地，双击查询闲鱼服务器</span>
         </button>
         <button
+          v-if="order.orderId && order.rateStatus !== 1"
+          class="order-card__action order-card__action--rate"
+          @click="emit('rate', order)"
+        >
+          <span>评价</span>
+        </button>
+        <button
           v-if="order.orderId"
           class="order-card__action order-card__action--ship"
           :class="{ 'order-card__action--loading': order.confirming }"
@@ -298,9 +306,10 @@ const getConfirmBg = (state: number) => {
             </span>
           </td>
           <td class="table__td table__td--center">
-            <span class="status-tag" :style="{ color: order.rateStatus === 1 ? '#30D158' : order.rateStatus === -1 ? '#FF453A' : 'rgba(28,28,30,.55)', background: order.rateStatus === 1 ? 'rgba(48,209,88,.2)' : order.rateStatus === -1 ? 'rgba(255,69,58,.15)' : 'rgba(120,120,128,.12)' }">
+            <span class="status-tag" :title="order.rateContent || ''" :style="{ color: order.rateStatus === 1 ? '#30D158' : order.rateStatus === -1 ? '#FF453A' : 'rgba(28,28,30,.55)', background: order.rateStatus === 1 ? 'rgba(48,209,88,.2)' : order.rateStatus === -1 ? 'rgba(255,69,58,.15)' : 'rgba(120,120,128,.12)' }">
               {{ order.rateStatus === 1 ? '已评价' : order.rateStatus === -1 ? '失败待重试' : '待评价' }}
             </span>
+            <small v-if="order.rateStatus === 1" class="rate-source">{{ order.rateSource === 'MANUAL' ? '手动' : '自动' }}</small>
           </td>
           <td class="table__td table__td--center">
             <span class="time-text">{{ formatTime(order.orderCreateTime || order.createTime) }}</span>
@@ -324,6 +333,13 @@ const getConfirmBg = (state: number) => {
               <IconEye />
               <span>详情</span>
               <span class="detail-tooltip">单击查询本地，双击查询闲鱼服务器</span>
+            </button>
+            <button
+              v-if="order.orderId && order.rateStatus !== 1"
+              class="table__action table__action--rate"
+              @click="emit('rate', order)"
+            >
+              <span>评价</span>
             </button>
             <button
               v-if="order.orderId"
@@ -639,6 +655,11 @@ const getConfirmBg = (state: number) => {
   border-color: rgba(255, 149, 0, 0.2);
 }
 
+.order-card__action--rate {
+  color: #af52de;
+  border-color: rgba(175, 82, 222, 0.2);
+}
+
 @media (hover: hover) {
   .order-card__action--ship:hover {
     background: rgba(52, 199, 89, 0.06);
@@ -861,6 +882,18 @@ const getConfirmBg = (state: number) => {
 .table__action--retry {
   border-color: rgba(255, 149, 0, 0.2);
   color: #ff9500;
+}
+
+.table__action--rate {
+  border-color: rgba(175, 82, 222, 0.2);
+  color: #af52de;
+}
+
+.rate-source {
+  display: block;
+  margin-top: 4px;
+  color: var(--c-text-3);
+  font-size: 10px;
 }
 
 @media (hover: hover) {
