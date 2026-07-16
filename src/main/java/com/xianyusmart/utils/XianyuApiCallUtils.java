@@ -59,7 +59,14 @@ public class XianyuApiCallUtils {
                                           Map<String, Object> dataMap, String cookiesStr,
                                           Map<String, String> extraHeaders,
                                           Map<String, String> extraQueryParams) {
-        return callApiWithRetry(accountId, apiName, dataMap, cookiesStr, extraHeaders, extraQueryParams, 0);
+        return callApiWithRetry(accountId, apiName, "1.0", dataMap, cookiesStr, extraHeaders, extraQueryParams, 0);
+    }
+
+    public ApiCallResult callApiWithRetry(Long accountId, String apiName, String apiPathVersion,
+                                          Map<String, Object> dataMap, String cookiesStr,
+                                          Map<String, String> extraHeaders,
+                                          Map<String, String> extraQueryParams) {
+        return callApiWithRetry(accountId, apiName, apiPathVersion, dataMap, cookiesStr, extraHeaders, extraQueryParams, 0);
     }
     
     private ApiCallResult callApiWithRetry(Long accountId, String apiName,
@@ -80,8 +87,17 @@ public class XianyuApiCallUtils {
                                            Map<String, String> extraHeaders,
                                            Map<String, String> extraQueryParams,
                                            int retryCount) {
+        return callApiWithRetry(accountId, apiName, "1.0", dataMap, cookiesStr, extraHeaders, extraQueryParams, retryCount);
+    }
+
+    private ApiCallResult callApiWithRetry(Long accountId, String apiName, String apiPathVersion,
+                                           Map<String, Object> dataMap, String cookiesStr,
+                                           Map<String, String> extraHeaders,
+                                           Map<String, String> extraQueryParams,
+                                           int retryCount) {
         try {
-            XianyuApiUtils.ApiCallResultWithHeaders result = XianyuApiUtils.callApiWithHeaders(apiName, dataMap, cookiesStr, null, null, extraHeaders, extraQueryParams);
+            XianyuApiUtils.ApiCallResultWithHeaders result = XianyuApiUtils.callApiWithHeaders(
+                    apiName, apiPathVersion, dataMap, cookiesStr, null, null, extraHeaders, extraQueryParams);
 
             String response = result.getBody();
             if (response == null || response.isEmpty()) {
@@ -141,7 +157,8 @@ public class XianyuApiCallUtils {
                     String newCookieStr = accountService.getCookieByAccountId(accountId);
                     if (newCookieStr != null && !newCookieStr.isEmpty()) {
                         // 递归调用，重试API
-                        return callApiWithRetry(accountId, apiName, dataMap, newCookieStr, retryCount + 1);
+                        return callApiWithRetry(accountId, apiName, apiPathVersion, dataMap, newCookieStr,
+                                extraHeaders, extraQueryParams, retryCount + 1);
                     } else {
                         log.error("【账号{}】获取新Cookie失败", accountId);
                     }

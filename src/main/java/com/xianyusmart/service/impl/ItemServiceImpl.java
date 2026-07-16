@@ -349,6 +349,8 @@ public class ItemServiceImpl implements ItemService {
                     if (config != null) {
                         itemWithConfig.setXianyuAutoDeliveryOn(config.getXianyuAutoDeliveryOn());
                         itemWithConfig.setXianyuAutoReplyOn(config.getXianyuAutoReplyOn());
+                        itemWithConfig.setXianyuAutoRateOn(config.getXianyuAutoRateOn());
+                        itemWithConfig.setXianyuAutoPolishOn(config.getXianyuAutoPolishOn());
                         itemWithConfig.setXianyuAutoReplyContextOn(config.getXianyuAutoReplyContextOn());
                         itemWithConfig.setXianyuKeywordReplyOn(config.getXianyuKeywordReplyOn());
                         itemWithConfig.setHumanInterventionOn(config.getHumanInterventionOn());
@@ -356,6 +358,8 @@ public class ItemServiceImpl implements ItemService {
                     } else {
                         itemWithConfig.setXianyuAutoDeliveryOn(0);
                         itemWithConfig.setXianyuAutoReplyOn(0);
+                        itemWithConfig.setXianyuAutoRateOn(0);
+                        itemWithConfig.setXianyuAutoPolishOn(0);
                         itemWithConfig.setXianyuAutoReplyContextOn(0);
                         itemWithConfig.setXianyuKeywordReplyOn(0);
                         itemWithConfig.setHumanInterventionOn(0);
@@ -373,6 +377,8 @@ public class ItemServiceImpl implements ItemService {
                 } else {
                     itemWithConfig.setXianyuAutoDeliveryOn(0);
                     itemWithConfig.setXianyuAutoReplyOn(0);
+                    itemWithConfig.setXianyuAutoRateOn(0);
+                    itemWithConfig.setXianyuAutoPolishOn(0);
                     itemWithConfig.setXianyuAutoReplyContextOn(0);
                     itemWithConfig.setXianyuKeywordReplyOn(0);
                     itemWithConfig.setHumanInterventionOn(0);
@@ -492,6 +498,8 @@ public class ItemServiceImpl implements ItemService {
             if (config != null) {
                 itemWithConfig.setXianyuAutoDeliveryOn(config.getXianyuAutoDeliveryOn());
                 itemWithConfig.setXianyuAutoReplyOn(config.getXianyuAutoReplyOn());
+                itemWithConfig.setXianyuAutoRateOn(config.getXianyuAutoRateOn());
+                itemWithConfig.setXianyuAutoPolishOn(config.getXianyuAutoPolishOn());
                 itemWithConfig.setXianyuAutoReplyContextOn(config.getXianyuAutoReplyContextOn() != null ? config.getXianyuAutoReplyContextOn() : 1);
                 itemWithConfig.setXianyuKeywordReplyOn(config.getXianyuKeywordReplyOn());
                 itemWithConfig.setHumanInterventionOn(config.getHumanInterventionOn());
@@ -499,6 +507,8 @@ public class ItemServiceImpl implements ItemService {
             } else {
                 itemWithConfig.setXianyuAutoDeliveryOn(0);
                 itemWithConfig.setXianyuAutoReplyOn(0);
+                itemWithConfig.setXianyuAutoRateOn(0);
+                itemWithConfig.setXianyuAutoPolishOn(0);
                 itemWithConfig.setXianyuAutoReplyContextOn(1);
                 itemWithConfig.setXianyuKeywordReplyOn(0);
                 itemWithConfig.setHumanInterventionOn(0);
@@ -516,6 +526,8 @@ public class ItemServiceImpl implements ItemService {
         } else {
             itemWithConfig.setXianyuAutoDeliveryOn(0);
             itemWithConfig.setXianyuAutoReplyOn(0);
+            itemWithConfig.setXianyuAutoRateOn(0);
+            itemWithConfig.setXianyuAutoPolishOn(0);
             itemWithConfig.setXianyuAutoReplyContextOn(1);
             itemWithConfig.setXianyuKeywordReplyOn(0);
             itemWithConfig.setHumanInterventionOn(0);
@@ -977,6 +989,34 @@ public class ItemServiceImpl implements ItemService {
                     reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId(), e);
             return ResultObject.failed("更新自动回复状态失败: " + e.getMessage());
         }
+    }
+
+    @Override
+    public ResultObject<String> updateGoodsAutomationStatus(UpdateGoodsAutomationReqDTO reqDTO) {
+        if (reqDTO.getXianyuAccountId() == null || reqDTO.getXyGoodsId() == null || reqDTO.getXyGoodsId().isBlank()) {
+            return ResultObject.failed("账号和商品不能为空");
+        }
+        if (reqDTO.getXianyuAutoRateOn() == null && reqDTO.getXianyuAutoPolishOn() == null) {
+            return ResultObject.failed("至少需要更新一个自动化开关");
+        }
+
+        com.xianyusmart.entity.XianyuGoodsConfig goodsConfig =
+                autoDeliveryService.getGoodsConfig(reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId());
+        if (goodsConfig == null) {
+            goodsConfig = new com.xianyusmart.entity.XianyuGoodsConfig();
+            goodsConfig.setXianyuAccountId(reqDTO.getXianyuAccountId());
+            goodsConfig.setXyGoodsId(reqDTO.getXyGoodsId());
+            goodsConfig.setCreateTime(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+        }
+        if (reqDTO.getXianyuAutoRateOn() != null) {
+            goodsConfig.setXianyuAutoRateOn(reqDTO.getXianyuAutoRateOn() == 1 ? 1 : 0);
+        }
+        if (reqDTO.getXianyuAutoPolishOn() != null) {
+            goodsConfig.setXianyuAutoPolishOn(reqDTO.getXianyuAutoPolishOn() == 1 ? 1 : 0);
+        }
+        goodsConfig.setUpdateTime(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
+        autoDeliveryService.saveOrUpdateGoodsConfig(goodsConfig);
+        return ResultObject.success("商品运营自动化状态更新成功");
     }
     
     @Override

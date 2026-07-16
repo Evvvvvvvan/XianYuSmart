@@ -23,6 +23,8 @@ interface Emits {
   (e: 'edit', item: GoodsItemWithConfig): void
   (e: 'toggleAutoDelivery', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoReply', item: GoodsItemWithConfig, value: boolean): void
+  (e: 'toggleAutoRate', item: GoodsItemWithConfig, value: boolean): void
+  (e: 'toggleAutoPolish', item: GoodsItemWithConfig, value: boolean): void
   (e: 'configAutoDelivery', item: GoodsItemWithConfig): void
   (e: 'delete', xyGoodId: string, title: string): void
 }
@@ -114,6 +116,8 @@ const handleImgError = (e: Event) => {
               <span v-if="item.xianyuAutoDeliveryOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">{{ item.autoDeliveryType === 2 ? '卡密发货' : '文本发货' }}</span>
               <span v-if="item.xianyuAutoReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">AI</span>
               <span v-if="item.xianyuKeywordReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--keyword">关键词</span>
+              <span v-if="item.xianyuAutoRateOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">评价</span>
+              <span v-if="item.xianyuAutoPolishOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">擦亮</span>
             </div>
           </div>
         </div>
@@ -134,6 +138,18 @@ const handleImgError = (e: Event) => {
         >
           <IconSparkle />
           <span>配置</span>
+        </button>
+        <button
+          class="goods-card__action goods-card__action--config"
+          @click.stop="emit('toggleAutoRate', item, item.xianyuAutoRateOn !== 1)"
+        >
+          <span>{{ item.xianyuAutoRateOn === 1 ? '关评价' : '开评价' }}</span>
+        </button>
+        <button
+          class="goods-card__action goods-card__action--config"
+          @click.stop="emit('toggleAutoPolish', item, item.xianyuAutoPolishOn !== 1)"
+        >
+          <span>{{ item.xianyuAutoPolishOn === 1 ? '关擦亮' : '开擦亮' }}</span>
         </button>
         <button
           class="goods-card__action goods-card__action--delete"
@@ -164,6 +180,8 @@ const handleImgError = (e: Event) => {
           <th class="table__th table__th--status">状态</th>
           <th class="table__th table__th--switch">发货模式</th>
           <th class="table__th table__th--switch">回复模式</th>
+          <th class="table__th table__th--switch">自动评价</th>
+          <th class="table__th table__th--switch">自动擦亮</th>
           <th class="table__th table__th--actions">操作</th>
         </tr>
       </thead>
@@ -217,6 +235,16 @@ const handleImgError = (e: Event) => {
               <span v-if="item.xianyuKeywordReplyOn === 1" class="reply-mode-tag reply-mode-tag--keyword">关键词</span>
               <span v-if="item.xianyuAutoReplyOn !== 1 && item.xianyuKeywordReplyOn !== 1" class="reply-mode-tag reply-mode-tag--off">-</span>
             </div>
+          </td>
+          <td class="table__td table__td--switch">
+            <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoRateOn === 1 }" @click="emit('toggleAutoRate', item, item.xianyuAutoRateOn !== 1)">
+              <span class="toggle-btn__track"><span class="toggle-btn__thumb"></span></span>
+            </button>
+          </td>
+          <td class="table__td table__td--switch">
+            <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoPolishOn === 1 }" @click="emit('toggleAutoPolish', item, item.xianyuAutoPolishOn !== 1)">
+              <span class="toggle-btn__track"><span class="toggle-btn__thumb"></span></span>
+            </button>
           </td>
           <td class="table__td table__td--actions">
             <button class="table__action table__action--edit" @click="emit('edit', item)">

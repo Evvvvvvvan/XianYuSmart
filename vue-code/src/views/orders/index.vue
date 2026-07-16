@@ -167,7 +167,7 @@ const executeConfirmShipment = async () => {
         <div class="orders__title-icon">
           <IconClipboard />
         </div>
-        <h1 class="orders__title">发货记录</h1>
+        <h1 class="orders__title">订单与评价</h1>
       </div>
       <div class="orders__actions">
         <div class="orders__select-wrap">

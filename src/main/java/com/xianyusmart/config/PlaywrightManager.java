@@ -42,18 +42,21 @@ public class PlaywrightManager {
 
     private static String getJarDirectory() {
         try {
-            String jarPath = PlaywrightManager.class.getProtectionDomain()
-                    .getCodeSource().getLocation().toURI().getPath();
-            File jarFile = new File(jarPath);
-            if (jarFile.isFile()) {
-                return jarFile.getParent();
+            var codeSource = PlaywrightManager.class.getProtectionDomain().getCodeSource();
+            if (codeSource != null && codeSource.getLocation() != null) {
+                String jarPath = codeSource.getLocation().toURI().getPath();
+                if (jarPath != null && !jarPath.isBlank()) {
+                    File jarFile = new File(jarPath);
+                    if (jarFile.isFile()) {
+                        return jarFile.getParent();
+                    }
+                    return jarFile.getAbsolutePath();
+                }
             }
-            return jarFile.getAbsolutePath();
         } catch (Exception e) {
-            String userDir = System.getProperty("user.dir");
-            log.warn("无法获取JAR目录，使用user.dir: {}", userDir, e);
-            return userDir;
+            log.debug("无法从JAR位置解析浏览器目录: {}", e.getMessage());
         }
+        return System.getProperty("user.dir", ".");
     }
 
     @PostConstruct

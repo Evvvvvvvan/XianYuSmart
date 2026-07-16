@@ -47,6 +47,8 @@ const {
   configAutoDelivery,
   toggleAutoDelivery,
   toggleAutoReply,
+  toggleAutoRate,
+  toggleAutoPolish,
   confirmDelete,
   executeDelete,
   getGoodsStatusText,
@@ -315,6 +317,8 @@ const getPageButtons = () => {
           @sync="syncSingleGoods"
           @toggle-auto-delivery="toggleAutoDelivery"
           @toggle-auto-reply="toggleAutoReply"
+          @toggle-auto-rate="toggleAutoRate"
+          @toggle-auto-polish="toggleAutoPolish"
           @config-auto-delivery="configAutoDelivery"
           @delete="confirmDelete"
         />

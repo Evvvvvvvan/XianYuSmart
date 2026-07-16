@@ -11,6 +11,16 @@ public class ItemWithConfigDTO {
     private Integer xianyuAutoDeliveryOn;
     
     private Integer xianyuAutoReplyOn;
+
+    /**
+     * 自动评价开关
+     */
+    private Integer xianyuAutoRateOn;
+
+    /**
+     * 自动擦亮开关
+     */
+    private Integer xianyuAutoPolishOn;
     
     private Integer xianyuAutoReplyContextOn;
     

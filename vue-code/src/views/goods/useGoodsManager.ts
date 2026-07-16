@@ -7,6 +7,7 @@ import {
   getGoodsDetail,
   updateAutoDeliveryStatus,
   updateAutoReplyStatus,
+  updateGoodsAutomationStatus,
   deleteItem,
   syncSingleItem,
   updateGoodsInfo,
@@ -289,6 +290,34 @@ export function useGoodsManager() {
     }
   }
 
+  const updateOperationsAutomation = async (item: GoodsItemWithConfig, autoRate: number, autoPolish: number) => {
+    if (!selectedAccountId.value) return
+    try {
+      const response = await updateGoodsAutomationStatus({
+        xianyuAccountId: selectedAccountId.value,
+        xyGoodsId: item.item.xyGoodId,
+        xianyuAutoRateOn: autoRate,
+        xianyuAutoPolishOn: autoPolish
+      })
+      if (response.code !== 0 && response.code !== 200) {
+        throw new Error(response.msg || '操作失败')
+      }
+      item.xianyuAutoRateOn = autoRate
+      item.xianyuAutoPolishOn = autoPolish
+      showSuccess('商品自动化设置已更新')
+    } catch (error: any) {
+      if (!error.messageShown) showError(error.message || '商品自动化设置更新失败')
+    }
+  }
+
+  const toggleAutoRate = (item: GoodsItemWithConfig, value: boolean) => {
+    return updateOperationsAutomation(item, value ? 1 : 0, item.xianyuAutoPolishOn || 0)
+  }
+
+  const toggleAutoPolish = (item: GoodsItemWithConfig, value: boolean) => {
+    return updateOperationsAutomation(item, item.xianyuAutoRateOn || 0, value ? 1 : 0)
+  }
+
   // 删除商品
   const confirmDelete = (xyGoodId: string, title: string) => {
     deleteTarget.value = { id: xyGoodId, title }
@@ -378,6 +407,8 @@ export function useGoodsManager() {
     configAutoDelivery,
     toggleAutoDelivery,
     toggleAutoReply,
+    toggleAutoRate,
+    toggleAutoPolish,
     confirmDelete,
     executeDelete,
     getGoodsStatusText,

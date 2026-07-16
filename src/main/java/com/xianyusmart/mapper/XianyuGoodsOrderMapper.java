@@ -91,6 +91,8 @@ public interface XianyuGoodsOrderMapper {
         @Result(property = "deliveryStatus", column = "delivery_status"),
         @Result(property = "lastErrorMessage", column = "last_error_message"),
         @Result(property = "confirmState", column = "confirm_state"),
+        @Result(property = "rateStatus", column = "rate_status"),
+        @Result(property = "rateTime", column = "rate_time"),
         @Result(property = "createTime", column = "create_time"),
         @Result(property = "goodsTitle", column = "goods_title"),
         @Result(property = "skuName", column = "sku_name"),
@@ -181,6 +183,10 @@ public interface XianyuGoodsOrderMapper {
     
     @Update("UPDATE xianyu_goods_order SET confirm_state = 1 WHERE xianyu_account_id = #{accountId} AND order_id = #{orderId}")
     int updateConfirmState(@Param("accountId") Long accountId, @Param("orderId") String orderId);
+
+    @Update("UPDATE xianyu_goods_order SET rate_status = #{rateStatus}, rate_time = NOW(3) WHERE xianyu_account_id = #{accountId} AND order_id = #{orderId}")
+    int updateRateStatus(@Param("accountId") Long accountId, @Param("orderId") String orderId,
+                         @Param("rateStatus") Integer rateStatus);
     
     @Select("SELECT * FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId} AND pnm_id = #{pnmId}")
     XianyuGoodsOrder selectByPnmId(@Param("accountId") Long accountId, @Param("pnmId") String pnmId);
@@ -234,6 +240,8 @@ public interface XianyuGoodsOrderMapper {
         @Result(property = "state", column = "state"),
         @Result(property = "failReason", column = "fail_reason"),
         @Result(property = "confirmState", column = "confirm_state"),
+        @Result(property = "rateStatus", column = "rate_status"),
+        @Result(property = "rateTime", column = "rate_time"),
         @Result(property = "createTime", column = "create_time"),
         @Result(property = "goodsTitle", column = "goods_title"),
         @Result(property = "skuName", column = "sku_name"),

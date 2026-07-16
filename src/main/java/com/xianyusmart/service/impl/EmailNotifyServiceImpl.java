@@ -2,6 +2,8 @@ package com.xianyusmart.service.impl;
 
 import com.xianyusmart.service.EmailNotifyService;
 import com.xianyusmart.service.SysSettingService;
+import com.xianyusmart.context.TenantContext;
+import com.xianyusmart.mapper.XianyuAccountMapper;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,9 +32,13 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
     @Autowired
     private SysSettingService sysSettingService;
 
+    @Autowired
+    private XianyuAccountMapper accountMapper;
+
     @Override
     @Async
     public void sendWsDisconnectNotifyEmail(Long accountId, String accountNote) {
+        setTenantByAccount(accountId);
         if (!isEmailConfigured()) {
             log.warn("邮箱未配置，跳过发送WebSocket断开连接通知邮件");
             return;
@@ -74,6 +80,7 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
     @Override
     @Async
     public void sendCookieExpireNotifyEmail(Long accountId, String accountNote) {
+        setTenantByAccount(accountId);
         if (!isEmailConfigured()) {
             log.warn("邮箱未配置，跳过发送Cookie过期通知邮件");
             return;
@@ -433,6 +440,7 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
     @Override
     @Async
     public void sendCaptchaRequiredEmail(Long accountId, String accountNote, String reason) {
+        setTenantByAccount(accountId);
         if (!isEmailConfigured()) {
             log.warn("邮箱未配置，跳过发送风控验证通知邮件");
             return;
@@ -504,5 +512,15 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
         sb.append("</div>");
         sb.append("</div>");
         return sb.toString();
+    }
+
+    private void setTenantByAccount(Long accountId) {
+        if (accountId == null || TenantContext.get() != null) {
+            return;
+        }
+        var account = accountMapper.selectById(accountId);
+        if (account != null) {
+            TenantContext.set(account.getTenantId());
+        }
     }
 }

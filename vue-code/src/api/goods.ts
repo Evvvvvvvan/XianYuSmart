@@ -25,6 +25,9 @@ export interface GoodsItemWithConfig {
   xianyuAutoReplyOn: number;
   xianyuAutoReplyContextOn: number;
   xianyuKeywordReplyOn: number;
+  xianyuAutoRateOn: number;
+  xianyuAutoPolishOn: number;
+  lastPolishTime?: number;
   humanInterventionOn: number;
   humanInterventionMinutes: number;
   autoDeliveryType?: number;
@@ -156,6 +159,19 @@ export function updateAutoReplyStatus(data: {
 }) {
   return request({
     url: '/items/updateAutoReplyStatus',
+    method: 'POST',
+    data
+  });
+}
+
+export function updateGoodsAutomationStatus(data: {
+  xianyuAccountId: number;
+  xyGoodsId: string;
+  xianyuAutoRateOn: number;
+  xianyuAutoPolishOn: number;
+}) {
+  return request({
+    url: '/items/updateGoodsAutomationStatus',
     method: 'POST',
     data
   });

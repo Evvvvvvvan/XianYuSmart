@@ -3,8 +3,10 @@ package com.xianyusmart.service.reply;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xianyusmart.entity.XianyuGoodsAutoReplyRecord;
+import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.event.chatMessageEvent.ChatMessageData;
 import com.xianyusmart.mapper.XianyuGoodsAutoReplyRecordMapper;
+import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.service.AutoReplyDelayService;
 import com.xianyusmart.service.AutoReplyService;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +63,9 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
 
     @Autowired
     private XianyuGoodsAutoReplyRecordMapper autoReplyRecordMapper;
+
+    @Autowired
+    private XianyuAccountMapper accountMapper;
 
     @Autowired
     @Qualifier("taskExecutor")
@@ -276,6 +281,12 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
         Long accountId = lastMessage.getXianyuAccountId();
         String sId = lastMessage.getSId();
         try {
+            // 后台回复按账号恢复租户上下文，确保AI配置和业务数据保持隔离。
+            var account = accountMapper.selectById(accountId);
+            if (account == null) {
+                throw new IllegalStateException("闲鱼账号不存在");
+            }
+            TenantContext.set(account.getTenantId());
             if (takeoverManager.isTakenOver(accountId, sId)) {
                 autoReplyRecordMapper.cancelById(recordId);
                 return;
@@ -288,6 +299,8 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
         } catch (Exception e) {
             log.error("【账号{}】执行持久化延时回复异常: sId={}", accountId, sId, e);
             autoReplyRecordMapper.updateStateAndContent(recordId, -1, null);
+        } finally {
+            TenantContext.clear();
         }
     }
 }

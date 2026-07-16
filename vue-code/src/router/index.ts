@@ -45,10 +45,16 @@ const router = createRouter({
       meta: { title: '商品管理', icon: '📦' }
     },
     {
+      path: '/operations',
+      name: 'operations',
+      component: () => import('@/views/operations/index.vue'),
+      meta: { title: '运营中心', icon: '◫' }
+    },
+    {
       path: '/orders',
       name: 'orders',
       component: () => import('@/views/orders/index.vue'),
-      meta: { title: '发货记录', icon: '📋' }
+      meta: { title: '订单与评价', icon: '📋' }
     },
     {
       path: '/messages',

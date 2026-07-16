@@ -1,6 +1,7 @@
 package com.xianyusmart.entity;
 
 import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.LocalDateTime;
 
@@ -14,6 +15,9 @@ public class XianyuGoodsAutoReplyRecord {
      * 主键ID
      */
     private Long id;
+
+    @JsonIgnore
+    private Long tenantId;
     
     /**
      * 闲鱼账号ID

@@ -65,12 +65,6 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public LoginRespBO register(RegisterReqBO reqBO) {
-        // 检查是否已有用户
-        long count = sysUserMapper.selectCount(null);
-        if (count > 0) {
-            throw new RuntimeException("已有账号，无法注册");
-        }
-
         // 检查用户名是否重复
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(SysUser::getUsername, reqBO.getUsername());

@@ -1,6 +1,7 @@
 package com.xianyusmart.config.rag;
 
 import com.xianyusmart.service.SysSettingService;
+import com.xianyusmart.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.MetadataMode;
 import org.springframework.ai.model.SimpleApiKey;
@@ -18,6 +19,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
  * 动态 VectorStore 管理器
@@ -48,17 +51,11 @@ public class DynamicVectorStoreManager {
     @Autowired
     private SysSettingService sysSettingService;
 
-    /** 当前 VectorStore 实例 */
-    private volatile VectorStore vectorStore;
-
-    /** 当前缓存的 API Key，用于判断是否需要重建 */
-    private volatile String cachedApiKey;
-
-    /** 当前缓存的 Base URL */
-    private volatile String cachedBaseUrl;
-
-    /** 当前缓存的模型 */
-    private volatile String cachedModel;
+    /** 每个租户独立缓存向量库和模型配置。 */
+    private final Map<Long, VectorStore> vectorStores = new ConcurrentHashMap<>();
+    private final Map<Long, String> cachedApiKeys = new ConcurrentHashMap<>();
+    private final Map<Long, String> cachedBaseUrls = new ConcurrentHashMap<>();
+    private final Map<Long, String> cachedModels = new ConcurrentHashMap<>();
 
     /** 读写锁，保护 VectorStore 的线程安全 */
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -71,6 +68,7 @@ public class DynamicVectorStoreManager {
      * @return VectorStore 实例，未配置 API Key 时返回 null
      */
     public VectorStore getVectorStore() {
+        Long tenantId = currentTenantId();
         // 读取当前配置
         String embeddingApiKey = getSettingValue(EMBEDDING_API_KEY_SETTING);
         String embeddingBaseUrl = getSettingValue(EMBEDDING_BASE_URL_SETTING);
@@ -88,7 +86,7 @@ public class DynamicVectorStoreManager {
 
         // API Key 未配置
         if (embeddingApiKey == null || embeddingApiKey.trim().isEmpty()) {
-            if (vectorStore == null) {
+            if (!vectorStores.containsKey(tenantId)) {
                 log.debug("[VectorStore] API Key 未配置，VectorStore 不可用");
             }
             return null;
@@ -100,37 +98,41 @@ public class DynamicVectorStoreManager {
                 ? embeddingModel.trim() : DEFAULT_EMBEDDING_MODEL;
 
         // 检查配置是否变化，需要重建
-        boolean needRebuild = vectorStore == null
-                || !embeddingApiKey.equals(cachedApiKey)
-                || !safeEquals(effectiveBaseUrl, cachedBaseUrl)
-                || !safeEquals(effectiveModel, cachedModel);
+        boolean needRebuild = !vectorStores.containsKey(tenantId)
+                || !embeddingApiKey.equals(cachedApiKeys.get(tenantId))
+                || !safeEquals(effectiveBaseUrl, cachedBaseUrls.get(tenantId))
+                || !safeEquals(effectiveModel, cachedModels.get(tenantId));
 
         if (needRebuild) {
             lock.writeLock().lock();
             try {
                 // 双重检查
-                boolean stillNeedRebuild = vectorStore == null
-                        || !embeddingApiKey.equals(cachedApiKey)
-                        || !safeEquals(effectiveBaseUrl, cachedBaseUrl)
-                        || !safeEquals(effectiveModel, cachedModel);
+                VectorStore currentStore = vectorStores.get(tenantId);
+                boolean stillNeedRebuild = currentStore == null
+                        || !embeddingApiKey.equals(cachedApiKeys.get(tenantId))
+                        || !safeEquals(effectiveBaseUrl, cachedBaseUrls.get(tenantId))
+                        || !safeEquals(effectiveModel, cachedModels.get(tenantId));
 
                 if (stillNeedRebuild) {
                     log.info("[VectorStore] 检测到配置变化，重建 VectorStore: baseUrl={}, model={}",
                             effectiveBaseUrl, effectiveModel);
 
-                    vectorStore = buildVectorStore(embeddingApiKey, effectiveBaseUrl, effectiveModel);
-                    cachedApiKey = embeddingApiKey;
-                    cachedBaseUrl = effectiveBaseUrl;
-                    cachedModel = effectiveModel;
+                    VectorStore rebuiltStore = buildVectorStore(tenantId, embeddingApiKey, effectiveBaseUrl, effectiveModel);
+                    if (rebuiltStore != null) {
+                        vectorStores.put(tenantId, rebuiltStore);
+                    }
+                    cachedApiKeys.put(tenantId, embeddingApiKey);
+                    cachedBaseUrls.put(tenantId, effectiveBaseUrl);
+                    cachedModels.put(tenantId, effectiveModel);
 
-                    if (vectorStore != null) {
+                    if (rebuiltStore != null) {
                         log.info("[VectorStore] VectorStore 重建成功");
                     }
                 }
             } catch (Exception e) {
                 log.error("[VectorStore] VectorStore 重建失败", e);
-                vectorStore = null;
-                cachedApiKey = null;
+                vectorStores.remove(tenantId);
+                cachedApiKeys.remove(tenantId);
             } finally {
                 lock.writeLock().unlock();
             }
@@ -138,7 +140,7 @@ public class DynamicVectorStoreManager {
 
         lock.readLock().lock();
         try {
-            return vectorStore;
+            return vectorStores.get(tenantId);
         } finally {
             lock.readLock().unlock();
         }
@@ -151,10 +153,18 @@ public class DynamicVectorStoreManager {
         log.info("[VectorStore] 收到强制重建信号，清除缓存");
         lock.writeLock().lock();
         try {
-            cachedApiKey = null;
-            cachedBaseUrl = null;
-            cachedModel = null;
-            vectorStore = null;
+            Long tenantId = TenantContext.get();
+            if (tenantId == null) {
+                vectorStores.clear();
+                cachedApiKeys.clear();
+                cachedBaseUrls.clear();
+                cachedModels.clear();
+            } else {
+                vectorStores.remove(tenantId);
+                cachedApiKeys.remove(tenantId);
+                cachedBaseUrls.remove(tenantId);
+                cachedModels.remove(tenantId);
+            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -164,10 +174,13 @@ public class DynamicVectorStoreManager {
      * 保存向量数据到文件
      */
     public void saveToFile() {
+        Long tenantId = currentTenantId();
+        VectorStore vectorStore = vectorStores.get(tenantId);
         if (vectorStore instanceof SimpleVectorStore) {
             try {
-                ((SimpleVectorStore) vectorStore).save(new File(vectorStoreFilePath));
-                log.debug("[VectorStore] 向量数据已保存到: {}", vectorStoreFilePath);
+                String tenantFilePath = tenantVectorStorePath(tenantId);
+                ((SimpleVectorStore) vectorStore).save(new File(tenantFilePath));
+                log.debug("[VectorStore] 向量数据已保存到: {}", tenantFilePath);
             } catch (Exception e) {
                 log.warn("[VectorStore] 保存向量数据失败: {}", e.getMessage());
             }
@@ -177,7 +190,7 @@ public class DynamicVectorStoreManager {
     /**
      * 构建 VectorStore 实例
      */
-    private VectorStore buildVectorStore(String apiKey, String baseUrl, String model) {
+    private VectorStore buildVectorStore(Long tenantId, String apiKey, String baseUrl, String model) {
         try {
             // 创建 OpenAiApi 实例
             OpenAiApi openAiApi = OpenAiApi.builder()
@@ -198,11 +211,12 @@ public class DynamicVectorStoreManager {
             SimpleVectorStore simpleVectorStore = SimpleVectorStore.builder(embeddingModel).build();
 
             // 尝试从文件加载已有数据
-            Path path = Paths.get(vectorStoreFilePath);
+            String tenantFilePath = tenantVectorStorePath(tenantId);
+            Path path = Paths.get(tenantFilePath);
             if (Files.exists(path)) {
                 try {
-                    simpleVectorStore.load(new File(vectorStoreFilePath));
-                    log.info("[VectorStore] 成功从文件加载向量数据: {}", vectorStoreFilePath);
+                    simpleVectorStore.load(new File(tenantFilePath));
+                    log.info("[VectorStore] 成功从文件加载向量数据: {}", tenantFilePath);
                 } catch (Exception e) {
                     log.warn("[VectorStore] 加载向量数据失败，将创建新的向量存储: {}", e.getMessage());
                 }
@@ -231,6 +245,18 @@ public class DynamicVectorStoreManager {
             log.warn("[VectorStore] 读取配置失败: key={}", key, e);
             return null;
         }
+    }
+
+    private Long currentTenantId() {
+        Long tenantId = TenantContext.get();
+        return tenantId == null ? 0L : tenantId;
+    }
+
+    private String tenantVectorStorePath(Long tenantId) {
+        Path configuredPath = Paths.get(vectorStoreFilePath);
+        String fileName = configuredPath.getFileName() == null ? "vectorstore.json" : configuredPath.getFileName().toString();
+        Path parent = configuredPath.getParent() == null ? Paths.get("dbdata") : configuredPath.getParent();
+        return parent.resolve("tenant-" + tenantId).resolve(fileName).toString();
     }
 
     private static boolean safeEquals(String a, String b) {

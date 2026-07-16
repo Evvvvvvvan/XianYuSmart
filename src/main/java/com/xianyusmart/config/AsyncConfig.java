@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import com.xianyusmart.context.TenantContext;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,6 +46,21 @@ public class AsyncConfig {
         
         // 线程名称前缀
         executor.setThreadNamePrefix("xys-business-");
+
+        // 异步任务继承租户上下文，避免通知、日志和AI配置跨租户读取。
+        executor.setTaskDecorator(task -> {
+            Long tenantId = TenantContext.get();
+            return () -> {
+                try {
+                    if (tenantId != null) {
+                        TenantContext.set(tenantId);
+                    }
+                    task.run();
+                } finally {
+                    TenantContext.clear();
+                }
+            };
+        });
         
         // 拒绝策略：由调用线程处理
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());

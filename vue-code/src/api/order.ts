@@ -22,6 +22,8 @@ export interface DeliveryRecordVO {
   deliveryStatus?: string
   failReason?: string
   confirmState: number
+  rateStatus: number
+  rateTime?: string
   orderId?: string
   skuName?: string
   orderCreateTime?: string

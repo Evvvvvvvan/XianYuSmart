@@ -12,7 +12,7 @@
     <artifactId>xianyusmart</artifactId>
     <version>1.0.0</version>
     <name>XianYuSmart</name>
-    <description>单商家私有化闲鱼虚拟商品经营助手</description>
+    <description>多租户闲鱼虚拟商品运营与自动交付系统</description>
     <url/>
     <licenses>
         <license>

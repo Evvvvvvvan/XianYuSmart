@@ -167,6 +167,9 @@ const getConfirmBg = (state: number) => {
           >
             {{ getConfirmText(order.confirmState || 0) }}
           </span>
+          <span class="order-card__status" :style="{ color: order.rateStatus === 1 ? '#30D158' : 'rgba(28,28,30,.55)', background: order.rateStatus === 1 ? 'rgba(48,209,88,.2)' : 'rgba(120,120,128,.12)' }">
+            {{ order.rateStatus === 1 ? '已评价' : order.rateStatus === -1 ? '评价失败' : '待评价' }}
+          </span>
         </div>
       </div>
 
@@ -246,6 +249,7 @@ const getConfirmBg = (state: number) => {
           <th class="table__th table__th--center">发货内容</th>
           <th class="table__th table__th--center">发货状态</th>
           <th class="table__th table__th--center">确认状态</th>
+          <th class="table__th table__th--center">评价状态</th>
           <th class="table__th table__th--center">下单时间</th>
           <th class="table__th table__th--actions">操作</th>
         </tr>
@@ -291,6 +295,11 @@ const getConfirmBg = (state: number) => {
               }"
             >
               {{ getConfirmText(order.confirmState || 0) }}
+            </span>
+          </td>
+          <td class="table__td table__td--center">
+            <span class="status-tag" :style="{ color: order.rateStatus === 1 ? '#30D158' : order.rateStatus === -1 ? '#FF453A' : 'rgba(28,28,30,.55)', background: order.rateStatus === 1 ? 'rgba(48,209,88,.2)' : order.rateStatus === -1 ? 'rgba(255,69,58,.15)' : 'rgba(120,120,128,.12)' }">
+              {{ order.rateStatus === 1 ? '已评价' : order.rateStatus === -1 ? '失败待重试' : '待评价' }}
             </span>
           </td>
           <td class="table__td table__td--center">

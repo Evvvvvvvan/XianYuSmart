@@ -176,6 +176,14 @@ public class XianyuApiUtils {
                                                                String spmCnt, String spmPre,
                                                                Map<String, String> extraHeaders,
                                                                Map<String, String> extraQueryParams) {
+        return callApiWithHeaders(apiName, "1.0", dataMap, cookiesStr, spmCnt, spmPre, extraHeaders, extraQueryParams);
+    }
+
+    public static ApiCallResultWithHeaders callApiWithHeaders(String apiName, String apiPathVersion,
+                                                               Map<String, Object> dataMap, String cookiesStr,
+                                                               String spmCnt, String spmPre,
+                                                               Map<String, String> extraHeaders,
+                                                               Map<String, String> extraQueryParams) {
         try {
             // 1. 解析Cookie获取token
             Map<String, String> cookies = XianyuSignUtils.parseCookies(cookiesStr);
@@ -208,7 +216,7 @@ public class XianyuApiUtils {
             }
 
             // 7. 构建完整URL
-            String url = buildUrl(apiName, params);
+            String url = buildUrl(apiName, apiPathVersion, params);
 
             // 8. 构建请求头
             Map<String, String> headers = buildStandardHeaders(cookiesStr);
@@ -288,9 +296,13 @@ public class XianyuApiUtils {
      * @return 完整URL
      */
     private static String buildUrl(String apiName, Map<String, String> params) {
+        return buildUrl(apiName, "1.0", params);
+    }
+
+    private static String buildUrl(String apiName, String apiPathVersion, Map<String, String> params) {
         StringBuilder url = new StringBuilder(BASE_URL);
         // API名称保持原样，不要替换点号
-        url.append(apiName).append("/1.0/");
+        url.append(apiName).append("/").append(apiPathVersion).append("/");
         
         if (params != null && !params.isEmpty()) {
             url.append("?");

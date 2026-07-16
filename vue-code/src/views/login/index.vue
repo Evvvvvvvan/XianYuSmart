@@ -14,6 +14,12 @@ const confirmPassword = ref('')
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 
+const switchMode = (targetMode: 'login' | 'register') => {
+  mode.value = targetMode
+  password.value = ''
+  confirmPassword.value = ''
+}
+
 onMounted(async () => {
   // 已登录则跳转首页
   if (isLoggedIn()) {
@@ -143,6 +149,7 @@ function handleKeydown(e: KeyboardEvent) {
           <span v-if="loading" class="login-btn-spinner"></span>
           {{ loading ? '请稍候...' : '登录' }}
         </button>
+        <button class="login-mode-btn" :disabled="loading" @click="switchMode('register')">注册新租户</button>
       </div>
 
       <!-- Register Form -->
@@ -207,6 +214,7 @@ function handleKeydown(e: KeyboardEvent) {
           <span v-if="loading" class="login-btn-spinner"></span>
           {{ loading ? '请稍候...' : '创建账号' }}
         </button>
+        <button class="login-mode-btn" :disabled="loading" @click="switchMode('login')">返回登录</button>
       </div>
     </div>
   </div>
@@ -403,6 +411,14 @@ function handleKeydown(e: KeyboardEvent) {
 .login-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.login-mode-btn {
+  border: 0;
+  background: transparent;
+  color: #155eef;
+  cursor: pointer;
+  font-size: 14px;
 }
 
 .login-btn-spinner {

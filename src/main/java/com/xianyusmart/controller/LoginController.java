@@ -31,7 +31,7 @@ public class LoginController {
     private boolean trustProxy;
 
     /**
-     * 检查是否有用户（决定显示登录还是注册）
+     * 检查是否已有用户
      */
     @PostMapping("/checkUserExists")
     public ResultObject<CheckUserExistsRespDTO> checkUserExists() {

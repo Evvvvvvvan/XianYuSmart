@@ -1,6 +1,7 @@
 package com.xianyusmart.entity;
 
 import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.time.LocalDateTime;
 
@@ -11,6 +12,9 @@ import java.time.LocalDateTime;
 public class XianyuGoodsOrder {
     
     private Long id;
+
+    @JsonIgnore
+    private Long tenantId;
     
     private Long xianyuAccountId;
     
@@ -35,6 +39,10 @@ public class XianyuGoodsOrder {
     private String failReason;
     
     private Integer confirmState;
+
+    private Integer rateStatus;
+
+    private LocalDateTime rateTime;
     
     private String createTime;
     

@@ -1,6 +1,7 @@
 package com.xianyusmart.service;
 
 import com.xianyusmart.entity.XianyuAccount;
+import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.enums.KamiStatus;
 import com.xianyusmart.mapper.XianyuAccountMapper;
@@ -73,18 +74,22 @@ public class DeliveryTaskScheduler {
                 continue;
             }
             try {
+                TenantContext.set(account.getTenantId());
                 List<Map<String, Object>> pendingOrders = orderService.queryPendingOrders(account.getId());
                 if (pendingOrders != null && !pendingOrders.isEmpty()) {
                     pendingOrderPollService.syncOrdersToDb(account.getId(), pendingOrders);
                 }
             } catch (Exception e) {
                 log.warn("【账号{}】待发货订单发现失败: {}", account.getId(), e.getMessage());
+            } finally {
+                TenantContext.clear();
             }
         }
     }
 
     private void executeTask(XianyuGoodsOrder task) {
         try {
+            TenantContext.set(task.getTenantId());
             String sId = task.getSid();
             if (sId == null || sId.isBlank()) {
                 String receiverId = task.getBuyerUserId() != null ? task.getBuyerUserId() : task.getOrderId();
@@ -105,6 +110,8 @@ public class DeliveryTaskScheduler {
         } catch (Exception e) {
             log.error("订单任务执行异常: taskId={}, orderId={}", task.getId(), task.getOrderId(), e);
             deliveryTaskService.retryOrFail(task.getId(), e.getMessage());
+        } finally {
+            TenantContext.clear();
         }
     }
 

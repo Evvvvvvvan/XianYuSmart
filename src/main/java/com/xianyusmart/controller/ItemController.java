@@ -152,6 +152,22 @@ public class ItemController {
             return ResultObject.failed("更新商品自动回复状态失败: " + e.getMessage());
         }
     }
+
+    /**
+     * 更新商品自动评价和自动擦亮开关
+     */
+    @PostMapping("/updateGoodsAutomationStatus")
+    public ResultObject<String> updateGoodsAutomationStatus(@RequestBody UpdateGoodsAutomationReqDTO reqDTO) {
+        try {
+            log.info("更新商品运营自动化状态: xianyuAccountId={}, xyGoodsId={}, autoRate={}, autoPolish={}",
+                    reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId(),
+                    reqDTO.getXianyuAutoRateOn(), reqDTO.getXianyuAutoPolishOn());
+            return itemService.updateGoodsAutomationStatus(reqDTO);
+        } catch (Exception e) {
+            log.error("更新商品运营自动化状态失败", e);
+            return ResultObject.failed("更新商品运营自动化状态失败: " + e.getMessage());
+        }
+    }
     
     /**
      * 删除商品

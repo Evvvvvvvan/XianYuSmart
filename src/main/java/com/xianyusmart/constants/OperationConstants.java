@@ -56,6 +56,12 @@ public class OperationConstants {
         public static final String GOODS = "GOODS";
         /** 自动发货模块 */
         public static final String AUTO_DELIVERY = "AUTO_DELIVERY";
+        /** 自动评价模块 */
+        public static final String AUTO_RATE = "AUTO_RATE";
+        /** 自动擦亮模块 */
+        public static final String AUTO_POLISH = "AUTO_POLISH";
+        /** 商家运营模块 */
+        public static final String MERCHANT_OPERATIONS = "MERCHANT_OPERATIONS";
         /** 二维码登录模块 */
         public static final String QR_LOGIN = "QR_LOGIN";
         /** 心跳模块 */
@@ -92,5 +98,7 @@ public class OperationConstants {
         public static final String TOKEN = "TOKEN";
         /** WebSocket连接 */
         public static final String WEBSOCKET = "WEBSOCKET";
+        /** 运营任务 */
+        public static final String TASK = "TASK";
     }
 }

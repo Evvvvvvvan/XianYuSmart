@@ -1,6 +1,7 @@
 package com.xianyusmart.config.rag;
 
 import com.xianyusmart.service.SysSettingService;
+import com.xianyusmart.context.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.model.SimpleApiKey;
@@ -13,6 +14,8 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 
 /**
  * 动态AI ChatClient管理器
@@ -39,17 +42,11 @@ public class DynamicAIChatClientManager {
     @Value("${ai.enabled:false}")
     private boolean aiEnabled;
 
-    /** 当前缓存的API Key，用于判断是否需要重建 */
-    private volatile String cachedApiKey;
-
-    /** 当前缓存的Base URL */
-    private volatile String cachedBaseUrl;
-
-    /** 当前缓存的Model */
-    private volatile String cachedModel;
-
-    /** 当前ChatClient实例 */
-    private volatile ChatClient chatClient;
+    /** 每个租户独立缓存AI客户端和模型配置。 */
+    private final Map<Long, String> cachedApiKeys = new ConcurrentHashMap<>();
+    private final Map<Long, String> cachedBaseUrls = new ConcurrentHashMap<>();
+    private final Map<Long, String> cachedModels = new ConcurrentHashMap<>();
+    private final Map<Long, ChatClient> chatClients = new ConcurrentHashMap<>();
 
     /** 读写锁，保护ChatClient的线程安全 */
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -67,6 +64,7 @@ public class DynamicAIChatClientManager {
             return null;
         }
 
+        Long tenantId = currentTenantId();
         // 从数据库读取当前配置
         String currentApiKey = getSettingValue(AI_API_KEY_SETTING);
         String currentBaseUrl = getSettingValue(AI_BASE_URL_SETTING);
@@ -78,19 +76,19 @@ public class DynamicAIChatClientManager {
         }
 
         // 检查配置是否变化，需要重建
-        boolean needRebuild = chatClient == null
-                || !currentApiKey.equals(cachedApiKey)
-                || !safeEquals(currentBaseUrl, cachedBaseUrl)
-                || !safeEquals(currentModel, cachedModel);
+        boolean needRebuild = !chatClients.containsKey(tenantId)
+                || !currentApiKey.equals(cachedApiKeys.get(tenantId))
+                || !safeEquals(currentBaseUrl, cachedBaseUrls.get(tenantId))
+                || !safeEquals(currentModel, cachedModels.get(tenantId));
 
         if (needRebuild) {
             lock.writeLock().lock();
             try {
                 // 双重检查，防止并发重建
-                boolean stillNeedRebuild = chatClient == null
-                        || !currentApiKey.equals(cachedApiKey)
-                        || !safeEquals(currentBaseUrl, cachedBaseUrl)
-                        || !safeEquals(currentModel, cachedModel);
+                boolean stillNeedRebuild = !chatClients.containsKey(tenantId)
+                        || !currentApiKey.equals(cachedApiKeys.get(tenantId))
+                        || !safeEquals(currentBaseUrl, cachedBaseUrls.get(tenantId))
+                        || !safeEquals(currentModel, cachedModels.get(tenantId));
 
                 if (stillNeedRebuild) {
                     log.info("[DynamicAI] 检测到AI配置变化，重建ChatClient: baseUrl={}, model={}, apiKey={}***{}",
@@ -98,17 +96,17 @@ public class DynamicAIChatClientManager {
                             currentApiKey.substring(0, Math.min(4, currentApiKey.length())),
                             currentApiKey.length() > 8 ? currentApiKey.substring(currentApiKey.length() - 4) : "****");
 
-                    chatClient = buildChatClient(currentApiKey, currentBaseUrl, currentModel);
-                    cachedApiKey = currentApiKey;
-                    cachedBaseUrl = currentBaseUrl;
-                    cachedModel = currentModel;
+                    chatClients.put(tenantId, buildChatClient(currentApiKey, currentBaseUrl, currentModel));
+                    cachedApiKeys.put(tenantId, currentApiKey);
+                    putOrRemove(cachedBaseUrls, tenantId, currentBaseUrl);
+                    putOrRemove(cachedModels, tenantId, currentModel);
 
                     log.info("[DynamicAI] ChatClient重建完成");
                 }
             } catch (Exception e) {
                 log.error("[DynamicAI] ChatClient重建失败", e);
-                chatClient = null;
-                cachedApiKey = null;
+                chatClients.remove(tenantId);
+                cachedApiKeys.remove(tenantId);
             } finally {
                 lock.writeLock().unlock();
             }
@@ -116,7 +114,7 @@ public class DynamicAIChatClientManager {
 
         lock.readLock().lock();
         try {
-            return chatClient;
+            return chatClients.get(tenantId);
         } finally {
             lock.readLock().unlock();
         }
@@ -172,10 +170,18 @@ public class DynamicAIChatClientManager {
         log.info("[DynamicAI] 收到强制重建信号，清除缓存");
         lock.writeLock().lock();
         try {
-            cachedApiKey = null;
-            cachedBaseUrl = null;
-            cachedModel = null;
-            chatClient = null;
+            Long tenantId = TenantContext.get();
+            if (tenantId == null) {
+                cachedApiKeys.clear();
+                cachedBaseUrls.clear();
+                cachedModels.clear();
+                chatClients.clear();
+            } else {
+                cachedApiKeys.remove(tenantId);
+                cachedBaseUrls.remove(tenantId);
+                cachedModels.remove(tenantId);
+                chatClients.remove(tenantId);
+            }
         } finally {
             lock.writeLock().unlock();
         }
@@ -217,6 +223,19 @@ public class DynamicAIChatClientManager {
         } catch (Exception e) {
             log.warn("[DynamicAI] 读取配置失败: key={}", key, e);
             return null;
+        }
+    }
+
+    private Long currentTenantId() {
+        Long tenantId = TenantContext.get();
+        return tenantId == null ? 0L : tenantId;
+    }
+
+    private void putOrRemove(Map<Long, String> values, Long tenantId, String value) {
+        if (value == null) {
+            values.remove(tenantId);
+        } else {
+            values.put(tenantId, value);
         }
     }
 

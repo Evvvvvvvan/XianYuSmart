@@ -53,6 +53,11 @@ public interface ItemService {
      * @return 更新结果
      */
     ResultObject<UpdateAutoReplyRespDTO> updateAutoReplyStatus(UpdateAutoReplyReqDTO reqDTO);
+
+    /**
+     * 更新商品自动评价和自动擦亮开关
+     */
+    ResultObject<String> updateGoodsAutomationStatus(UpdateGoodsAutomationReqDTO reqDTO);
     
     /**
      * 删除商品
