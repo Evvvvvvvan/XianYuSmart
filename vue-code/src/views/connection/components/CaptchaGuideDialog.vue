@@ -1,183 +1,24 @@
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
-import {
-  closeCaptchaSession,
-  replayCaptchaDrag,
-  startCaptchaSession,
-  type CaptchaDragPoint
-} from '@/api/websocket';
-import { showError, showSuccess } from '@/utils';
-
 interface Props {
   modelValue: boolean;
-  accountId: number;
-  captchaUrl: string;
 }
 
 interface Emits {
   (e: 'update:modelValue', value: boolean): void;
-  (e: 'success'): void;
+  (e: 'confirm'): void;
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 const emit = defineEmits<Emits>();
 
-const imageRef = ref<HTMLImageElement | null>(null);
-const sessionId = ref('');
-const screenshot = ref('');
-const statusText = ref('正在加载验证页面...');
-const loading = ref(false);
-const submitting = ref(false);
-let dragging = false;
-let dragPoints: CaptchaDragPoint[] = [];
-let lastPointTime = 0;
-let requestSequence = 0;
-
-const getErrorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
-
-const releaseSession = () => {
-  const currentSessionId = sessionId.value;
-  sessionId.value = '';
-  if (currentSessionId) {
-    closeCaptchaSession(props.accountId, currentSessionId).catch(() => undefined);
-  }
-};
-
-const loadCaptchaSession = async () => {
-  const currentSequence = ++requestSequence;
-  releaseSession();
-  screenshot.value = '';
-  statusText.value = '正在加载验证页面...';
-  loading.value = true;
-  try {
-    const response = await startCaptchaSession(props.accountId, props.captchaUrl);
-    if (currentSequence !== requestSequence || !props.modelValue) {
-      if (response.data?.sessionId) {
-        closeCaptchaSession(props.accountId, response.data.sessionId).catch(() => undefined);
-      }
-      return;
-    }
-    if ((response.code === 0 || response.code === 200) && response.data) {
-      if (response.data.success) {
-        statusText.value = response.data.message;
-        showSuccess(response.data.message);
-        emit('success');
-        emit('update:modelValue', false);
-        return;
-      }
-      sessionId.value = response.data.sessionId;
-      screenshot.value = response.data.screenshot || '';
-      statusText.value = response.data.message || '请在验证画面中拖动滑块';
-    } else {
-      throw new Error(response.msg || '加载验证页面失败');
-    }
-  } catch (error: unknown) {
-    statusText.value = getErrorMessage(error, '加载验证页面失败');
-    showError(statusText.value);
-  } finally {
-    if (currentSequence === requestSequence) {
-      loading.value = false;
-    }
-  }
-};
-
-const getDragPoint = (event: PointerEvent): CaptchaDragPoint | null => {
-  const image = imageRef.value;
-  if (!image) return null;
-  const rect = image.getBoundingClientRect();
-  if (!rect.width || !rect.height || !image.naturalWidth || !image.naturalHeight) return null;
-
-  const now = performance.now();
-  const point = {
-    x: Math.max(0, Math.min(image.naturalWidth, (event.clientX - rect.left) * image.naturalWidth / rect.width)),
-    y: Math.max(0, Math.min(image.naturalHeight, (event.clientY - rect.top) * image.naturalHeight / rect.height)),
-    delayMs: lastPointTime ? Math.max(0, Math.min(40, Math.round(now - lastPointTime))) : 0
-  };
-  lastPointTime = now;
-  return point;
-};
-
-const handlePointerDown = (event: PointerEvent) => {
-  if (submitting.value || !sessionId.value) return;
-  const point = getDragPoint(event);
-  if (!point) return;
-
-  dragging = true;
-  dragPoints = [point];
-  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-};
-
-const handlePointerMove = (event: PointerEvent) => {
-  if (!dragging || dragPoints.length >= 159) return;
-  const point = getDragPoint(event);
-  const previous = dragPoints[dragPoints.length - 1];
-  if (!point || !previous || (Math.abs(point.x - previous.x) < 1 && Math.abs(point.y - previous.y) < 1)) return;
-  dragPoints.push(point);
-};
-
-const handlePointerUp = async (event: PointerEvent) => {
-  if (!dragging) return;
-  dragging = false;
-  const finalPoint = getDragPoint(event);
-  if (finalPoint) {
-    if (dragPoints.length >= 160) {
-      dragPoints[159] = finalPoint;
-    } else {
-      dragPoints.push(finalPoint);
-    }
-  }
-  if (dragPoints.length < 2 || !sessionId.value) return;
-
-  submitting.value = true;
-  statusText.value = '正在提交验证结果...';
-  try {
-    const response = await replayCaptchaDrag(props.accountId, sessionId.value, dragPoints);
-    if ((response.code === 0 || response.code === 200) && response.data) {
-      statusText.value = response.data.message;
-      if (response.data.success) {
-        showSuccess(response.data.message);
-        sessionId.value = '';
-        emit('success');
-        emit('update:modelValue', false);
-        return;
-      }
-      screenshot.value = response.data.screenshot || screenshot.value;
-    } else {
-      throw new Error(response.msg || '滑块验证失败');
-    }
-  } catch (error: unknown) {
-    statusText.value = getErrorMessage(error, '滑块验证失败');
-    showError(statusText.value);
-  } finally {
-    submitting.value = false;
-    dragPoints = [];
-  }
-};
-
-const handlePointerCancel = () => {
-  dragging = false;
-  dragPoints = [];
-};
-
 const handleClose = () => {
-  requestSequence++;
-  releaseSession();
   emit('update:modelValue', false);
 };
 
-watch(() => props.modelValue, (visible) => {
-  if (visible) {
-    loadCaptchaSession();
-  } else {
-    requestSequence++;
-    releaseSession();
-  }
-});
-
-onUnmounted(() => {
-  requestSequence++;
-  releaseSession();
-});
+const handleConfirm = () => {
+  emit('confirm');
+  emit('update:modelValue', false);
+};
 </script>
 
 <template>
@@ -187,36 +28,25 @@ onUnmounted(() => {
         <div class="modal-container">
           <div class="modal-header">
             <div>
-              <h2 class="modal-title">滑块验证</h2>
-              <p class="modal-subtitle">验证在服务器浏览器中完成，成功后自动更新Cookie并重连</p>
+              <h2 class="modal-title">需要滑块验证</h2>
+              <p class="modal-subtitle">请在常用浏览器完成验证，再更新账号凭证</p>
             </div>
             <button class="modal-close" type="button" aria-label="关闭" @click="handleClose">×</button>
           </div>
 
           <div class="modal-body">
-            <div v-if="loading" class="captcha-state">正在加载验证页面...</div>
-            <div v-else-if="screenshot" class="captcha-viewer" :class="{ 'is-submitting': submitting }">
-              <img
-                ref="imageRef"
-                class="captcha-image"
-                :src="screenshot"
-                alt="滑块验证页面"
-                draggable="false"
-                @pointerdown.prevent="handlePointerDown"
-                @pointermove.prevent="handlePointerMove"
-                @pointerup.prevent="handlePointerUp"
-                @pointercancel="handlePointerCancel"
-              >
-            </div>
-            <div v-else class="captcha-state captcha-state--error">{{ statusText }}</div>
-            <p v-if="screenshot" class="captcha-status">{{ statusText }}</p>
+            <ol class="captcha-steps">
+              <li>点击下方按钮访问闲鱼 IM 页面</li>
+              <li>在闲鱼页面完成滑块验证</li>
+              <li>按 F12 打开开发者工具并复制最新 Cookie</li>
+              <li>返回连接管理，通过“手动更新”保存 Cookie</li>
+            </ol>
+            <p class="captcha-tip">Cookie 更新成功后会立即刷新凭证并尝试重新连接。</p>
           </div>
 
           <div class="modal-footer">
             <button class="btn btn-secondary" type="button" @click="handleClose">取消</button>
-            <button class="btn btn-secondary" type="button" :disabled="loading || submitting" @click="loadCaptchaSession">
-              重新加载
-            </button>
+            <button class="btn btn-primary" type="button" @click="handleConfirm">访问闲鱼 IM</button>
           </div>
         </div>
       </div>
@@ -237,10 +67,7 @@ onUnmounted(() => {
 }
 
 .modal-container {
-  width: min(920px, 96vw);
-  max-height: 92vh;
-  display: flex;
-  flex-direction: column;
+  width: min(460px, 96vw);
   overflow: hidden;
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -289,54 +116,29 @@ onUnmounted(() => {
 }
 
 .modal-body {
-  min-height: 0;
   padding: 20px;
-  overflow: auto;
 }
 
-.captcha-viewer {
-  overflow: hidden;
-  border: 1px solid #dfe3e8;
-  border-radius: 8px;
-  background: #f7f8fa;
-  line-height: 0;
-}
-
-.captcha-viewer.is-submitting {
-  opacity: 0.65;
-  pointer-events: none;
-}
-
-.captcha-image {
-  display: block;
-  width: 100%;
-  height: auto;
-  user-select: none;
-  touch-action: none;
-  cursor: grab;
-}
-
-.captcha-image:active {
-  cursor: grabbing;
-}
-
-.captcha-state {
-  min-height: 260px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #6b7280;
+.captcha-steps {
+  margin: 0;
+  padding-left: 24px;
+  color: #374151;
   font-size: 14px;
+  line-height: 1.65;
 }
 
-.captcha-state--error {
-  color: #b42318;
+.captcha-steps li + li {
+  margin-top: 8px;
 }
 
-.captcha-status {
-  margin: 12px 0 0;
-  color: #4b5563;
+.captcha-tip {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 .modal-footer {
@@ -356,18 +158,23 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
 .btn-secondary {
   background: #ffffff;
   color: #374151;
 }
 
-.btn-secondary:hover:not(:disabled) {
+.btn-secondary:hover {
   background: #f7f8fa;
+}
+
+.btn-primary {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: #1d4ed8;
 }
 
 .modal-enter-active,
