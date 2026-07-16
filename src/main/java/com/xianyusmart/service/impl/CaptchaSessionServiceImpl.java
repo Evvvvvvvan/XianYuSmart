@@ -7,11 +7,13 @@ import com.microsoft.playwright.options.ScreenshotType;
 import com.microsoft.playwright.options.WaitUntilState;
 import com.xianyusmart.config.PlaywrightManager;
 import com.xianyusmart.constants.OperationConstants;
+import com.xianyusmart.exception.CaptchaRequiredException;
 import com.xianyusmart.service.AccountService;
 import com.xianyusmart.service.CaptchaSessionService;
 import com.xianyusmart.service.CookieRefreshService;
 import com.xianyusmart.service.OperationLogService;
 import com.xianyusmart.service.WebSocketService;
+import com.xianyusmart.service.WebSocketTokenService;
 import com.xianyusmart.utils.XianyuSignUtils;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -55,6 +57,7 @@ public class CaptchaSessionServiceImpl implements CaptchaSessionService {
     private final CookieRefreshService cookieRefreshService;
     private final WebSocketService webSocketService;
     private final OperationLogService operationLogService;
+    private final WebSocketTokenService tokenService;
     private final ExecutorService captchaExecutor;
     private final Map<String, CaptchaSession> sessions = new HashMap<>();
     private final Map<Long, String> accountSessions = new HashMap<>();
@@ -64,12 +67,14 @@ public class CaptchaSessionServiceImpl implements CaptchaSessionService {
             AccountService accountService,
             CookieRefreshService cookieRefreshService,
             WebSocketService webSocketService,
-            OperationLogService operationLogService) {
+            OperationLogService operationLogService,
+            WebSocketTokenService tokenService) {
         this.playwrightManager = playwrightManager;
         this.accountService = accountService;
         this.cookieRefreshService = cookieRefreshService;
         this.webSocketService = webSocketService;
         this.operationLogService = operationLogService;
+        this.tokenService = tokenService;
         this.captchaExecutor = Executors.newSingleThreadExecutor(task -> {
             Thread thread = new Thread(task, "xys-captcha-browser");
             thread.setDaemon(true);
@@ -133,13 +138,33 @@ public class CaptchaSessionServiceImpl implements CaptchaSessionService {
             Page page = context.newPage();
             // 隐藏自动化标记，避免人工验证页面直接拒绝服务器浏览器
             page.addInitScript("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });");
-            page.navigate(captchaUrl, new Page.NavigateOptions()
-                    .setTimeout(20_000)
-                    .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+            navigateCaptchaPage(page, captchaUrl);
+            if (isExpiredCaptchaPage(page.content())) {
+                // 验证链接有效期较短，仅在过期页出现时重新请求，避免增加风控请求频率。
+                log.warn("【账号{}】滑块验证链接已过期，重新获取验证链接", accountId);
+                String refreshedCaptchaUrl = refreshCaptchaUrl(accountId);
+                if (refreshedCaptchaUrl == null) {
+                    closeContext(context);
+                    context = null;
+                    boolean connected = webSocketService.restartAfterCredentialUpdate(accountId);
+                    return new CaptchaSessionResult(
+                            "",
+                            null,
+                            true,
+                            connected,
+                            connected ? "风控已解除，WebSocket已重连" : "风控已解除，WebSocket正在重连");
+                }
+                if (!isTrustedCaptchaUrl(refreshedCaptchaUrl)) {
+                    throw new IllegalArgumentException("重新获取的滑块验证链接不可信");
+                }
+                navigateCaptchaPage(page, refreshedCaptchaUrl);
+                if (isExpiredCaptchaPage(page.content())) {
+                    throw new IllegalStateException("滑块验证链接已过期，请重新启动连接");
+                }
+            }
             if (!isTrustedCaptchaUrl(page.url())) {
                 throw new IllegalArgumentException("滑块验证页面跳转到了非可信地址");
             }
-            page.waitForTimeout(800);
 
             String sessionId = UUID.randomUUID().toString();
             CaptchaSession session = new CaptchaSession(
@@ -164,6 +189,31 @@ public class CaptchaSessionServiceImpl implements CaptchaSessionService {
                 closeContext(context);
             }
             throw new IllegalStateException("加载滑块验证页面失败: " + e.getMessage(), e);
+        }
+    }
+
+    private void navigateCaptchaPage(Page page, String captchaUrl) {
+        page.navigate(captchaUrl, new Page.NavigateOptions()
+                .setTimeout(20_000)
+                .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+        page.waitForTimeout(800);
+    }
+
+    private static boolean isExpiredCaptchaPage(String pageContent) {
+        return pageContent != null && (pageContent.contains("抱歉，页面访问出现了问题")
+                || pageContent.contains("Sorry, there was a problem accessing the page"));
+    }
+
+    private String refreshCaptchaUrl(Long accountId) {
+        tokenService.clearCaptchaWait(accountId);
+        try {
+            String accessToken = tokenService.refreshToken(accountId);
+            if (accessToken != null && !accessToken.isBlank()) {
+                return null;
+            }
+            throw new IllegalStateException("重新获取滑块验证链接失败");
+        } catch (CaptchaRequiredException e) {
+            return e.getCaptchaUrl();
         }
     }
 

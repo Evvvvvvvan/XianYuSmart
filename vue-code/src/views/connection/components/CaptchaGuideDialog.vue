@@ -58,6 +58,13 @@ const loadCaptchaSession = async () => {
       return;
     }
     if ((response.code === 0 || response.code === 200) && response.data) {
+      if (response.data.success) {
+        statusText.value = response.data.message;
+        showSuccess(response.data.message);
+        emit('success');
+        emit('update:modelValue', false);
+        return;
+      }
       sessionId.value = response.data.sessionId;
       screenshot.value = response.data.screenshot || '';
       statusText.value = response.data.message || '请在验证画面中拖动滑块';
