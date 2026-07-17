@@ -11,7 +11,7 @@
   --glass-bg-float: #ffffff;
   --glass-border: #e5e7eb;
   --glass-border-in: #eef0f2;
-  --glass-shadow: none;
+  --glass-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
   --glass-shadow-float: 0 8px 24px rgba(16, 24, 40, 0.10);
   --glass-blur: none;
   --glass-blur-sm: none;

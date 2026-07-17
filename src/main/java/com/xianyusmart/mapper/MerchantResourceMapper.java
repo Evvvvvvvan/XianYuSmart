@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商家运营资源Mapper
@@ -19,6 +20,10 @@ public interface MerchantResourceMapper extends BaseMapper<MerchantResource> {
     @Select("<script>SELECT * FROM merchant_resource WHERE resource_type = #{type} " +
             "<if test='status != null'>AND status = #{status}</if> ORDER BY updated_time DESC</script>")
     List<MerchantResource> selectByType(@Param("type") String type, @Param("status") Integer status);
+
+    // 使用数据库聚合统计资源类型，避免概览页逐类查询完整数据。
+    @Select("SELECT resource_type AS resourceType, COUNT(*) AS resourceCount FROM merchant_resource GROUP BY resource_type")
+    List<Map<String, Object>> selectTypeCounts();
 
     @Select("SELECT * FROM merchant_resource WHERE status = 1 AND resource_type IN ('SELECTION_RULE','PUBLISH_RULE','DELETE_RULE') " +
             "AND scheduled_time IS NOT NULL AND scheduled_time <= NOW(3) ORDER BY scheduled_time LIMIT #{limit}")

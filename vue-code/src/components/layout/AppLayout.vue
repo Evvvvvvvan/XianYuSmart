@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, shallowRef, onMounted, onUnmounted, computed, provide, markRaw } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, computed, provide, markRaw, watch } from 'vue'
 import { RouterView, useRoute } from 'vue-router'
 import NavMenu from './NavMenu.vue'
 import UpdateDialog from './UpdateDialog.vue'
@@ -40,9 +40,10 @@ const openUpdateDialog = () => {
 }
 
 // 响应式设备类型
-const isMobile = ref(false)  // < 768px
-const isTablet = ref(false)  // 768px - 1024px
-const isDesktop = ref(false) // > 1024px
+const initialWidth = window.innerWidth
+const isMobile = ref(initialWidth < 768)  // < 768px
+const isTablet = ref(initialWidth >= 768 && initialWidth < 1024)  // 768px - 1024px
+const isDesktop = ref(initialWidth >= 1024) // > 1024px
 
 // 移动端和平板端共用的抽屉状态
 const drawerVisible = ref(false)
@@ -77,17 +78,25 @@ const pageIconMap: Record<string, any> = {
   '/accounts': markRaw(IconAccount),
   '/connection': markRaw(IconWifi),
   '/goods': markRaw(IconShoppingBag),
+  '/operations': markRaw(IconChart),
   '/orders': markRaw(IconTruck),
+  '/pending-orders': markRaw(IconTruck),
   '/messages': markRaw(IconMessage),
   '/auto-delivery': markRaw(IconRobot),
-
+  '/kami-config': markRaw(IconShield),
   '/auto-reply': markRaw(IconChat),
   '/operation-log': markRaw(IconLog),
-  '/settings': markRaw(IconShield)
+  '/settings': markRaw(IconShield),
+  '/qrlogin': markRaw(IconWifi)
 }
 
-const currentPageTitle = computed(() => pageTitleMap[route.path] || 'XianYuSmart')
-const currentPageIcon = computed(() => pageIconMap[route.path] || null)
+const currentPageTitle = computed(() => String(route.meta.title || pageTitleMap[route.path] || 'XianYuSmart'))
+const currentPageIcon = computed(() => pageIconMap[route.path] || (route.path.startsWith('/connection/') ? pageIconMap['/connection'] : null))
+
+// 路由切换时清理旧页面注入的工具栏，防止短暂显示上一页操作。
+watch(() => route.path, () => {
+  headerContent.value = null
+})
 
 // 检测屏幕尺寸并自动设置设备类型
 const checkScreenSize = () => {
@@ -146,7 +155,7 @@ onUnmounted(() => {
         <component v-if="currentPageIcon" :is="currentPageIcon" class="header-page-icon" />
         <div class="mobile-page-title">{{ currentPageTitle }}</div>
       </div>
-      <div v-if="headerContent && (route.path === '/goods' || route.path === '/messages' || route.path === '/auto-delivery' || route.path === '/kami-config' || route.path === '/orders' || route.path === '/auto-reply' || route.path === '/operation-log')" class="header-content-slot">
+      <div v-if="headerContent" class="header-content-slot">
         <component :is="headerContent" />
       </div>
     </div>
@@ -160,7 +169,7 @@ onUnmounted(() => {
         <component v-if="currentPageIcon" :is="currentPageIcon" class="header-page-icon" />
         <div class="tablet-page-title">{{ currentPageTitle }}</div>
       </div>
-      <div v-if="headerContent && (route.path === '/goods' || route.path === '/messages' || route.path === '/auto-delivery' || route.path === '/kami-config' || route.path === '/orders' || route.path === '/auto-reply' || route.path === '/operation-log')" class="header-content-slot">
+      <div v-if="headerContent" class="header-content-slot">
         <component :is="headerContent" />
       </div>
     </div>
@@ -339,17 +348,19 @@ onUnmounted(() => {
 
 
 main {
-  padding: 32px 40px;
+  padding: 0;
   overflow: auto;
   background: transparent;
   height: 100%;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: #c9cdd4 transparent;
   -ms-overflow-style: none;
   flex: 1;
 }
 
 main::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  width: 6px;
+  height: 6px;
 }
 
 
@@ -614,7 +625,7 @@ main::-webkit-scrollbar {
   }
 
   main {
-    padding: 24px 28px;
+    padding: 0;
   }
 
   .drawer-menu {
@@ -650,8 +661,8 @@ main::-webkit-scrollbar {
   }
 
   main {
-    padding: 16px 20px;
-    overflow: hidden;
+    padding: 0;
+    overflow: auto;
   }
 
   .drawer-menu {
@@ -697,8 +708,8 @@ main::-webkit-scrollbar {
   }
 
   main {
-    padding: 12px 16px;
-    overflow: hidden;
+    padding: 0;
+    overflow: auto;
   }
 
   .drawer-menu {

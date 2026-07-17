@@ -1,13 +1,55 @@
 @import './base.css';
+@import './theme.css';
 
-/* 统一移除高成本装饰效果，降低渲染开销并保持商业界面一致。 */
-*,
-*::before,
-*::after {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-  background-image: none !important;
-  box-shadow: none !important;
+/* 统一页面基础尺寸，避免不同路由出现额外边距和滚动层。 */
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* 旧页面复用统一商业色板，减少半透明层和过大的圆角。 */
+.app-layout .goods,
+.app-layout .connection,
+.app-layout .orders,
+.app-layout .messages,
+.app-layout .ad,
+.app-layout .ar,
+.app-layout .ol,
+.app-layout .accounts {
+  --d-surface: #ffffff;
+  --d-surface-hover: #f8f9fb;
+  --d-surface-solid: #ffffff;
+  --d-border: #e4e7ec;
+  --d-border-strong: #d0d5dd;
+  --d-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --d-shadow-md: 0 12px 32px rgba(16, 24, 40, 0.14);
+  --d-text-primary: #101828;
+  --d-text-secondary: #667085;
+  --d-text-tertiary: #98a2b3;
+  --d-accent: #155eef;
+  --d-radius-sm: 6px;
+  --d-radius-md: 8px;
+  --d-radius-lg: 10px;
 }
 
 *:focus-visible {
@@ -43,4 +85,15 @@ a:hover {
 @keyframes confirm-out {
   from { opacity: 1; }
   to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

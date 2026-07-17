@@ -96,6 +96,24 @@ public class MerchantOperationsService {
         return resourceMapper.selectByType(type, status).stream().map(this::toResponse).toList();
     }
 
+    public Map<String, Object> getOverview() {
+        Map<String, Long> resourceCounts = new HashMap<>();
+        RESOURCE_TYPES.forEach(type -> resourceCounts.put(type, 0L));
+        for (Map<String, Object> row : resourceMapper.selectTypeCounts()) {
+            String resourceType = text(row.get("resourceType"));
+            if (RESOURCE_TYPES.contains(resourceType)) {
+                resourceCounts.put(resourceType, countValue(row.get("resourceCount")));
+            }
+        }
+
+        Map<String, Object> taskCounts = taskMapper.selectOverviewCounts();
+        Map<String, Object> overview = new HashMap<>();
+        overview.put("resourceCounts", resourceCounts);
+        overview.put("taskCount", countValue(taskCounts == null ? null : taskCounts.get("taskCount")));
+        overview.put("failedTaskCount", countValue(taskCounts == null ? null : taskCounts.get("failedTaskCount")));
+        return overview;
+    }
+
     @Transactional
     public MerchantResourceRespDTO saveResource(MerchantResourceReqDTO request) {
         requireResourceType(request.getResourceType());
@@ -747,6 +765,11 @@ public class MerchantOperationsService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private long countValue(Object value) {
+        Long count = longValue(value);
+        return count == null ? 0L : count;
     }
 
     private BigDecimal decimalValue(Object value, BigDecimal defaultValue) {

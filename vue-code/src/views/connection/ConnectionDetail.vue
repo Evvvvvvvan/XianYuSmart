@@ -135,7 +135,11 @@ const handleStartConnection = async () => {
 
 const handleStopConnection = async () => {
   if (!accountId.value) return
-  if (!confirm('断开连接后将无法接收消息和执行自动化流程，确定要断开连接吗？')) return
+  try {
+    await showConfirm('断开连接后将无法接收消息和执行自动化流程，确定要断开连接吗？', '确认断开连接')
+  } catch {
+    return
+  }
 
   statusLoading.value = true
   try {

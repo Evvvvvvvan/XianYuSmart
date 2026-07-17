@@ -35,6 +35,15 @@ public class MerchantOperationsController {
         this.operationsService = operationsService;
     }
 
+    @GetMapping("/overview")
+    public ResultObject<Map<String, Object>> getOverview() {
+        try {
+            return ResultObject.success(operationsService.getOverview());
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
     @GetMapping("/resources")
     public ResultObject<List<MerchantResourceRespDTO>> listResources(@RequestParam String type,
                                                                      @RequestParam(required = false) Integer status) {

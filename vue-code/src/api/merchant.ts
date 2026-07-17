@@ -46,6 +46,16 @@ export interface MerchantDistribution {
   createdTime: string
 }
 
+export interface MerchantOverview {
+  resourceCounts: Partial<Record<ResourceType, number>>
+  taskCount: number
+  failedTaskCount: number
+}
+
+export function getMerchantOverview() {
+  return request<MerchantOverview>({ url: '/merchant/overview', method: 'GET' })
+}
+
 export function getResources(type: ResourceType, status?: number) {
   return request<MerchantResource[]>({ url: '/merchant/resources', method: 'GET', params: { type, status } })
 }

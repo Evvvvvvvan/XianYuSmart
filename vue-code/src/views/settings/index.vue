@@ -1471,18 +1471,26 @@ function handleBackupMenuEnter() {
   gap: 24px;
   height: 100%;
   min-height: 0;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 767px) {
+  .settings {
+    padding: 16px;
+  }
 }
 
 /* 左侧菜单 */
 .settings__sidebar {
   width: 200px;
   flex-shrink: 0;
-  background: rgba(255,255,255,0.55);
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
-  border: 1px solid rgba(255,255,255,0.75);
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 1.5px 4px rgba(0,0,0,0.06);
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16,24,40,0.04);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -1514,12 +1522,12 @@ function handleBackupMenuEnter() {
 }
 
 .settings__menu-item:hover {
-  background: rgba(255,255,255,0.38);
+  background: #f8f9fb;
 }
 
 .settings__menu-item--active {
-  background: rgba(60,60,67,.12);
-  color: #1c1c1e;
+  background: #eef4ff;
+  color: #155eef;
   font-weight: 500;
 }
 
@@ -1545,12 +1553,12 @@ function handleBackupMenuEnter() {
 .settings__content {
   flex: 1;
   min-width: 0;
-  background: rgba(255,255,255,0.55);
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
-  border: 1px solid rgba(255,255,255,0.75);
-  border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 1.5px 4px rgba(0,0,0,0.06);
+  background: #ffffff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(16,24,40,0.04);
   padding: 24px;
   overflow-y: auto;
   position: relative;
@@ -1563,7 +1571,7 @@ function handleBackupMenuEnter() {
   left: 10%;
   right: 10%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.9) 30%, rgba(255,255,255,0.9) 70%, transparent);
+  background: transparent;
   border-radius: 1px;
   pointer-events: none;
 }
@@ -2027,7 +2035,7 @@ function handleBackupMenuEnter() {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #155eef;
   color: white;
   display: flex;
   align-items: center;
@@ -2087,7 +2095,7 @@ function handleBackupMenuEnter() {
   gap: 12px;
   margin-top: 20px;
   padding: 16px;
-  background: rgba(255,255,255,0.55)9f0;
+  background: #fff7ed;
   border: 1px solid #ffedd5;
   border-radius: 8px;
 }

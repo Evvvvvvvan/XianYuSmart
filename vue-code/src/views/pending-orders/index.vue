@@ -2,6 +2,7 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { getAccountList } from '@/api/account'
 import { getPendingOrders, deliverPendingOrders, consignDummyDelivery } from '@/api/order'
+import { showError, showSuccess } from '@/utils'
 
 
 const accounts = ref<any[]>([])
@@ -97,11 +98,15 @@ const handleSingleDeliver = async (order: any) => {
   try {
     const res = await consignDummyDelivery({ xianyuAccountId: selectedAccountId.value, xyGoodsId: xyGoodsId || '', orderId })
     if ((res.code === 200 || res.code === 0) && res.data) {
-      loadOrders()
+      showSuccess('发货成功')
+      await loadOrders()
     } else {
-      alert(res.msg || '凭证发货失败')
+      showError(res.msg || '凭证发货失败')
     }
-  } catch (e) { console.error('发货失败:', e) }
+  } catch (e: any) {
+    console.error('发货失败:', e)
+    if (!e?.messageShown) showError(e?.message || '发货失败')
+  }
   finally { deliveringOrderId.value = null }
 }
 </script>
