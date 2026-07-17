@@ -7,6 +7,8 @@ import com.xianyusmart.controller.dto.OrderListReqDTO;
 import com.xianyusmart.controller.dto.OrderListRespDTO;
 import com.xianyusmart.controller.dto.OrderDTO;
 import com.xianyusmart.controller.dto.ManualRateReqDTO;
+import com.xianyusmart.controller.dto.OrderRateDetailDTO;
+import com.xianyusmart.controller.dto.OrderRateDetailsReqDTO;
 import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.OrderService;
@@ -197,6 +199,29 @@ public class OrderController {
         } catch (Exception e) {
             log.warn("手动评价失败: accountId={}, orderId={}, error={}",
                     reqDTO.getXianyuAccountId(), reqDTO.getOrderId(), e.getMessage());
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    /**
+     * 批量同步当前页订单的真实评价状态和双方评价内容
+     */
+    @PostMapping("/rateDetails")
+    public ResultObject<List<OrderRateDetailDTO>> getRateDetails(@RequestBody OrderRateDetailsReqDTO reqDTO) {
+        try {
+            if (reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("账号ID不能为空");
+            }
+            if (reqDTO.getOrderIds() == null || reqDTO.getOrderIds().isEmpty()) {
+                return ResultObject.failed("订单ID不能为空");
+            }
+            if (reqDTO.getOrderIds().size() > 100) {
+                return ResultObject.failed("单次最多查询100个订单");
+            }
+            return ResultObject.success(goodsAutomationService.getRateDetails(
+                    reqDTO.getXianyuAccountId(), reqDTO.getOrderIds()));
+        } catch (Exception e) {
+            log.warn("同步评价详情失败: accountId={}, error={}", reqDTO.getXianyuAccountId(), e.getMessage());
             return ResultObject.failed(e.getMessage());
         }
     }

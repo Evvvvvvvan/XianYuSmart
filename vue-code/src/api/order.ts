@@ -26,6 +26,8 @@ export interface DeliveryRecordVO {
   rateTime?: string
   rateContent?: string
   rateSource?: 'AUTO' | 'MANUAL'
+  rateDetail?: OrderRateDetail
+  rateSyncing?: boolean
   orderId?: string
   skuName?: string
   orderCreateTime?: string
@@ -34,6 +36,26 @@ export interface DeliveryRecordVO {
   totalPrice?: string
   buyNum?: number
   createTime: string
+}
+
+export interface OrderRateItem {
+  content?: string
+  createdTime?: string
+  level?: number
+  main?: boolean
+  illegal?: boolean
+}
+
+export interface OrderRateDetail {
+  orderId: string
+  tradeStatus?: string
+  sellerRateStatus?: string
+  synced: boolean
+  canRate: boolean
+  rated: boolean
+  statusText?: string
+  buyerRates: OrderRateItem[]
+  sellerRates: OrderRateItem[]
 }
 
 export interface DeliveryRecordPageResult {
@@ -70,6 +92,14 @@ export function requeueDelivery(data: { id: number; xianyuAccountId: number }) {
 export function rateOrder(data: { xianyuAccountId: number; orderId: string; content: string }) {
   return request<string>({
     url: '/order/rate',
+    method: 'POST',
+    data
+  })
+}
+
+export function queryOrderRateDetails(data: { xianyuAccountId: number; orderIds: string[] }) {
+  return request<OrderRateDetail[]>({
+    url: '/order/rateDetails',
     method: 'POST',
     data
   })

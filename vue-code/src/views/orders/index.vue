@@ -14,7 +14,7 @@ import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 import IconPackage from '@/components/icons/IconPackage.vue'
 
 import OrderTable from './components/OrderTable.vue'
-import { rateOrder } from '@/api/order'
+import { rateOrder, type OrderRateItem } from '@/api/order'
 import { updateGoodsAutomationStatus, type GoodsItemWithConfig } from '@/api/goods'
 import { showError, showSuccess } from '@/utils'
 
@@ -38,6 +38,7 @@ const {
   totalPages,
   loadAccounts,
   loadOrders,
+  loadRateDetails,
   loadGoods,
   handleAccountChange,
   handleReset,
@@ -66,7 +67,10 @@ const showManualRateDialog = ref(false)
 const manualRateTarget = ref<any>(null)
 const manualRateContent = ref(ratePresets[0]!)
 const manualRateSaving = ref(false)
-const pendingRateCount = computed(() => orderList.value.filter(order => order.rateStatus !== 1).length)
+const showRateDetailDialog = ref(false)
+const rateDetailTarget = ref<any>(null)
+const rateDetailRefreshing = ref(false)
+const pendingRateCount = computed(() => orderList.value.filter(order => order.rateDetail?.canRate).length)
 const selectedRateGoods = computed<GoodsItemWithConfig | undefined>(() => goodsList.value.find(goods => goods.item.xyGoodId === rateRuleGoodsId.value))
 
 const syncRateRuleForm = () => {
@@ -111,6 +115,36 @@ const openManualRate = (order: any) => {
   const goods = goodsList.value.find(item => item.item.xyGoodId === order.xyGoodsId)
   manualRateContent.value = goods?.xianyuAutoRateContent || ratePresets[0]!
   showManualRateDialog.value = true
+}
+
+const openRateDetail = (order: any) => {
+  rateDetailTarget.value = order
+  showRateDetailDialog.value = true
+  void refreshRateDetail()
+}
+
+const refreshRateDetail = async () => {
+  if (!rateDetailTarget.value) return
+  rateDetailRefreshing.value = true
+  try {
+    await loadRateDetails([rateDetailTarget.value], true)
+  } finally {
+    rateDetailRefreshing.value = false
+  }
+}
+
+const openManualRateFromDetail = () => {
+  if (!rateDetailTarget.value?.rateDetail?.canRate) return showError(rateDetailTarget.value?.rateDetail?.statusText || '当前订单暂不可评价')
+  showRateDetailDialog.value = false
+  openManualRate(rateDetailTarget.value)
+}
+
+const getRateLevelText = (rate: OrderRateItem) => {
+  if (!rate.main) return '追评'
+  if (rate.level === 1) return '好评'
+  if (rate.level === -1) return '中评'
+  if (rate.level === 0) return '差评'
+  return '主评'
 }
 
 const submitManualRate = async () => {
@@ -317,8 +351,8 @@ const executeConfirmShipment = async () => {
     </div>
 
     <div class="evaluation-guide">
-      <div><strong>评价处理</strong><span>每条待评价订单可直接手动评价；自动评价按商品独立开启并使用已保存文案。</span></div>
-      <span class="evaluation-guide__count">当前列表待处理 {{ pendingRateCount }} 条</span>
+      <div><strong>评价处理</strong><span>状态与双方评价内容均从闲鱼平台同步，只有交易完成且待评价的订单可以提交。</span></div>
+      <span class="evaluation-guide__count">当前列表可评价 {{ pendingRateCount }} 条</span>
     </div>
 
     <div class="orders__body" :class="{ 'orders__body--no-goods': isMobile }">
@@ -422,7 +456,7 @@ const executeConfirmShipment = async () => {
           @copy-sid="copySId"
           @confirm-shipment="openConfirmDialog"
           @retry-delivery="handleRetryDelivery"
-          @rate="openManualRate"
+          @rate="openRateDetail"
         />
       </div>
 
@@ -510,6 +544,45 @@ const executeConfirmShipment = async () => {
     </Transition>
 
     <Transition name="overlay-fade">
+      <div v-if="showRateDetailDialog" class="orders__dialog-overlay" @click.self="showRateDetailDialog = false">
+        <div class="orders__dialog rate-detail-dialog">
+          <div class="orders__dialog-header"><div><h3 class="orders__dialog-title">双方评价</h3><p>订单 {{ rateDetailTarget?.orderId }}</p></div></div>
+          <div class="orders__dialog-body rate-detail-dialog__body">
+            <div class="rate-detail-summary">
+              <strong>{{ rateDetailTarget?.rateDetail?.statusText || '评价状态未同步' }}</strong>
+              <span v-if="rateDetailTarget?.rateDetail?.tradeStatus">闲鱼交易状态：{{ rateDetailTarget.rateDetail.tradeStatus }}</span>
+            </div>
+            <div class="rate-detail-columns">
+              <section class="rate-detail-section">
+                <h4>买家评价 <span>{{ rateDetailTarget?.rateDetail?.buyerRates?.length || 0 }}</span></h4>
+                <article v-for="(rate, index) in rateDetailTarget?.rateDetail?.buyerRates || []" :key="`buyer-${index}`" class="rate-detail-item">
+                  <div><strong>{{ getRateLevelText(rate) }}</strong><time>{{ rate.createdTime || '-' }}</time></div>
+                  <p>{{ rate.content || '买家未填写文字评价' }}</p>
+                  <small v-if="rate.illegal">该内容已被平台处理</small>
+                </article>
+                <div v-if="!rateDetailTarget?.rateDetail?.buyerRates?.length" class="rate-detail-empty">暂无买家评价</div>
+              </section>
+              <section class="rate-detail-section">
+                <h4>商家评价 <span>{{ rateDetailTarget?.rateDetail?.sellerRates?.length || 0 }}</span></h4>
+                <article v-for="(rate, index) in rateDetailTarget?.rateDetail?.sellerRates || []" :key="`seller-${index}`" class="rate-detail-item">
+                  <div><strong>{{ getRateLevelText(rate) }}</strong><time>{{ rate.createdTime || '-' }}</time></div>
+                  <p>{{ rate.content || '商家未填写文字评价' }}</p>
+                  <small v-if="rate.illegal">该内容已被平台处理</small>
+                </article>
+                <div v-if="!rateDetailTarget?.rateDetail?.sellerRates?.length" class="rate-detail-empty">暂无商家评价</div>
+              </section>
+            </div>
+          </div>
+          <div class="orders__dialog-footer">
+            <button type="button" class="orders__dialog-btn orders__dialog-btn--cancel" @click="showRateDetailDialog = false">关闭</button>
+            <button type="button" class="orders__dialog-btn orders__dialog-btn--cancel" :disabled="rateDetailRefreshing" @click="refreshRateDetail">{{ rateDetailRefreshing ? '同步中' : '刷新状态' }}</button>
+            <button v-if="rateDetailTarget?.rateDetail?.canRate" type="button" class="orders__dialog-btn orders__dialog-btn--confirm" @click="openManualRateFromDetail">评价订单</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="overlay-fade">
       <div v-if="showManualRateDialog" class="orders__dialog-overlay" @click.self="showManualRateDialog = false">
         <form class="orders__dialog rate-dialog" @submit.prevent="submitManualRate">
           <div class="orders__dialog-header"><div><h3 class="orders__dialog-title">手动评价</h3><p>订单 {{ manualRateTarget?.orderId }}</p></div></div>
@@ -565,4 +638,5 @@ const executeConfirmShipment = async () => {
 }
 
 .evaluation-guide{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 16px 12px;padding:12px 14px;border:1px solid rgba(0,122,255,.14);border-radius:10px;background:rgba(0,122,255,.04)}.evaluation-guide>div{display:flex;flex-direction:column;gap:3px}.evaluation-guide strong{font-size:13px}.evaluation-guide span{color:#6e6e73;font-size:12px}.evaluation-guide__count{white-space:nowrap}.rate-dialog{max-width:580px}.rate-dialog .orders__dialog-header p{margin:4px 0 0;color:#86868b;font-size:12px}.rate-dialog__body{display:flex;flex-direction:column;gap:16px}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field select,.rate-dialog__field textarea{box-sizing:border-box;width:100%;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;background:#fff;font:inherit}.rate-dialog__field textarea{resize:vertical}.rate-dialog__field small,.rate-dialog__switch small{color:#86868b;font-size:12px;font-weight:400}.rate-dialog__switch{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:13px;border:1px solid rgba(60,60,67,.12);border-radius:9px}.rate-dialog__switch span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch input{width:18px;height:18px}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);border-radius:8px;padding:9px 10px;cursor:pointer}.orders__dialog-btn:disabled{opacity:.5;cursor:not-allowed}@media(max-width:767px){.evaluation-guide{margin:0 10px 10px;align-items:flex-start;flex-direction:column}.evaluation-guide__count{white-space:normal}}
+.rate-detail-dialog{max-width:760px}.rate-detail-dialog .orders__dialog-header p{margin:4px 0 0;color:#86868b;font-size:12px}.rate-detail-dialog__body{padding-top:8px;text-align:left;max-height:min(68vh,620px);overflow:auto}.rate-detail-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid rgba(60,60,67,.12);border-radius:9px;background:rgba(118,118,128,.06)}.rate-detail-summary strong{font-size:13px}.rate-detail-summary span{font-size:12px;color:#6e6e73}.rate-detail-columns{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.rate-detail-section{min-width:0}.rate-detail-section h4{display:flex;align-items:center;gap:6px;margin:0 0 8px;font-size:13px}.rate-detail-section h4 span{color:#86868b;font-weight:400}.rate-detail-item{padding:10px 11px;border:1px solid rgba(60,60,67,.12);border-radius:9px;background:#fff}.rate-detail-item+.rate-detail-item{margin-top:8px}.rate-detail-item>div{display:flex;justify-content:space-between;gap:10px}.rate-detail-item strong{font-size:12px;color:#007aff}.rate-detail-item time,.rate-detail-item small{font-size:11px;color:#86868b}.rate-detail-item p{margin:7px 0 0;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}.rate-detail-item small{display:block;margin-top:6px;color:#ff3b30}.rate-detail-empty{padding:24px 12px;border:1px dashed rgba(60,60,67,.16);border-radius:9px;text-align:center;color:#86868b;font-size:12px}@media(max-width:767px){.rate-detail-dialog{max-height:88vh}.rate-detail-columns{grid-template-columns:1fr}.rate-detail-summary{align-items:flex-start;flex-direction:column}}
 </style>

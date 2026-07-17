@@ -38,3 +38,43 @@ export const getDeliveryStatusMeta = (deliveryStatus: string | undefined, state:
 
 export const shouldShowDeliveryError = (deliveryStatus: string | undefined, state: number) =>
   state === -1 || Boolean(deliveryStatus && errorStatuses.has(deliveryStatus))
+
+interface OrderActionState {
+  orderId?: string
+  state?: number
+  confirmState?: number
+  rateSyncing?: boolean
+  rateDetail?: {
+    synced?: boolean
+    tradeStatus?: string
+    canRate?: boolean
+    rated?: boolean
+    statusText?: string
+  }
+}
+
+// 仅允许已完成发货且尚未确认的订单执行确认操作。
+export const canConfirmShipment = (order: OrderActionState) =>
+  Boolean(order.orderId && order.state === 1 && order.confirmState !== 1)
+
+export const getRateStatusMeta = (order: OrderActionState) => {
+  if (order.rateSyncing) {
+    return { text: '同步中', color: '#0A84FF', background: 'rgba(10,132,255,.14)', title: '正在同步闲鱼评价状态' }
+  }
+  if (order.rateDetail?.rated) {
+    return { text: '已评价', color: '#30D158', background: 'rgba(48,209,88,.2)', title: '闲鱼平台已存在商家评价' }
+  }
+  if (order.rateDetail?.canRate) {
+    return { text: '待评价', color: '#FF9F0A', background: 'rgba(255,159,10,.18)', title: '交易已完成，可以评价' }
+  }
+  if (order.rateDetail?.tradeStatus === '已发货') {
+    return { text: '待确认收货', color: '#8E8E93', background: 'rgba(120,120,128,.12)', title: order.rateDetail.statusText || '等待买家确认收货' }
+  }
+  if (order.rateDetail?.tradeStatus === '交易关闭') {
+    return { text: '无需评价', color: '#8E8E93', background: 'rgba(120,120,128,.12)', title: order.rateDetail.statusText || '订单已关闭' }
+  }
+  if (order.rateDetail?.synced && order.rateDetail.statusText) {
+    return { text: order.rateDetail.tradeStatus || '暂不可评', color: '#8E8E93', background: 'rgba(120,120,128,.12)', title: order.rateDetail.statusText }
+  }
+  return { text: '未同步', color: '#8E8E93', background: 'rgba(120,120,128,.12)', title: '暂未获取到闲鱼平台评价状态' }
+}

@@ -1,6 +1,6 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { queryDeliveryRecordList, confirmShipment, requeueDelivery } from '@/api/order'
+import { queryDeliveryRecordList, queryOrderRateDetails, confirmShipment, requeueDelivery } from '@/api/order'
 import { getAccountList } from '@/api/account'
 import { getGoodsList, type GoodsItemWithConfig } from '@/api/goods'
 import type { DeliveryRecordVO, DeliveryRecordQueryReq } from '@/api/order'
@@ -164,6 +164,37 @@ export function useOrderManager() {
     return state === 1 ? '成功' : '失败'
   }
 
+  let rateSyncSequence = 0
+  const rateSyncRequests = new WeakMap<DeliveryRecordItem, number>()
+
+  // 批量同步当前页平台评价，避免使用本地发货记录推断评价状态。
+  const loadRateDetails = async (records: DeliveryRecordItem[], showFailure: boolean = false) => {
+    const accountId = queryParams.xianyuAccountId
+    const orderIds = [...new Set(records.map(item => item.orderId).filter((orderId): orderId is string => Boolean(orderId)))]
+    if (!accountId || orderIds.length === 0) return
+    const requestId = ++rateSyncSequence
+    records.forEach(item => {
+      rateSyncRequests.set(item, requestId)
+      item.rateDetail = undefined
+      item.rateSyncing = true
+    })
+    try {
+      const response = await queryOrderRateDetails({ xianyuAccountId: accountId, orderIds })
+      const details = new Map((response.data || []).map(detail => [detail.orderId, detail]))
+      records.forEach(item => {
+        if (rateSyncRequests.get(item) === requestId) item.rateDetail = item.orderId ? details.get(item.orderId) : undefined
+      })
+    } catch (error: any) {
+      if (showFailure && records.some(item => rateSyncRequests.get(item) === requestId)) {
+        showError(error.message || '评价状态同步失败')
+      }
+    } finally {
+      records.forEach(item => {
+        if (rateSyncRequests.get(item) === requestId) item.rateSyncing = false
+      })
+    }
+  }
+
   const loadOrders = async () => {
     loading.value = true
     try {
@@ -174,6 +205,7 @@ export function useOrderManager() {
         retrying: false
       }))
       total.value = response.data?.total || 0
+      void loadRateDetails(orderList.value)
     } catch (error: any) {
       console.error('查询发货记录失败:', error)
       // 只有在错误消息未显示过时才弹出提示（避免重复显示）
@@ -287,6 +319,7 @@ export function useOrderManager() {
     totalPages,
     loadAccounts,
     loadOrders,
+    loadRateDetails,
     loadGoods,
     handleAccountChange,
     handleReset,

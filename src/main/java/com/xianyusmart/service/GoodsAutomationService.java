@@ -1,6 +1,7 @@
 package com.xianyusmart.service;
 
 import com.xianyusmart.constants.OperationConstants;
+import com.xianyusmart.controller.dto.OrderRateDetailDTO;
 import com.xianyusmart.entity.XianyuGoodsConfig;
 import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.mapper.XianyuGoodsConfigMapper;
@@ -15,9 +16,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -29,6 +33,10 @@ public class GoodsAutomationService {
 
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Shanghai");
     private static final int MAX_RATE_PER_ACCOUNT = 20;
+    private static final int RATE_DETAIL_PAGE_SIZE = 100;
+    private static final String TRADE_COMPLETED = "交易成功";
+    private static final String RATE_PENDING = "5";
+    private static final String RATE_COMPLETED = "4";
 
     private final XianyuGoodsConfigMapper goodsConfigMapper;
     private final XianyuGoodsOrderMapper goodsOrderMapper;
@@ -106,6 +114,9 @@ public class GoodsAutomationService {
         Map<String, XianyuGoodsConfig> configsByGoodsId = configs.stream()
                 .collect(Collectors.toMap(XianyuGoodsConfig::getXyGoodsId, config -> config, (left, right) -> left));
         for (Map<String, Object> item : extractItems(listResult.extractData())) {
+            if (!isRateEligible(item)) {
+                continue;
+            }
             String orderId = extractOrderId(item);
             if (orderId == null) {
                 continue;
@@ -135,13 +146,20 @@ public class GoodsAutomationService {
         if (order == null) {
             throw new IllegalArgumentException("订单不存在或无权操作");
         }
-        if (Integer.valueOf(1).equals(order.getRateStatus())) {
-            throw new IllegalArgumentException("订单已经评价，无需重复操作");
-        }
         String content = normalizeRateContent(feedback, false);
         String cookie = accountService.getCookieByAccountId(accountId);
         if (cookie == null || cookie.isBlank()) {
             throw new IllegalStateException("账号 Cookie 无效，请先更新登录状态");
+        }
+        OrderRateDetailDTO detail = getRateDetails(accountId, List.of(order.getOrderId())).getFirst();
+        if (Boolean.TRUE.equals(detail.getRated())) {
+            String platformContent = detail.getSellerRates().isEmpty()
+                    ? null : detail.getSellerRates().getFirst().getContent();
+            goodsOrderMapper.updateRateResult(accountId, order.getOrderId(), 1, platformContent, "PLATFORM");
+            throw new IllegalArgumentException("订单已经评价，无需重复操作");
+        }
+        if (!Boolean.TRUE.equals(detail.getCanRate())) {
+            throw new IllegalArgumentException(detail.getStatusText());
         }
         XianyuApiCallUtils.ApiCallResult result = rateOrder(
                 accountId, order.getOrderId(), order.getXyGoodsId(), content, "MANUAL", cookie);
@@ -153,14 +171,15 @@ public class GoodsAutomationService {
     private XianyuApiCallUtils.ApiCallResult rateOrder(Long accountId, String orderId, String goodsId, String feedback,
                                                        String source, String cookie) {
         Map<String, Object> request = new HashMap<>();
-        request.put("tradeId", orderId);
+        request.put("tradeIdList", List.of(orderId));
+        request.put("imageUrls", List.of());
         request.put("rate", 1);
         request.put("feedback", feedback);
-        request.put("createOrAppend", 0);
+        request.put("anonymous", false);
 
-        XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
-                accountId, "mtop.taobao.idle.rate.create", "4.0", request, cookie,
-                sellerHeaders(), sellerQueryParams());
+        XianyuApiCallUtils.ApiCallResult result = normalizeRateResult(apiCallUtils.callApiWithRetry(
+                accountId, "mtop.taobao.idle.merchant.rate.create", request, cookie,
+                sellerHeaders(), sellerQueryParams()), orderId);
         goodsOrderMapper.updateRateResult(accountId, orderId, result.isSuccess() ? 1 : -1, feedback, source);
         String action = "MANUAL".equals(source) ? "手动评价" : "自动评价";
         operationLogService.log(accountId, OperationConstants.Type.SEND, OperationConstants.Module.AUTO_RATE,
@@ -172,6 +191,187 @@ public class GoodsAutomationService {
                     accountId, action, orderId, goodsId, result.getErrorMessage());
         }
         return result;
+    }
+
+    /**
+     * 批量读取平台评价，避免用本地发货状态推断交易评价结果。
+     */
+    public List<OrderRateDetailDTO> getRateDetails(Long accountId, List<String> orderIds) {
+        if (accountId == null || orderIds == null || orderIds.isEmpty()) {
+            throw new IllegalArgumentException("账号和订单不能为空");
+        }
+        Set<String> targets = orderIds.stream()
+                .filter(orderId -> orderId != null && !orderId.isBlank())
+                .map(String::trim)
+                .limit(RATE_DETAIL_PAGE_SIZE)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (targets.isEmpty()) {
+            throw new IllegalArgumentException("订单不能为空");
+        }
+        String cookie = accountService.getCookieByAccountId(accountId);
+        if (cookie == null || cookie.isBlank()) {
+            throw new IllegalStateException("账号 Cookie 无效，请先更新登录状态");
+        }
+
+        String exactOrderId = targets.size() == 1 ? targets.iterator().next() : null;
+        XianyuApiCallUtils.ApiCallResult response = apiCallUtils.callApiWithRetry(
+                accountId, "mtop.taobao.idle.merchant.rate.list",
+                buildRateListRequest("0", exactOrderId), cookie, sellerHeaders(), sellerQueryParams());
+        if (!response.isSuccess()) {
+            throw new IllegalStateException(response.getErrorMessage() == null
+                    ? "评价状态同步失败" : response.getErrorMessage());
+        }
+
+        Map<String, OrderRateDetailDTO> details = new LinkedHashMap<>();
+        for (Map<String, Object> item : extractItems(response.extractData())) {
+            OrderRateDetailDTO detail = parseRateDetail(item);
+            if (detail.getOrderId() != null && targets.contains(detail.getOrderId())) {
+                details.put(detail.getOrderId(), detail);
+            }
+        }
+
+        List<OrderRateDetailDTO> result = new ArrayList<>();
+        for (String orderId : targets) {
+            OrderRateDetailDTO detail = details.get(orderId);
+            if (detail == null) {
+                detail = new OrderRateDetailDTO();
+                detail.setOrderId(orderId);
+                detail.setSynced(false);
+                detail.setStatusText("未查询到平台评价记录");
+            }
+            result.add(detail);
+        }
+        return result;
+    }
+
+    OrderRateDetailDTO parseRateDetail(Map<String, Object> item) {
+        OrderRateDetailDTO detail = new OrderRateDetailDTO();
+        if (item == null || !(item.get("merchantCommonData") instanceof Map<?, ?> commonData)) {
+            detail.setSynced(false);
+            detail.setStatusText("平台评价数据格式异常");
+            return detail;
+        }
+        detail.setOrderId(stringValue(commonData.get("orderId")));
+        detail.setTradeStatus(stringValue(commonData.get("orderStatus")));
+        detail.setSellerRateStatus(stringValue(commonData.get("sellerRateStatus")));
+        if (item.get("rateItemVOList") instanceof List<?> rateItems) {
+            for (Object value : rateItems) {
+                if (!(value instanceof Map<?, ?> rateItem)) {
+                    continue;
+                }
+                OrderRateDetailDTO.RateItemDTO rate = new OrderRateDetailDTO.RateItemDTO();
+                rate.setContent(stringValue(rateItem.get("feedBack")));
+                rate.setCreatedTime(stringValue(rateItem.get("gmtCreate")));
+                rate.setLevel(integerValue(rateItem.get("rate")));
+                rate.setMain(booleanValue(rateItem.get("main")));
+                rate.setIllegal(booleanValue(rateItem.get("illegal")));
+                if (booleanValue(rateItem.get("seller"))) {
+                    detail.getSellerRates().add(rate);
+                } else {
+                    detail.getBuyerRates().add(rate);
+                }
+            }
+        }
+        boolean rated = RATE_COMPLETED.equals(detail.getSellerRateStatus())
+                || detail.getSellerRates().stream().anyMatch(rate -> Boolean.TRUE.equals(rate.getMain()));
+        boolean canRate = TRADE_COMPLETED.equals(detail.getTradeStatus())
+                && RATE_PENDING.equals(detail.getSellerRateStatus()) && !rated;
+        detail.setRated(rated);
+        detail.setCanRate(canRate);
+        detail.setStatusText(resolveRateStatusText(detail));
+        return detail;
+    }
+
+    XianyuApiCallUtils.ApiCallResult normalizeRateResult(XianyuApiCallUtils.ApiCallResult result, String orderId) {
+        if (!result.isSuccess()) {
+            return result;
+        }
+        // 平台外层调用成功不代表订单评价成功，必须校验业务结果。
+        Map<String, Object> data = result.extractData();
+        if (data == null || !(data.get("module") instanceof Map<?, ?> module)) {
+            return new XianyuApiCallUtils.ApiCallResult(false, result.getResponse(),
+                    "评价结果缺少业务状态", false);
+        }
+        boolean success = booleanValue(module.get("success"));
+        boolean orderSucceeded = false;
+        if (module.get("successOrderIds") instanceof List<?> successOrderIds) {
+            orderSucceeded = successOrderIds.stream().anyMatch(value -> orderId.equals(stringValue(value)));
+        }
+        String errorMessage = extractRateError(module, orderId);
+        if (success && (orderSucceeded || errorMessage == null)) {
+            return result;
+        }
+        return new XianyuApiCallUtils.ApiCallResult(false, result.getResponse(),
+                errorMessage == null ? "评价未被平台确认" : errorMessage, false);
+    }
+
+    private Map<String, Object> buildRateListRequest(String sellerRateStatus, String orderId) {
+        Map<String, Object> rateSearchParam = new HashMap<>();
+        rateSearchParam.put("sellerRateStatus", sellerRateStatus);
+        if (orderId != null && !orderId.isBlank()) {
+            // 单订单查询使用平台精确筛选，避免遍历历史评价记录。
+            rateSearchParam.put("orderId", orderId);
+        }
+        Map<String, Object> request = new HashMap<>();
+        request.put("pageNumber", 1);
+        request.put("rowsPerPage", RATE_DETAIL_PAGE_SIZE);
+        request.put("queryType", "ORDER");
+        request.put("rateSearchParam", rateSearchParam);
+        return request;
+    }
+
+    private boolean isRateEligible(Map<String, Object> item) {
+        OrderRateDetailDTO detail = parseRateDetail(item);
+        return Boolean.TRUE.equals(detail.getCanRate());
+    }
+
+    private String resolveRateStatusText(OrderRateDetailDTO detail) {
+        if (Boolean.TRUE.equals(detail.getRated())) {
+            return "已评价";
+        }
+        if (Boolean.TRUE.equals(detail.getCanRate())) {
+            return "待评价";
+        }
+        if ("已发货".equals(detail.getTradeStatus())) {
+            return "等待买家确认收货";
+        }
+        if ("交易关闭".equals(detail.getTradeStatus())) {
+            return "订单已关闭，无需评价";
+        }
+        return detail.getTradeStatus() == null || detail.getTradeStatus().isBlank()
+                ? "评价状态待同步" : detail.getTradeStatus() + "，暂不可评价";
+    }
+
+    private String extractRateError(Map<?, ?> module, String orderId) {
+        if (!(module.get("failOrderInfos") instanceof List<?> failOrderInfos)) {
+            return null;
+        }
+        for (Object value : failOrderInfos) {
+            if (value instanceof Map<?, ?> failure
+                    && (orderId.equals(stringValue(failure.get("orderId"))) || failOrderInfos.size() == 1)) {
+                return stringValue(failure.get("errorMsg"));
+            }
+        }
+        return null;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private Integer integerValue(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return value == null ? null : Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private boolean booleanValue(Object value) {
+        return value instanceof Boolean bool ? bool : Boolean.parseBoolean(String.valueOf(value));
     }
 
     private String resolveRateContent(XianyuGoodsConfig config) {

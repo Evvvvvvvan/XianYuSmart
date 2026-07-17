@@ -4,7 +4,7 @@ import { formatTime } from '@/utils'
 import { showSuccess, showError } from '@/utils'
 import { getOrderDetail } from '@/api/order'
 import type { DeliveryRecordItem } from '../useOrderManager'
-import { getDeliveryStatusMeta, shouldShowDeliveryError } from '../order-status'
+import { canConfirmShipment, getDeliveryStatusMeta, getRateStatusMeta, shouldShowDeliveryError } from '../order-status'
 
 import IconEmpty from '@/components/icons/IconEmpty.vue'
 import IconCopy from '@/components/icons/IconCopy.vue'
@@ -123,6 +123,7 @@ const getStatusText = (state: number) => {
 }
 
 const getDeliveryMeta = (order: DeliveryRecordItem) => getDeliveryStatusMeta(order.deliveryStatus, order.state)
+const getRateMeta = (order: DeliveryRecordItem) => getRateStatusMeta(order)
 const showFailReason = (order: DeliveryRecordItem) => Boolean(order.failReason)
   && shouldShowDeliveryError(order.deliveryStatus, order.state)
 
@@ -168,8 +169,8 @@ const getConfirmBg = (state: number) => {
           >
             {{ getConfirmText(order.confirmState || 0) }}
           </span>
-          <span class="order-card__status" :style="{ color: order.rateStatus === 1 ? '#30D158' : 'rgba(28,28,30,.55)', background: order.rateStatus === 1 ? 'rgba(48,209,88,.2)' : 'rgba(120,120,128,.12)' }">
-            {{ order.rateStatus === 1 ? '已评价' : order.rateStatus === -1 ? '评价失败' : '待评价' }}
+          <span class="order-card__status" :title="getRateMeta(order).title" :style="{ color: getRateMeta(order).color, background: getRateMeta(order).background }">
+            {{ getRateMeta(order).text }}
           </span>
         </div>
       </div>
@@ -222,14 +223,14 @@ const getConfirmBg = (state: number) => {
           <span class="detail-tooltip">单击查询本地，双击查询闲鱼服务器</span>
         </button>
         <button
-          v-if="order.orderId && order.rateStatus !== 1"
+          v-if="order.orderId"
           class="order-card__action order-card__action--rate"
           @click="emit('rate', order)"
         >
-          <span>评价</span>
+          <span>{{ order.rateDetail?.canRate ? '评价' : '查看评价' }}</span>
         </button>
         <button
-          v-if="order.orderId"
+          v-if="canConfirmShipment(order)"
           class="order-card__action order-card__action--ship"
           :class="{ 'order-card__action--loading': order.confirming }"
           @click="emit('confirmShipment', order)"
@@ -306,10 +307,10 @@ const getConfirmBg = (state: number) => {
             </span>
           </td>
           <td class="table__td table__td--center">
-            <span class="status-tag" :title="order.rateContent || ''" :style="{ color: order.rateStatus === 1 ? '#30D158' : order.rateStatus === -1 ? '#FF453A' : 'rgba(28,28,30,.55)', background: order.rateStatus === 1 ? 'rgba(48,209,88,.2)' : order.rateStatus === -1 ? 'rgba(255,69,58,.15)' : 'rgba(120,120,128,.12)' }">
-              {{ order.rateStatus === 1 ? '已评价' : order.rateStatus === -1 ? '失败待重试' : '待评价' }}
+            <span class="status-tag" :title="getRateMeta(order).title" :style="{ color: getRateMeta(order).color, background: getRateMeta(order).background }">
+              {{ getRateMeta(order).text }}
             </span>
-            <small v-if="order.rateStatus === 1" class="rate-source">{{ order.rateSource === 'MANUAL' ? '手动' : '自动' }}</small>
+            <small v-if="order.rateDetail?.rated" class="rate-source">平台已同步</small>
           </td>
           <td class="table__td table__td--center">
             <span class="time-text">{{ formatTime(order.orderCreateTime || order.createTime) }}</span>
@@ -335,14 +336,14 @@ const getConfirmBg = (state: number) => {
               <span class="detail-tooltip">单击查询本地，双击查询闲鱼服务器</span>
             </button>
             <button
-              v-if="order.orderId && order.rateStatus !== 1"
+              v-if="order.orderId"
               class="table__action table__action--rate"
               @click="emit('rate', order)"
             >
-              <span>评价</span>
+              <span>{{ order.rateDetail?.canRate ? '评价' : '查看评价' }}</span>
             </button>
             <button
-              v-if="order.orderId"
+              v-if="canConfirmShipment(order)"
               class="table__action table__action--ship"
               :class="{ 'table__action--loading': order.confirming }"
               @click="emit('confirmShipment', order)"
