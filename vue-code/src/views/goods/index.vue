@@ -10,7 +10,8 @@ import IconFilter from '@/components/icons/IconFilter.vue'
 import IconChevronDown from '@/components/icons/IconChevronDown.vue'
 import IconChevronLeft from '@/components/icons/IconChevronLeft.vue'
 import IconChevronRight from '@/components/icons/IconChevronRight.vue'
-import type { GoodsItemWithConfig } from '@/api/goods'
+import { getGoodsList, type GoodsItemWithConfig } from '@/api/goods'
+import { showError } from '@/utils'
 import { parseRatingContents, serializeRatingContents } from '@/utils/rating-content'
 
 import GoodsTable from './components/GoodsTable.vue'
@@ -38,7 +39,7 @@ const {
   loadAccounts,
   loadGoods,
   handleRefresh,
-  handleAccountChange,
+  handleAccountChange: changeGoodsAccount,
   handleStatusFilter,
   handlePageChange,
   viewDetail,
@@ -46,9 +47,6 @@ const {
   saveGoodsInfo,
   openPlatformGoods,
   syncEditingGoods,
-  configAutoDelivery,
-  toggleAutoDelivery,
-  toggleAutoReply,
   toggleAutoPolish,
   saveRateSettings,
   confirmDelete,
@@ -66,10 +64,26 @@ const ratePresets = [
 ]
 const rateDialogVisible = ref(false)
 const rateTarget = ref<GoodsItemWithConfig | null>(null)
+const rateAccountId = ref<number | null>(null)
+const rateGoods = ref<GoodsItemWithConfig[]>([])
+const rateGoodsIds = ref<string[]>([])
+const rateSearch = ref('')
 const rateMode = ref<0 | 1 | 2>(0)
 const rateContents = ref<string[]>([])
+const rateLoading = ref(false)
 const rateSaving = ref(false)
+let rateRequestVersion = 0
+const filteredRateGoods = computed(() => {
+  const keyword = rateSearch.value.trim().toLowerCase()
+  return keyword
+    ? rateGoods.value.filter(goods => goods.item.title.toLowerCase().includes(keyword)
+        || goods.item.xyGoodId.toLowerCase().includes(keyword))
+    : rateGoods.value
+})
+const allFilteredRateGoodsSelected = computed(() => filteredRateGoods.value.length > 0
+  && filteredRateGoods.value.every(goods => rateGoodsIds.value.includes(goods.item.xyGoodId)))
 const rateError = computed(() => {
+  if (!rateGoodsIds.value.length) return '至少选择一个商品'
   if (rateMode.value === 0) return ''
   const contents = rateContents.value.map(item => item.trim()).filter(Boolean)
   if (!contents.length) return '至少需要一条评价文案'
@@ -78,14 +92,94 @@ const rateError = computed(() => {
   return ''
 })
 
-const openRateSettings = (item: GoodsItemWithConfig) => {
+const loadAllRateGoods = async (accountId: number, requestVersion: number) => {
+  rateLoading.value = true
+  try {
+    const items: GoodsItemWithConfig[] = []
+    const loadedGoodsIds = new Set<string>()
+    let pageNum = 1
+    let totalCount = 0
+    do {
+      const response = await getGoodsList({
+        xianyuAccountId: accountId,
+        onlyOnSale: false,
+        pageNum,
+        pageSize: 100
+      })
+      if (response.code !== 0 && response.code !== 200) throw new Error(response.msg || '加载商品失败')
+      const pageItems = response.data?.itemsWithConfig || []
+      pageItems.forEach(item => {
+        if (loadedGoodsIds.has(item.item.xyGoodId)) return
+        loadedGoodsIds.add(item.item.xyGoodId)
+        items.push(item)
+      })
+      totalCount = response.data?.totalCount || 0
+      pageNum++
+      if (!pageItems.length) break
+    } while (items.length < totalCount)
+    if (rateTarget.value && !loadedGoodsIds.has(rateTarget.value.item.xyGoodId)) {
+      items.unshift(rateTarget.value)
+    }
+    if (requestVersion !== rateRequestVersion || rateAccountId.value !== accountId || !rateDialogVisible.value) return
+    rateGoods.value = items
+  } finally {
+    if (requestVersion === rateRequestVersion) rateLoading.value = false
+  }
+}
+
+const openRateSettings = async (item: GoodsItemWithConfig) => {
+  if (!selectedAccountId.value) return showError('请选择账号')
+  const accountId = selectedAccountId.value
+  const requestVersion = ++rateRequestVersion
+  rateAccountId.value = accountId
   rateTarget.value = item
+  rateGoods.value = [item]
+  rateGoodsIds.value = [item.item.xyGoodId]
+  rateSearch.value = ''
   rateMode.value = item.xianyuAutoRateOn === 1 || item.xianyuAutoRateOn === 2
     ? item.xianyuAutoRateOn
     : 0
   rateContents.value = parseRatingContents(item.xianyuAutoRateContent)
   if (!rateContents.value.length) rateContents.value = [ratePresets[0]!]
   rateDialogVisible.value = true
+  try {
+    await loadAllRateGoods(accountId, requestVersion)
+  } catch (error: any) {
+    if (requestVersion !== rateRequestVersion || rateAccountId.value !== accountId || !rateDialogVisible.value) return
+    rateGoods.value = [item]
+    showError(error.message || '加载商品失败')
+  }
+}
+
+const closeRateSettings = () => {
+  rateRequestVersion++
+  rateDialogVisible.value = false
+  rateLoading.value = false
+}
+
+const handleAccountChange = () => {
+  closeRateSettings()
+  rateAccountId.value = null
+  return changeGoodsAccount()
+}
+
+const toggleRateGoods = (goodsId: string) => {
+  rateGoodsIds.value = rateGoodsIds.value.includes(goodsId)
+    ? rateGoodsIds.value.filter(id => id !== goodsId)
+    : [...rateGoodsIds.value, goodsId]
+}
+
+const toggleAllFilteredRateGoods = () => {
+  const filteredIds = filteredRateGoods.value.map(goods => goods.item.xyGoodId)
+  rateGoodsIds.value = allFilteredRateGoodsSelected.value
+    ? rateGoodsIds.value.filter(id => !filteredIds.includes(id))
+    : [...new Set([...rateGoodsIds.value, ...filteredIds])]
+}
+
+const getAutoRateModeText = (mode: number) => {
+  if (mode === 1) return '始终评价'
+  if (mode === 2) return '买家评价后'
+  return '已关闭'
 }
 
 const addRateContent = (content = '') => {
@@ -107,11 +201,17 @@ const toggleRateEnabled = (event: Event) => {
 }
 
 const submitRateSettings = async () => {
-  if (!rateTarget.value || rateError.value) return
+  if (rateError.value) return
+  if (!rateAccountId.value || selectedAccountId.value !== rateAccountId.value) {
+    rateDialogVisible.value = false
+    return showError('账号已切换，请重新打开自动评价设置')
+  }
   rateSaving.value = true
   try {
-    if (await saveRateSettings(rateTarget.value, rateMode.value, serializeRatingContents(rateContents.value))) {
-      rateDialogVisible.value = false
+    const targets = rateGoods.value.filter(item => rateGoodsIds.value.includes(item.item.xyGoodId))
+    const content = rateMode.value === 0 ? undefined : serializeRatingContents(rateContents.value)
+    if (await saveRateSettings(targets, rateMode.value, content)) {
+      closeRateSettings()
     }
   } finally {
     rateSaving.value = false
@@ -197,8 +297,9 @@ const HeaderSelectors = defineComponent({
     return () => h('div', { class: 'header-selectors' }, [
       h('div', { class: 'header-select-wrap' }, [
         h('select', {
-          class: 'header-select',
-          value: selectedAccountId.value,
+           class: 'header-select',
+           value: selectedAccountId.value,
+           disabled: rateSaving.value,
           onChange: (e: Event) => {
             const target = e.target as HTMLSelectElement
             selectedAccountId.value = target.value ? parseInt(target.value) : null
@@ -214,8 +315,9 @@ const HeaderSelectors = defineComponent({
       ]),
       h('div', { class: 'header-select-wrap' }, [
         h('select', {
-          class: 'header-select',
-          value: statusFilter.value,
+           class: 'header-select',
+           value: statusFilter.value,
+           disabled: rateSaving.value,
           onChange: (e: Event) => {
             const target = e.target as HTMLSelectElement
             statusFilter.value = target.value
@@ -282,6 +384,7 @@ const getPageButtons = () => {
             <select
               v-model="selectedAccountId"
               class="goods__select"
+              :disabled="rateSaving"
               @change="handleAccountChange"
             >
               <option :value="null" disabled>选择账号</option>
@@ -298,6 +401,7 @@ const getPageButtons = () => {
             <select
               v-model="statusFilter"
               class="goods__select"
+              :disabled="rateSaving"
               @change="handleStatusFilter"
             >
               <option value="">全部状态</option>
@@ -376,11 +480,8 @@ const getPageButtons = () => {
           @view="viewDetail"
           @edit="editGoods"
           @sync="syncSingleGoods"
-          @toggle-auto-delivery="toggleAutoDelivery"
-          @toggle-auto-reply="toggleAutoReply"
           @toggle-auto-polish="toggleAutoPolish"
           @config-auto-rate="openRateSettings"
-          @config-auto-delivery="configAutoDelivery"
           @delete="confirmDelete"
         />
       </div>
@@ -436,15 +537,30 @@ const getPageButtons = () => {
     />
 
     <Transition name="overlay-fade">
-      <div v-if="rateDialogVisible" class="goods__dialog-overlay" @click.self="rateDialogVisible = false">
+      <div v-if="rateDialogVisible" class="goods__dialog-overlay" @click.self="closeRateSettings">
         <form class="goods__dialog rate-dialog" @submit.prevent="submitRateSettings">
           <div class="goods__dialog-header">
             <div>
               <h3 class="goods__dialog-title">自动评价设置</h3>
-              <p class="rate-dialog__subtitle">{{ rateTarget?.item.title }}</p>
+              <p class="rate-dialog__subtitle">评价规则统一在商品管理配置，可一次应用到多个商品</p>
             </div>
           </div>
           <div class="goods__dialog-body rate-dialog__body">
+            <section class="rate-dialog__goods-section">
+              <div class="rate-dialog__goods-heading">
+                <span><strong>选择商品</strong><small>已选择 {{ rateGoodsIds.length }} / {{ rateGoods.length }} 个</small></span>
+                <button type="button" @click="toggleAllFilteredRateGoods">{{ allFilteredRateGoodsSelected ? '取消当前结果' : '选择当前结果' }}</button>
+              </div>
+              <input v-model="rateSearch" class="rate-dialog__search" placeholder="搜索商品名称或商品ID">
+              <div class="rate-dialog__goods-list">
+                <div v-if="rateLoading" class="rate-dialog__empty">正在加载商品…</div>
+                <label v-for="goods in filteredRateGoods" :key="goods.item.xyGoodId" class="rate-dialog__goods-item">
+                  <input type="checkbox" :checked="rateGoodsIds.includes(goods.item.xyGoodId)" @change="toggleRateGoods(goods.item.xyGoodId)">
+                  <span><strong>{{ goods.item.title }}</strong><small>{{ getAutoRateModeText(goods.xianyuAutoRateOn) }} · {{ goods.item.xyGoodId }}</small></span>
+                </label>
+                <div v-if="!rateLoading && filteredRateGoods.length === 0" class="rate-dialog__empty">没有匹配商品</div>
+              </div>
+            </section>
             <label class="rate-dialog__switch-row">
               <span><strong>自动评价</strong><small>开启后选择一种触发方式，关闭时不会自动评价</small></span>
               <input
@@ -478,8 +594,8 @@ const getPageButtons = () => {
             <small v-if="rateError" class="rate-dialog__error">{{ rateError }}</small>
           </div>
           <div class="goods__dialog-footer">
-            <button type="button" class="goods__dialog-btn goods__dialog-btn--cancel" @click="rateDialogVisible = false">取消</button>
-            <button type="submit" class="goods__dialog-btn goods__dialog-btn--confirm" :disabled="Boolean(rateError) || rateSaving">{{ rateSaving ? '保存中' : '保存设置' }}</button>
+            <button type="button" class="goods__dialog-btn goods__dialog-btn--cancel" @click="closeRateSettings">取消</button>
+            <button type="submit" class="goods__dialog-btn goods__dialog-btn--confirm" :disabled="Boolean(rateError) || rateSaving">{{ rateSaving ? '保存中' : `应用到 ${rateGoodsIds.length} 个商品` }}</button>
           </div>
         </form>
       </div>
@@ -528,5 +644,5 @@ const getPageButtons = () => {
   opacity: 0;
 }
 
-.rate-dialog{max-width:680px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:14px;max-height:68vh;overflow:auto}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small,.rate-dialog__pool-heading small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.rate-dialog__mode-options button{display:flex;flex-direction:column;gap:5px;text-align:left;border:1px solid rgba(60,60,67,.14);border-radius:9px;padding:12px;background:#fff;cursor:pointer}.rate-dialog__mode-options button.active{border-color:#007aff;background:rgba(0,122,255,.06);color:#007aff}.rate-dialog__mode-options small{color:#6e6e73;line-height:1.5}.rate-dialog__pool-heading,.rate-dialog__field-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.rate-dialog__pool-heading>span{display:flex;flex-direction:column;gap:3px}.rate-dialog__pool-heading button,.rate-dialog__field-title button{border:0;border-radius:6px;padding:5px 8px;background:rgba(0,122,255,.08);color:#007aff;cursor:pointer}.rate-dialog__field-title>span{display:flex;gap:5px;flex-wrap:wrap}.rate-dialog__field-title button:last-child{color:#ff3b30;background:rgba(255,59,48,.07)}.rate-dialog__field-title button:disabled{opacity:.35;cursor:not-allowed}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.rate-dialog__error{color:#ff3b30}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}@media(max-width:767px){.rate-dialog__mode-options{grid-template-columns:1fr}}
+.rate-dialog{max-width:820px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:14px;max-height:68vh;overflow:auto}.rate-dialog__goods-section{display:flex;flex-direction:column;gap:10px;padding:13px;border:1px solid rgba(60,60,67,.12);border-radius:10px;background:#fff}.rate-dialog__goods-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.rate-dialog__goods-heading>span{display:flex;flex-direction:column;gap:3px}.rate-dialog__goods-heading small,.rate-dialog__goods-item small{color:#86868b;font-size:12px;font-weight:400}.rate-dialog__goods-heading>button{border:0;border-radius:6px;padding:5px 8px;background:rgba(0,122,255,.08);color:#007aff;cursor:pointer}.rate-dialog__search{box-sizing:border-box;width:100%;border:1px solid rgba(60,60,67,.18);border-radius:8px;padding:9px 10px;background:#fff}.rate-dialog__goods-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:180px;overflow:auto}.rate-dialog__goods-item{display:flex;align-items:center;gap:9px;min-width:0;padding:9px;border:1px solid rgba(60,60,67,.1);border-radius:8px;cursor:pointer}.rate-dialog__goods-item>span{display:flex;min-width:0;flex:1;flex-direction:column;gap:3px}.rate-dialog__goods-item strong,.rate-dialog__goods-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__goods-item strong{font-size:12px}.rate-dialog__empty{grid-column:1/-1;padding:18px;text-align:center;color:#86868b;font-size:12px}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small,.rate-dialog__pool-heading small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.rate-dialog__mode-options button{display:flex;flex-direction:column;gap:5px;text-align:left;border:1px solid rgba(60,60,67,.14);border-radius:9px;padding:12px;background:#fff;cursor:pointer}.rate-dialog__mode-options button.active{border-color:#007aff;background:rgba(0,122,255,.06);color:#007aff}.rate-dialog__mode-options small{color:#6e6e73;line-height:1.5}.rate-dialog__pool-heading,.rate-dialog__field-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.rate-dialog__pool-heading>span{display:flex;flex-direction:column;gap:3px}.rate-dialog__pool-heading button,.rate-dialog__field-title button{border:0;border-radius:6px;padding:5px 8px;background:rgba(0,122,255,.08);color:#007aff;cursor:pointer}.rate-dialog__field-title>span{display:flex;gap:5px;flex-wrap:wrap}.rate-dialog__field-title button:last-child{color:#ff3b30;background:rgba(255,59,48,.07)}.rate-dialog__field-title button:disabled{opacity:.35;cursor:not-allowed}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.rate-dialog__error{color:#ff3b30}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}@media(max-width:767px){.rate-dialog__goods-list,.rate-dialog__mode-options{grid-template-columns:1fr}.rate-dialog__goods-heading{align-items:flex-start;flex-direction:column}}
 </style>

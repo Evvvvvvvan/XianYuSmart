@@ -5,8 +5,6 @@ import type { GoodsItemWithConfig } from '@/api/goods'
 
 import IconEmpty from '@/components/icons/IconEmpty.vue'
 import IconTrash from '@/components/icons/IconTrash.vue'
-import IconSend from '@/components/icons/IconSend.vue'
-import IconRobot from '@/components/icons/IconRobot.vue'
 import IconImage from '@/components/icons/IconImage.vue'
 import IconCheck from '@/components/icons/IconCheck.vue'
 import IconSparkle from '@/components/icons/IconSparkle.vue'
@@ -21,11 +19,8 @@ interface Emits {
   (e: 'view', xyGoodId: string): void
   (e: 'sync', xyGoodId: string): void
   (e: 'edit', item: GoodsItemWithConfig): void
-  (e: 'toggleAutoDelivery', item: GoodsItemWithConfig, value: boolean): void
-  (e: 'toggleAutoReply', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoPolish', item: GoodsItemWithConfig, value: boolean): void
   (e: 'configAutoRate', item: GoodsItemWithConfig): void
-  (e: 'configAutoDelivery', item: GoodsItemWithConfig): void
   (e: 'delete', xyGoodId: string, title: string): void
 }
 
@@ -137,13 +132,6 @@ const handleImgError = (e: Event) => {
         >
           <IconEdit />
           <span>编辑</span>
-        </button>
-        <button
-          class="goods-card__action goods-card__action--config"
-          @click.stop="emit('configAutoDelivery', item)"
-        >
-          <IconSparkle />
-          <span>配置</span>
         </button>
         <button
           class="goods-card__action goods-card__action--config"

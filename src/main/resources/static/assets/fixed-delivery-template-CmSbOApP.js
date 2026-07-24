@@ -1,0 +1,1 @@
+import{h as t}from"./index-BUoRsgx7.js";function i(e){return t({url:"/fixed-delivery-template/list",method:"GET",params:{xianyuAccountId:e}})}function a(e){return t({url:"/fixed-delivery-template/save",method:"POST",data:e})}function d(e,r){return t({url:"/fixed-delivery-template/delete",method:"POST",params:{xianyuAccountId:e,id:r}})}export{d,i as g,a as s};

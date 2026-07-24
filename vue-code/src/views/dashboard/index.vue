@@ -12,9 +12,9 @@ const todoCount = computed(() =>
 
 const setupSteps = computed(() => [
   { title: '连接闲鱼账号', description: '扫码登录或更新 Cookie，确认连接状态正常。', path: '/connection', action: '管理连接', completed: stats.accountCount > 0 },
-  { title: '同步并配置商品', description: '同步在售商品，按商品开启回复、评价、擦亮和发货。', path: '/goods', action: '配置商品', completed: stats.itemCount > 0 },
+  { title: '同步并配置商品', description: '同步在售商品，在商品管理统一配置评价与擦亮规则。', path: '/goods', action: '配置商品', completed: stats.itemCount > 0 },
   { title: '准备卡密库存', description: '创建卡密仓库并补充库存，再关联自动发货规则。', path: '/kami-config', action: '管理库存', completed: stats.availableKamiCount > 0 },
-  { title: '处理订单与评价', description: '在订单页查看履约结果、手动评价或配置自动评价。', path: '/orders', action: '进入订单', completed: stats.todayDeliveryCount > 0 }
+  { title: '处理订单与评价', description: '在订单页查看履约结果、双方评价并处理待评价订单。', path: '/orders', action: '进入订单', completed: stats.todayDeliveryCount > 0 }
 ])
 
 const money = (value: number) => Number(value || 0).toLocaleString('zh-CN', {

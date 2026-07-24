@@ -1,12 +1,9 @@
 import { ref, reactive, computed, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { getAccountList } from '@/api/account'
 import {
   getGoodsList,
   refreshGoods,
   getGoodsDetail,
-  updateAutoDeliveryStatus,
-  updateAutoReplyStatus,
   updateGoodsAutomationStatus,
   deleteItem,
   syncSingleItem,
@@ -22,8 +19,6 @@ import type { GoodsEditForm } from './goods-edit'
 import { resolvePlatformItemUrl } from './goods-edit'
 
 export function useGoodsManager() {
-  const router = useRouter()
-
   const loading = ref(false)
   const refreshing = ref(false)
   const accounts = ref<Account[]>([])
@@ -237,89 +232,60 @@ export function useGoodsManager() {
     }
   }
 
-  // 配置自动发货
-  const configAutoDelivery = (item: GoodsItemWithConfig) => {
-    router.push({
-      path: '/auto-delivery',
-      query: {
-        accountId: selectedAccountId.value?.toString(),
-        goodsId: item.item.xyGoodId
-      }
-    })
-  }
-
-  // 切换自动发货
-  const toggleAutoDelivery = async (item: GoodsItemWithConfig, value: boolean) => {
-    if (!selectedAccountId.value) return
-    try {
-      const response = await updateAutoDeliveryStatus({
-        xianyuAccountId: selectedAccountId.value,
-        xyGoodsId: item.item.xyGoodId,
-        xianyuAutoDeliveryOn: value ? 1 : 0
-      })
-      if (response.code === 0 || response.code === 200) {
-        showSuccess(`自动发货${value ? '开启' : '关闭'}成功`)
-        item.xianyuAutoDeliveryOn = value ? 1 : 0
-      } else {
-        throw new Error(response.msg || '操作失败')
-      }
-    } catch (error: any) {
-      console.error('操作失败:', error)
-      item.xianyuAutoDeliveryOn = value ? 0 : 1
-    }
-  }
-
-  // 切换自动回复
-  const toggleAutoReply = async (item: GoodsItemWithConfig, value: boolean) => {
-    if (!selectedAccountId.value) return
-    try {
-      const response = await updateAutoReplyStatus({
-        xianyuAccountId: selectedAccountId.value,
-        xyGoodsId: item.item.xyGoodId,
-        xianyuAutoReplyOn: value ? 1 : 0
-      })
-      if (response.code === 0 || response.code === 200) {
-        showSuccess(`自动回复${value ? '开启' : '关闭'}成功`)
-        item.xianyuAutoReplyOn = value ? 1 : 0
-      } else {
-        throw new Error(response.msg || '操作失败')
-      }
-    } catch (error: any) {
-      console.error('操作失败:', error)
-      item.xianyuAutoReplyOn = value ? 0 : 1
-    }
-  }
-
-  const updateOperationsAutomation = async (item: GoodsItemWithConfig, autoRate: number, autoPolish: number, rateContent?: string) => {
+  const updateAutoPolish = async (item: GoodsItemWithConfig, autoPolish: number) => {
     if (!selectedAccountId.value) return
     try {
       const response = await updateGoodsAutomationStatus({
         xianyuAccountId: selectedAccountId.value,
         xyGoodsId: item.item.xyGoodId,
-        xianyuAutoRateOn: autoRate,
-        xianyuAutoPolishOn: autoPolish,
-        xianyuAutoRateContent: rateContent
+        xianyuAutoPolishOn: autoPolish
       })
       if (response.code !== 0 && response.code !== 200) {
         throw new Error(response.msg || '操作失败')
       }
-      item.xianyuAutoRateOn = autoRate
       item.xianyuAutoPolishOn = autoPolish
-      if (rateContent) item.xianyuAutoRateContent = rateContent
-      showSuccess('商品自动化设置已更新')
+      showSuccess(`自动擦亮${autoPolish === 1 ? '开启' : '关闭'}成功`)
       return true
     } catch (error: any) {
-      if (!error.messageShown) showError(error.message || '商品自动化设置更新失败')
+      if (!error.messageShown) showError(error.message || '自动擦亮设置更新失败')
       return false
     }
   }
 
   const toggleAutoPolish = (item: GoodsItemWithConfig, value: boolean) => {
-    return updateOperationsAutomation(item, item.xianyuAutoRateOn || 0, value ? 1 : 0)
+    return updateAutoPolish(item, value ? 1 : 0)
   }
 
-  const saveRateSettings = (item: GoodsItemWithConfig, mode: number, content: string) => {
-    return updateOperationsAutomation(item, mode, item.xianyuAutoPolishOn || 0, content)
+  const saveRateSettings = async (items: GoodsItemWithConfig[], mode: number, content?: string) => {
+    if (!selectedAccountId.value || !items.length) return false
+    const accountId = selectedAccountId.value
+    const goodsIds = [...new Set(items.map(item => item.item.xyGoodId))]
+    try {
+      // 批量接口每次最多提交200个商品，避免大账号请求体过大
+      for (let index = 0; index < goodsIds.length; index += 200) {
+        const response = await updateGoodsAutomationStatus({
+          xianyuAccountId: accountId,
+          xyGoodsIds: goodsIds.slice(index, index + 200),
+          xianyuAutoRateOn: mode,
+          xianyuAutoRateContent: mode === 0 ? undefined : content
+        })
+        if (response.code !== 0 && response.code !== 200) {
+          throw new Error(response.msg || '保存自动评价设置失败')
+        }
+      }
+      const updatedIds = new Set(goodsIds)
+      const visibleGoods = selectedAccountId.value === accountId ? goodsList.value : []
+      ;[...items, ...visibleGoods].forEach(item => {
+        if (!updatedIds.has(item.item.xyGoodId)) return
+        item.xianyuAutoRateOn = mode
+        if (mode !== 0 && content !== undefined) item.xianyuAutoRateContent = content
+      })
+      showSuccess(`已更新 ${goodsIds.length} 个商品的自动评价设置`)
+      return true
+    } catch (error: any) {
+      if (!error.messageShown) showError(error.message || '自动评价设置保存失败')
+      return false
+    }
   }
 
   // 删除商品
@@ -408,9 +374,6 @@ export function useGoodsManager() {
     saveGoodsInfo,
     openPlatformGoods,
     syncEditingGoods,
-    configAutoDelivery,
-    toggleAutoDelivery,
-    toggleAutoReply,
     toggleAutoPolish,
     saveRateSettings,
     confirmDelete,
