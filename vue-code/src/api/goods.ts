@@ -167,9 +167,10 @@ export function updateAutoReplyStatus(data: {
 
 export function updateGoodsAutomationStatus(data: {
   xianyuAccountId: number;
-  xyGoodsId: string;
-  xianyuAutoRateOn: number;
-  xianyuAutoPolishOn: number;
+  xyGoodsId?: string;
+  xyGoodsIds?: string[];
+  xianyuAutoRateOn?: number;
+  xianyuAutoPolishOn?: number;
   xianyuAutoRateContent?: string;
 }) {
   return request({

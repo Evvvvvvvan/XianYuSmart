@@ -114,7 +114,7 @@ const handleImgError = (e: Event) => {
           <div class="goods-card__meta">
             <span class="goods-card__price">{{ formatPrice(item.item.soldPrice) }}</span>
             <div class="goods-card__tags">
-              <span v-if="item.xianyuAutoDeliveryOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">{{ item.autoDeliveryType === 2 ? '卡密发货' : '固定内容' }}</span>
+              <span v-if="item.xianyuAutoDeliveryOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">{{ item.autoDeliveryType === 3 ? '固定+卡密' : item.autoDeliveryType === 2 ? '卡密发货' : '固定内容' }}</span>
               <span v-if="item.xianyuAutoReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">AI</span>
               <span v-if="item.xianyuKeywordReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--keyword">关键词</span>
               <span v-if="item.xianyuAutoRateOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">评价</span>
@@ -227,7 +227,7 @@ const handleImgError = (e: Event) => {
             </span>
           </td>
           <td class="table__td table__td--switch">
-            <span v-if="item.xianyuAutoDeliveryOn === 1" class="reply-mode-tag reply-mode-tag--delivery">{{ item.autoDeliveryType === 2 ? '卡密' : '文本' }}</span>
+            <span v-if="item.xianyuAutoDeliveryOn === 1" class="reply-mode-tag reply-mode-tag--delivery">{{ item.autoDeliveryType === 3 ? '固定+卡密' : item.autoDeliveryType === 2 ? '卡密' : '固定' }}</span>
             <span v-else class="reply-mode-tag reply-mode-tag--off">-</span>
           </td>
           <td class="table__td table__td--switch">

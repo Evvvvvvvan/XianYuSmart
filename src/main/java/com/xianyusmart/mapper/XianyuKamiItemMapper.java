@@ -59,10 +59,9 @@ public interface XianyuKamiItemMapper extends BaseMapper<XianyuKamiItem> {
     List<XianyuKamiItem> lockAvailable(@Param("kamiConfigId") Long kamiConfigId,
                                        @Param("quantity") int quantity);
 
-    @Select("SELECT * FROM xianyu_kami_item WHERE kami_config_id = #{kamiConfigId} AND order_id = #{orderId} " +
-            "AND status IN (1, 2, 3) ORDER BY sort_order ASC, id ASC")
-    List<XianyuKamiItem> findReservedByOrder(@Param("kamiConfigId") Long kamiConfigId,
-                                              @Param("orderId") String orderId);
+    @Select("SELECT * FROM xianyu_kami_item WHERE order_id = #{orderId} " +
+            "AND status IN (1, 2, 3) ORDER BY sort_order ASC, id ASC FOR UPDATE")
+    List<XianyuKamiItem> lockReservedByOrder(@Param("orderId") String orderId);
 
     @Select("SELECT * FROM xianyu_kami_item WHERE order_id = #{orderId} AND status = #{status} ORDER BY id ASC")
     List<XianyuKamiItem> findByOrderAndStatus(@Param("orderId") String orderId,

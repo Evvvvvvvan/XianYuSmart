@@ -278,13 +278,8 @@ public class KamiConfigServiceImpl implements KamiConfigService {
             throw new BusinessException(400, "卡密预占参数无效");
         }
 
-        // 同一卡密库短事务串行预占，避免同订单在租约交叠时重复取卡。
-        XianyuKamiConfig config = kamiConfigMapper.lockById(kamiConfigId);
-        if (config == null) {
-            throw new BusinessException(404, "卡密配置不存在");
-        }
-
-        List<XianyuKamiItem> existing = kamiItemMapper.findReservedByOrder(kamiConfigId, orderId);
+        // 先按订单全局锁定已有卡密，防止多仓库回退或并发重试为同一订单换发卡密。
+        List<XianyuKamiItem> existing = kamiItemMapper.lockReservedByOrder(orderId);
         if (!existing.isEmpty()) {
             boolean allReserved = existing.stream()
                     .allMatch(item -> item.getStatus() == KamiStatus.RESERVED.getCode());
@@ -295,6 +290,12 @@ public class KamiConfigServiceImpl implements KamiConfigService {
                 return existing;
             }
             throw new BusinessException(409, "订单卡密数量与已有预占不一致");
+        }
+
+        // 同一卡密库短事务串行预占，避免同订单在租约交叠时重复取卡。
+        XianyuKamiConfig config = kamiConfigMapper.lockById(kamiConfigId);
+        if (config == null) {
+            throw new BusinessException(404, "卡密配置不存在");
         }
 
         List<XianyuKamiItem> items = kamiItemMapper.lockAvailable(kamiConfigId, quantity);

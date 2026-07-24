@@ -31,7 +31,7 @@ public class AutoDeliveryConfigRespDTO {
     private String xyGoodsId;
     
     /**
-     * 发货模式：1-固定内容发货，2-卡密发货
+     * 发货内容位标记：1-固定内容，2-卡密，3-固定内容和卡密
      */
     private Integer deliveryMode;
 

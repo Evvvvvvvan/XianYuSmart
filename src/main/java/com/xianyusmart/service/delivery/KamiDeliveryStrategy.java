@@ -5,10 +5,11 @@ import com.xianyusmart.exception.BusinessException;
 import com.xianyusmart.service.KamiConfigService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 卡密发货策略（deliveryMode=2）
+ * 卡密发货策略（deliveryMode 包含卡密标记）
  *
  * <p>从卡密仓库获取可用卡密，用模板替换 {kmKey} 占位符后返回发货内容。</p>
  *
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
+@Order(2)
 public class KamiDeliveryStrategy implements DeliveryContentStrategy {
 
     @Autowired
@@ -29,7 +31,7 @@ public class KamiDeliveryStrategy implements DeliveryContentStrategy {
 
     @Override
     public boolean supports(int deliveryMode) {
-        return deliveryMode == 2;
+        return (deliveryMode & 2) == 2;
     }
 
     @Override
@@ -75,6 +77,9 @@ public class KamiDeliveryStrategy implements DeliveryContentStrategy {
             } catch (BusinessException e) {
                 log.warn("【账号{}】卡密配置无法满足订单: configId={}, orderId={}, reason={}",
                         accountId, configIdStr, orderId, e.getMessage());
+                if (e.getCode() != 404 && !"卡密库存不足".equals(e.getMessage())) {
+                    throw e;
+                }
             }
         }
         return null;

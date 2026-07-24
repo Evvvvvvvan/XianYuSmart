@@ -37,6 +37,8 @@ const {
   selectedSkuId,
   skuConfigs,
   hasMultipleSku,
+  hasFixedDelivery,
+  hasCardDelivery,
   goodsTotal,
   goodsLoading,
   goodsListRef,
@@ -57,7 +59,7 @@ const {
   selectGoods,
   saveConfig,
   toggleAutoDelivery,
-  toggleAutoConfirmShipment,
+  toggleDeliveryMode,
   loadDeliveryRecords,
   handleRecordsPageChange,
   viewGoodsDetail,
@@ -215,7 +217,7 @@ onMounted(() => {
                     class="ad__goods-auto-badge ad__goods-auto-badge--on"
                   >
                     <IconSparkle />
-                    {{ goods.autoDeliveryType === 2 ? '卡密' : '文本' }}
+                    {{ goods.autoDeliveryType === 3 ? '固定+卡密' : goods.autoDeliveryType === 2 ? '卡密' : '固定' }}
                   </span>
                 </div>
               </div>
@@ -334,7 +336,7 @@ onMounted(() => {
 
         <!-- Config content -->
         <div v-if="selectedGoods" class="ad__config-scroll">
-          <!-- 自动发货开关与固定启用的发货凭证 -->
+          <!-- 自动发货总开关与固定发送渠道 -->
           <div class="ad__config-section ad__config-section--no-pad-bottom">
             <div class="ad__master-toggles">
               <div class="ad__master-toggle">
@@ -349,18 +351,9 @@ onMounted(() => {
                   <span class="ad__switch-thumb"></span>
                 </label>
               </div>
-              <div class="ad__master-toggle">
-                <div class="ad__toggle-label">同步发货凭证</div>
-                <label class="ad__switch ad__switch--sm">
-                  <input
-                    type="checkbox"
-                    :checked="true"
-                    :disabled="true"
-                    @change="toggleAutoConfirmShipment(($event.target as HTMLInputElement).checked)"
-                  />
-                  <span class="ad__switch-track"></span>
-                  <span class="ad__switch-thumb"></span>
-                </label>
+              <div class="ad__channel-lock">
+                <strong>固定发送渠道</strong>
+                <span>发货凭证 + 买家私聊</span>
               </div>
             </div>
           </div>
@@ -382,98 +375,36 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Top Tab Switch -->
-          <div class="ad__config-section ad__config-section--no-pad-bottom">
-            <div class="ad__tab-group">
-              <button
-                class="ad__tab-btn"
-                :class="{ 'ad__tab-btn--active': configForm.deliveryMode === 1 }"
-                @click="configForm.deliveryMode = 1"
-              >
-                <IconText />
-                固定内容发货
-              </button>
-              <button
-                class="ad__tab-btn"
-                :class="{ 'ad__tab-btn--active': configForm.deliveryMode === 2 }"
-                @click="configForm.deliveryMode = 2"
-              >
-                🔑
-                卡密发货
-              </button>
-            </div>
-          </div>
-
+          <!-- 第一步：选择发货内容组成 -->
           <div class="ad__config-section">
-            <div class="ad__config-section-title">发货私聊</div>
-            <div class="ad__section-note">发货成功后，同一份实际发货内容会写入发货凭证并通过私聊发送；私聊失败会自动重试。</div>
-            <div class="ad__field-heading">
-              <span>私聊模板</span>
-              <div class="ad__variable-list">
-                <button type="button" @click="appendDeliveryVariable('{buyerName}')">会员名称</button>
-                <button type="button" @click="appendDeliveryVariable('{orderId}')">订单号</button>
-                <button type="button" @click="appendDeliveryVariable('{deliveryContent}')">发货内容</button>
-              </div>
+            <div class="ad__step-heading">
+              <span>1</span>
+              <div><strong>选择发货内容</strong><small>可单选，也可同时选择；同时选择时会按“固定内容 → 卡密”组合发送</small></div>
             </div>
-            <textarea
-              v-model="configForm.deliveryMessageTemplate"
-              class="ad__textarea ad__textarea--compact"
-              maxlength="1000"
-              placeholder="例：您好，{buyerName}，订单 {orderId} 已发货：{deliveryContent}"
-            ></textarea>
-            <div class="ad__textarea-footer">
-              <span class="ad__textarea-hint">变量会在发送前自动替换，卡密仅分配一次</span>
-              <span class="ad__textarea-count">{{ configForm.deliveryMessageTemplate.length }} / 1000</span>
+            <div class="ad__mode-options">
+              <label class="ad__mode-option" :class="{ 'ad__mode-option--active': hasFixedDelivery }">
+                <input type="checkbox" :checked="hasFixedDelivery" :disabled="hasFixedDelivery && !hasCardDelivery" @change="toggleDeliveryMode(1, ($event.target as HTMLInputElement).checked)">
+                <IconText />
+                <span><strong>固定内容</strong><small>每笔订单复用同一份说明，不消耗卡密库存</small></span>
+              </label>
+              <label class="ad__mode-option" :class="{ 'ad__mode-option--active': hasCardDelivery }">
+                <input type="checkbox" :checked="hasCardDelivery" :disabled="hasCardDelivery && !hasFixedDelivery" @change="toggleDeliveryMode(2, ($event.target as HTMLInputElement).checked)">
+                <span class="ad__mode-key">🔑</span>
+                <span><strong>卡密内容</strong><small>每笔订单从绑定仓库分配卡密并扣减库存</small></span>
+              </label>
             </div>
-
-            <div class="ad__follow-up-heading">
-              <div>
-                <strong>确认收货后好评引导</strong>
-                <span>检测到买家确认收货后，按顺序逐条发送</span>
-              </div>
-              <button type="button" class="ad__add-message-btn" @click="addReceiptFollowUpMessage">添加话术</button>
-            </div>
-            <div v-if="configForm.receiptFollowUpMessages.length === 0" class="ad__follow-up-empty">
-              暂未配置，确认收货后不会发送引导消息
-            </div>
-            <div
-              v-for="(message, index) in configForm.receiptFollowUpMessages"
-              :key="index"
-              class="ad__follow-up-item"
-            >
-              <div class="ad__field-heading">
-                <span>第 {{ index + 1 }} 条</span>
-                <div class="ad__variable-list">
-                  <button type="button" @click="appendReceiptVariable(index, '{buyerName}')">会员名称</button>
-                  <button type="button" @click="appendReceiptVariable(index, '{orderId}')">订单号</button>
-                  <button type="button" @click="appendReceiptVariable(index, '{deliveryContent}')">发货内容</button>
-                  <button type="button" class="ad__variable-remove" @click="removeReceiptFollowUpMessage(index)">删除</button>
-                </div>
-              </div>
-              <textarea
-                v-model="configForm.receiptFollowUpMessages[index]"
-                class="ad__textarea ad__textarea--compact"
-                maxlength="500"
-                placeholder="例：感谢支持，满意的话欢迎点亮小红花。"
-              ></textarea>
-              <div class="ad__textarea-footer">
-                <span class="ad__textarea-hint">单条独立发送</span>
-                <span class="ad__textarea-count">{{ message.length }} / 500</span>
-              </div>
-            </div>
-            <label v-if="configForm.receiptFollowUpMessages.length > 1" class="ad__interval-field">
-              <span>每条间隔</span>
-              <input v-model.number="configForm.receiptFollowUpIntervalSeconds" type="number" min="5" max="600" />
-              <span>秒</span>
-            </label>
           </div>
 
-          <!-- ====== 自动发货视图 ====== -->
-          <template v-if="configForm.deliveryMode === 1">
-            <!-- Content Section -->
+          <!-- 第二步：分别配置已选内容 -->
+          <div class="ad__step-heading ad__step-heading--standalone">
+            <span>2</span>
+            <div><strong>配置发货内容</strong><small>两种内容相互独立，切换选择不会清空已经填写的配置</small></div>
+          </div>
+          <div v-if="hasFixedDelivery && hasCardDelivery" class="ad__limit-note">组合发货写入凭证的最终内容不能超过200字，固定说明建议控制在120字以内，为卡密内容预留长度。</div>
+          <template v-if="hasFixedDelivery">
             <div class="ad__config-section">
-              <div class="ad__config-section-title">发货内容</div>
-
+              <div class="ad__config-section-title">固定内容配置</div>
+              <div class="ad__section-note">适合下载地址、使用说明、售后说明等每单相同的内容。</div>
               <textarea
                 v-model="configForm.autoDeliveryContent"
                 class="ad__textarea"
@@ -481,47 +412,21 @@ onMounted(() => {
                 maxlength="200"
               ></textarea>
               <div class="ad__textarea-footer">
-                <span class="ad__textarea-hint">每次复用且不扣卡密库存，凭证和私聊使用同一内容</span>
+                <span class="ad__textarea-hint">每次复用，不扣减卡密库存</span>
                 <span class="ad__textarea-count">{{ configForm.autoDeliveryContent.length }} / 200</span>
-              </div>
-
-              <div class="ad__image-section">
-                <div class="ad__image-section-title">发货图片</div>
-                <div class="ad__image-section-hint">可选，最多3张，同时写入发货凭证并发送至买家私聊</div>
-                <MultiImageUploader
-                  v-if="selectedAccountId"
-                  :account-id="selectedAccountId"
-                  :max="3"
-                  v-model="configForm.autoDeliveryImageUrl"
-                />
-              </div>
-
-              <div class="ad__save-row">
-                <button
-                  class="btn btn--primary"
-                  :class="{ 'btn--loading': saving }"
-                  :disabled="saving"
-                  @click="saveConfig"
-                >
-                  <IconCheck />
-                  保存配置
-                </button>
-                <span v-if="currentConfig" class="ad__save-time">
-                  更新于 {{ formatTime(currentConfig.updateTime) }}
-                </span>
               </div>
             </div>
           </template>
 
-          <!-- ====== 卡密发货视图 ====== -->
-          <template v-if="configForm.deliveryMode === 2">
+          <template v-if="hasCardDelivery">
             <div class="ad__config-section">
-              <div class="ad__config-section-title">卡密配置绑定</div>
-              <div style="margin-bottom: 12px;">
+              <div class="ad__config-section-title">卡密内容配置</div>
+              <div class="ad__section-note">选择卡密仓库，每笔订单只分配一次；库存不足时本单停止发货。</div>
+              <div class="ad__field-block">
+                <label>卡密仓库</label>
                 <select
                   v-model="selectedKamiConfigId"
                   class="native-select"
-                  style="width: 280px; max-width: 100%;"
                 >
                   <option value="" disabled>请选择卡密配置</option>
                   <option
@@ -532,51 +437,106 @@ onMounted(() => {
                     {{ opt.aliasName || `配置#${opt.id}` }}
                   </option>
                 </select>
-                <div v-if="kamiConfigOptions.length === 0" style="color: rgba(28,28,30,.55); font-size: 13px; margin-top: 8px;">
+                <div v-if="kamiConfigOptions.length === 0" class="ad__field-empty">
                   暂无卡密配置，请先在「卡密配置」页面创建
                 </div>
               </div>
 
-              <div style="margin-bottom: 12px;">
-                <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 6px;">
-                  <span style="font-size: 13px; color: rgba(28,28,30,.55);">发货文案</span>
-                  <span class="tag tag--info" style="font-size: 11px;">占位符 {kmKey}</span>
+              <div class="ad__field-block">
+                <div class="ad__field-heading">
+                  <span>卡密文案模板</span>
+                  <div class="ad__variable-list"><span>变量 {kmKey}</span></div>
                 </div>
                 <textarea
                   v-model="configForm.kamiDeliveryTemplate"
-                  class="native-input"
-                  :rows="3"
-                  placeholder="可选，填写后发货时将用卡密替换{kmKey}发送，不填则直接发送卡密内容。例：您的卡密为：{kmKey}，请妥善保管"
+                  class="ad__textarea ad__textarea--compact"
+                  rows="3"
+                  placeholder="例：您的卡密为：{kmKey}，请妥善保管。不填写则直接发送卡密。"
                 ></textarea>
-              </div>
-
-              <div class="ad__image-section">
-                <div class="ad__image-section-title">发货图片</div>
-                <div class="ad__image-section-hint">可选，最多3张，同时写入发货凭证并发送至买家私聊</div>
-                <MultiImageUploader
-                  v-if="selectedAccountId"
-                  :account-id="selectedAccountId"
-                  :max="3"
-                  v-model="configForm.autoDeliveryImageUrl"
-                />
-              </div>
-
-              <div class="ad__save-row">
-                <button
-                  class="btn btn--primary"
-                  :class="{ 'btn--loading': saving }"
-                  :disabled="saving"
-                  @click="saveConfig"
-                >
-                  <IconCheck />
-                  保存配置
-                </button>
-                <span v-if="currentConfig" class="ad__save-time">
-                  更新于 {{ formatTime(currentConfig.updateTime) }}
-                </span>
               </div>
             </div>
           </template>
+
+          <!-- 第三步：统一发送规则 -->
+          <div class="ad__config-section">
+            <div class="ad__step-heading">
+              <span>3</span>
+              <div><strong>配置发送与收货后消息</strong><small>以下设置对已选择的固定内容和卡密内容共同生效，只需配置一次</small></div>
+            </div>
+            <div class="ad__channel-summary">
+              <span><strong>发货凭证</strong><small>写入实际发货内容</small></span>
+              <span><strong>买家私聊</strong><small>失败自动重试</small></span>
+            </div>
+            <div class="ad__field-heading">
+              <span>最终私聊模板</span>
+              <div class="ad__variable-list">
+                <button type="button" @click="appendDeliveryVariable('{buyerName}')">会员名称</button>
+                <button type="button" @click="appendDeliveryVariable('{orderId}')">订单号</button>
+                <button type="button" @click="appendDeliveryVariable('{deliveryContent}')">全部发货内容</button>
+              </div>
+            </div>
+            <textarea
+              v-model="configForm.deliveryMessageTemplate"
+              class="ad__textarea ad__textarea--compact"
+              maxlength="1000"
+              placeholder="例：您好，{buyerName}，订单 {orderId} 已发货：{deliveryContent}"
+            ></textarea>
+            <div class="ad__textarea-footer">
+              <span class="ad__textarea-hint">{deliveryContent} 会替换为本单最终的固定内容、卡密或两者组合</span>
+              <span class="ad__textarea-count">{{ configForm.deliveryMessageTemplate.length }} / 1000</span>
+            </div>
+
+            <div class="ad__image-section">
+              <div class="ad__image-section-title">共同发货图片</div>
+              <div class="ad__image-section-hint">可选，最多3张；写入发货凭证，私聊在线发送成功时同步发送</div>
+              <MultiImageUploader
+                v-if="selectedAccountId"
+                :account-id="selectedAccountId"
+                :max="3"
+                v-model="configForm.autoDeliveryImageUrl"
+              />
+            </div>
+
+            <div class="ad__follow-up-heading">
+              <div>
+                <strong>确认收货后好评引导</strong>
+                <span>检测到买家确认收货后，按顺序逐条发送；买家已评价则停止发送</span>
+              </div>
+              <button type="button" class="ad__add-message-btn" @click="addReceiptFollowUpMessage">添加话术</button>
+            </div>
+            <div v-if="configForm.receiptFollowUpMessages.length === 0" class="ad__follow-up-empty">
+              暂未配置，确认收货后不会发送引导消息
+            </div>
+            <div v-for="(message, index) in configForm.receiptFollowUpMessages" :key="index" class="ad__follow-up-item">
+              <div class="ad__field-heading">
+                <span>第 {{ index + 1 }} 条</span>
+                <div class="ad__variable-list">
+                  <button type="button" @click="appendReceiptVariable(index, '{buyerName}')">会员名称</button>
+                  <button type="button" @click="appendReceiptVariable(index, '{orderId}')">订单号</button>
+                  <button type="button" @click="appendReceiptVariable(index, '{deliveryContent}')">发货内容</button>
+                  <button type="button" class="ad__variable-remove" @click="removeReceiptFollowUpMessage(index)">删除</button>
+                </div>
+              </div>
+              <textarea v-model="configForm.receiptFollowUpMessages[index]" class="ad__textarea ad__textarea--compact" maxlength="500" placeholder="例：感谢支持，满意的话欢迎点亮小红花。"></textarea>
+              <div class="ad__textarea-footer">
+                <span class="ad__textarea-hint">单条独立发送</span>
+                <span class="ad__textarea-count">{{ message.length }} / 500</span>
+              </div>
+            </div>
+            <label v-if="configForm.receiptFollowUpMessages.length > 1" class="ad__interval-field">
+              <span>每条间隔</span>
+              <input v-model.number="configForm.receiptFollowUpIntervalSeconds" type="number" min="5" max="600" />
+              <span>秒</span>
+            </label>
+
+            <div class="ad__save-row">
+              <button class="btn btn--primary" :class="{ 'btn--loading': saving }" :disabled="saving" @click="saveConfig">
+                <IconCheck />
+                {{ saving ? '保存中' : '保存全部配置' }}
+              </button>
+              <span v-if="currentConfig" class="ad__save-time">更新于 {{ formatTime(currentConfig.updateTime) }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

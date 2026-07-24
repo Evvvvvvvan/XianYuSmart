@@ -284,7 +284,7 @@ onBeforeUnmount(() => {
                   <div class="config-item">
                     <span class="config-label">自动发货</span>
                     <div class="config-value">
-                      <span v-if="goodsDetail.xianyuAutoDeliveryOn === 1" class="detail-mode-tag detail-mode-tag--delivery">{{ (goodsDetail.autoDeliveryType ?? 1) === 2 ? '卡密发货' : '固定内容' }}</span>
+                      <span v-if="goodsDetail.xianyuAutoDeliveryOn === 1" class="detail-mode-tag detail-mode-tag--delivery">{{ (goodsDetail.autoDeliveryType ?? 1) === 3 ? '固定+卡密' : (goodsDetail.autoDeliveryType ?? 1) === 2 ? '卡密发货' : '固定内容' }}</span>
                       <span v-else class="detail-mode-tag detail-mode-tag--off">未开启</span>
                     </div>
                   </div>

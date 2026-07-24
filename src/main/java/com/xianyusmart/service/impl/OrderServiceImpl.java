@@ -505,14 +505,18 @@ public class OrderServiceImpl implements OrderService {
 
         String content = deliveryStrategyResolver.resolve(deliveryMode, ctx);
         if (content == null) {
-            String failMsg = deliveryMode == 1 ? "未配置发货内容" : (deliveryMode == 2 ? "卡密库存不足，无可用卡密" : "未知的发货模式: " + deliveryMode);
+            String failMsg = deliveryMode == 1 ? "未配置固定发货内容"
+                    : deliveryMode == 2 ? "卡密库存不足，无可用卡密"
+                    : "固定内容未配置或卡密库存不足";
             log.warn("【账号{}】发货内容解析失败: {}", accountId, failMsg);
             return null;
         }
 
-        if (deliveryMode == 2 && content.length() > 200) {
-            kamiConfigService.releaseReservation(orderId);
-            log.warn("【账号{}】卡密内容超过虚拟发货接口限制: orderId={}, contentLen={}", accountId, orderId, content.length());
+        if (content.length() > 200) {
+            if ((deliveryMode & 2) == 2) {
+                kamiConfigService.releaseReservation(orderId);
+            }
+            log.warn("【账号{}】发货内容超过虚拟发货接口限制: orderId={}, contentLen={}", accountId, orderId, content.length());
             return null;
         }
 
@@ -529,7 +533,7 @@ public class OrderServiceImpl implements OrderService {
         String result = consignDummyDelivery(accountId, orderId, content, imageUrls);
 
         if (CONSIGN_SUCCESS.equals(result)) {
-            if (deliveryMode == 2) {
+            if ((deliveryMode & 2) == 2) {
                 String buyerUserId = existingOrder != null ? existingOrder.getBuyerUserId() : null;
                 kamiConfigService.commitReservation(orderId, accountId, xyGoodsId, buyerUserId, buyerUserName);
             }
@@ -556,7 +560,7 @@ public class OrderServiceImpl implements OrderService {
             }
         } else if (CONSIGN_UNCERTAIN.equals(result)) {
             String failReason = "发货结果待确认，请核对平台凭证后处理";
-            if (deliveryMode == 2) {
+            if ((deliveryMode & 2) == 2) {
                 // 外部接口结果不确定时锁定原卡密，避免重试后向同一订单分配不同内容。
                 kamiConfigService.markReservationReviewRequired(orderId);
             }
@@ -567,7 +571,7 @@ public class OrderServiceImpl implements OrderService {
             return null;
         } else if (CONSIGN_ALREADY_DELIVERED.equals(result)) {
             String failReason = "订单已存在发货凭证，请核对凭证与私聊内容";
-            if (deliveryMode == 2) {
+            if ((deliveryMode & 2) == 2) {
                 // 已存在凭证时无法确认首次请求是否使用当前卡密，必须锁定等待核对。
                 kamiConfigService.markReservationReviewRequired(orderId);
             }
@@ -577,7 +581,7 @@ public class OrderServiceImpl implements OrderService {
             }
             return null;
         } else {
-            if (deliveryMode == 2) {
+            if ((deliveryMode & 2) == 2) {
                 kamiConfigService.releaseReservation(orderId);
             }
             return null;

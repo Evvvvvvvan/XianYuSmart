@@ -197,16 +197,16 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
 
     private void validateDeliveryContent(AutoDeliveryConfigReqDTO reqDTO) {
         int deliveryMode = reqDTO.getDeliveryMode() == null ? 1 : reqDTO.getDeliveryMode();
-        if (deliveryMode != 1 && deliveryMode != 2) {
-            throw new IllegalArgumentException("仅支持固定内容发货或卡密发货");
+        if (deliveryMode < 1 || deliveryMode > 3) {
+            throw new IllegalArgumentException("至少选择一种发货内容");
         }
-        if (deliveryMode == 1) {
+        if ((deliveryMode & 1) == 1) {
             String content = reqDTO.getAutoDeliveryContent() == null ? "" : reqDTO.getAutoDeliveryContent().trim();
             if (content.isEmpty() || content.length() > 200) {
                 throw new IllegalArgumentException("固定发货内容长度应为1至200个字符");
             }
         }
-        if (deliveryMode == 2 && (reqDTO.getKamiConfigIds() == null || reqDTO.getKamiConfigIds().isBlank())) {
+        if ((deliveryMode & 2) == 2 && (reqDTO.getKamiConfigIds() == null || reqDTO.getKamiConfigIds().isBlank())) {
             throw new IllegalArgumentException("卡密发货必须绑定卡密配置");
         }
     }

@@ -66,6 +66,9 @@ public class BuyerMessageService {
         if (normalized.length() > 1000) {
             throw new IllegalArgumentException("发货私聊模板不能超过1000个字符");
         }
+        if (!normalized.contains("{deliveryContent}")) {
+            throw new IllegalArgumentException("发货私聊模板必须包含{deliveryContent}");
+        }
         return normalized;
     }
 

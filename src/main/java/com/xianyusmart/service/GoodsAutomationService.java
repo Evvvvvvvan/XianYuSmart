@@ -50,6 +50,7 @@ public class GoodsAutomationService {
     private final OperationLogService operationLogService;
     private final XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper;
     private final BuyerMessageService buyerMessageService;
+    private final RatingContentService ratingContentService;
     private final Map<Long, Integer> rateScanStartPages = new ConcurrentHashMap<>();
     private final Clock clock;
 
@@ -60,9 +61,10 @@ public class GoodsAutomationService {
                                   XianyuApiCallUtils apiCallUtils,
                                   OperationLogService operationLogService,
                                   XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper,
-                                  BuyerMessageService buyerMessageService) {
+                                  BuyerMessageService buyerMessageService,
+                                  RatingContentService ratingContentService) {
         this(goodsConfigMapper, goodsOrderMapper, accountService, apiCallUtils, operationLogService,
-                autoDeliveryConfigMapper, buyerMessageService,
+                autoDeliveryConfigMapper, buyerMessageService, ratingContentService,
                 Clock.system(BUSINESS_ZONE));
     }
 
@@ -73,6 +75,7 @@ public class GoodsAutomationService {
                            OperationLogService operationLogService,
                            XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper,
                            BuyerMessageService buyerMessageService,
+                           RatingContentService ratingContentService,
                            Clock clock) {
         this.goodsConfigMapper = goodsConfigMapper;
         this.goodsOrderMapper = goodsOrderMapper;
@@ -81,6 +84,7 @@ public class GoodsAutomationService {
         this.operationLogService = operationLogService;
         this.autoDeliveryConfigMapper = autoDeliveryConfigMapper;
         this.buyerMessageService = buyerMessageService;
+        this.ratingContentService = ratingContentService;
         this.clock = clock;
     }
 
@@ -88,7 +92,13 @@ public class GoodsAutomationService {
         Map<Long, List<XianyuGoodsConfig>> configsByAccount = goodsConfigMapper.selectAutoRateEnabled().stream()
                 .filter(config -> config.getXianyuAccountId() != null && config.getXyGoodsId() != null)
                 .collect(Collectors.groupingBy(XianyuGoodsConfig::getXianyuAccountId));
-        configsByAccount.forEach(this::ratePendingOrders);
+        configsByAccount.forEach((accountId, configs) -> {
+            try {
+                ratePendingOrders(accountId, configs);
+            } catch (Exception e) {
+                log.warn("【账号{}】自动评价任务执行失败: {}", accountId, e.getMessage());
+            }
+        });
     }
 
     public void runAutoPolish() {
@@ -274,9 +284,17 @@ public class GoodsAutomationService {
             if (attemptedCount >= MAX_RATE_PER_ACCOUNT) {
                 break;
             }
+            String content;
+            try {
+                content = ratingContentService.resolve(config.getXianyuAutoRateContent(), order);
+            } catch (IllegalArgumentException e) {
+                log.warn("【账号{}】自动评价文案无效，已跳过订单: orderId={}, error={}",
+                        accountId, orderId, e.getMessage());
+                continue;
+            }
             attemptedCount++;
             XianyuApiCallUtils.ApiCallResult result = rateOrder(
-                    accountId, orderId, order.getXyGoodsId(), resolveRateContent(config), "AUTO", cookie);
+                    accountId, orderId, order.getXyGoodsId(), content, "AUTO", cookie);
             if (!result.isSuccess() && isCredentialOrRiskFailure(result)) {
                 break;
             }
@@ -295,7 +313,7 @@ public class GoodsAutomationService {
         if (order == null) {
             throw new IllegalArgumentException("订单不存在或无权操作");
         }
-        String content = normalizeRateContent(feedback, false);
+        String content = ratingContentService.renderTemplate(feedback, order);
         String cookie = accountService.getCookieByAccountId(accountId);
         if (cookie == null || cookie.isBlank()) {
             throw new IllegalStateException("账号 Cookie 无效，请先更新登录状态");
@@ -528,21 +546,6 @@ public class GoodsAutomationService {
 
     private boolean booleanValue(Object value) {
         return value instanceof Boolean bool ? bool : Boolean.parseBoolean(String.valueOf(value));
-    }
-
-    private String resolveRateContent(XianyuGoodsConfig config) {
-        return normalizeRateContent(config.getXianyuAutoRateContent(), true);
-    }
-
-    private String normalizeRateContent(String content, boolean useDefault) {
-        String normalized = content == null ? "" : content.trim();
-        if (normalized.isEmpty() && useDefault) {
-            return XianyuGoodsConfig.DEFAULT_AUTO_RATE_CONTENT;
-        }
-        if (normalized.isEmpty() || normalized.length() > 500) {
-            throw new IllegalArgumentException("评价内容长度应为1至500个字符");
-        }
-        return normalized;
     }
 
     private boolean polishGoods(XianyuGoodsConfig config) {

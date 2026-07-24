@@ -199,6 +199,7 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
                 queryWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId);
             }
             queryWrapper.orderByDesc(XianyuGoodsInfo::getUpdatedTime);
+            queryWrapper.orderByDesc(XianyuGoodsInfo::getId);
             
             // 计算偏移量
             int offset = (pageNum - 1) * pageSize;
@@ -220,6 +221,7 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
                 queryWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId);
             }
             queryWrapper.orderByDesc(XianyuGoodsInfo::getUpdatedTime);
+            queryWrapper.orderByDesc(XianyuGoodsInfo::getId);
             int offset = (pageNum - 1) * pageSize;
             return goodsInfoMapper.selectList(queryWrapper.last("LIMIT " + offset + ", " + pageSize));
         } catch (Exception e) {

@@ -1,20 +1,22 @@
 package com.xianyusmart.service.delivery;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 固定内容发货策略（deliveryMode=1）
+ * 固定内容发货策略（deliveryMode 包含固定内容标记）
  *
  * <p>直接返回配置的文本内容 {@link com.xianyusmart.entity.XianyuGoodsAutoDeliveryConfig#getAutoDeliveryContent()}</p>
  */
 @Slf4j
 @Component
+@Order(1)
 public class TextDeliveryStrategy implements DeliveryContentStrategy {
 
     @Override
     public boolean supports(int deliveryMode) {
-        return deliveryMode == 1;
+        return (deliveryMode & 1) == 1;
     }
 
     @Override

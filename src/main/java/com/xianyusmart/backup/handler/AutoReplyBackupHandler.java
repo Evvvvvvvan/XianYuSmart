@@ -1,6 +1,7 @@
 package com.xianyusmart.backup.handler;
 
 import com.xianyusmart.backup.DataBackupHandler;
+import com.xianyusmart.entity.XianyuGoodsConfig;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -87,8 +88,9 @@ public class AutoReplyBackupHandler implements DataBackupHandler {
 
                 if (existing.isEmpty()) {
                     jdbcTemplate.update(
-                            "INSERT INTO xianyu_goods_config (xianyu_account_id, xy_goods_id, xianyu_auto_reply_on, xianyu_auto_reply_context_on, fixed_material) VALUES (?, ?, ?, ?, ?)",
-                            accountId, xyGoodsId, autoReplyOn, autoReplyContextOn, fixedMaterial);
+                            "INSERT INTO xianyu_goods_config (xianyu_account_id, xy_goods_id, xianyu_auto_reply_on, xianyu_auto_rate_content, xianyu_auto_reply_context_on, fixed_material) VALUES (?, ?, ?, ?, ?, ?)",
+                            accountId, xyGoodsId, autoReplyOn, XianyuGoodsConfig.DEFAULT_AUTO_RATE_CONTENT,
+                            autoReplyContextOn, fixedMaterial);
                 } else {
                     jdbcTemplate.update(
                             "UPDATE xianyu_goods_config SET xianyu_auto_reply_on = ?, xianyu_auto_reply_context_on = ?, fixed_material = ? WHERE xianyu_account_id = ? AND xy_goods_id = ?",

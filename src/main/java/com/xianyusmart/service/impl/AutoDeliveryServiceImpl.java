@@ -389,7 +389,7 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             }
 
             int deliveryMode = deliveryConfig.getDeliveryMode() != null ? deliveryConfig.getDeliveryMode() : 1;
-            cardDelivery = deliveryMode == 2;
+            cardDelivery = (deliveryMode & 2) == 2;
             String cid = sId.replace("@goofish", "");
 
             DeliveryContext ctx = DeliveryContext.builder()
@@ -405,7 +405,9 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
 
             String content = deliveryStrategyResolver.resolve(deliveryMode, ctx);
             if (content == null) {
-                String failMsg = deliveryMode == 1 ? "未配置发货内容" : (deliveryMode == 2 ? "卡密库存不足，无可用卡密" : "未知的发货模式: " + deliveryMode);
+                String failMsg = deliveryMode == 1 ? "未配置固定发货内容"
+                        : deliveryMode == 2 ? "卡密库存不足，无可用卡密"
+                        : "固定内容未配置或卡密库存不足";
                 log.warn("【账号{}】发货内容解析失败: {}", accountId, failMsg);
                 updateRecordState(recordId, -1, null, failMsg);
                 emailNotifyService.sendAutoDeliveryFailEmail(null, xyGoodsId, orderId, failMsg);

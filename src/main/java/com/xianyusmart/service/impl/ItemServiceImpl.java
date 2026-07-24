@@ -1,6 +1,7 @@
 package com.xianyusmart.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xianyusmart.common.ResultObject;
 import com.xianyusmart.controller.dto.*;
 import com.xianyusmart.entity.XianyuGoodsInfo;
@@ -13,6 +14,7 @@ import com.xianyusmart.utils.ItemDetailUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -47,6 +49,12 @@ public class ItemServiceImpl implements ItemService {
 
     @Autowired
     private com.xianyusmart.mapper.XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper;
+
+    @Autowired
+    private com.xianyusmart.mapper.XianyuGoodsInfoMapper goodsInfoMapper;
+
+    @Autowired
+    private com.xianyusmart.service.RatingContentService ratingContentService;
 
     /**
      * 获取指定页的商品信息（内部方法）
@@ -997,39 +1005,72 @@ public class ItemServiceImpl implements ItemService {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public ResultObject<String> updateGoodsAutomationStatus(UpdateGoodsAutomationReqDTO reqDTO) {
-        if (reqDTO.getXianyuAccountId() == null || reqDTO.getXyGoodsId() == null || reqDTO.getXyGoodsId().isBlank()) {
+        List<String> goodsIds = reqDTO.getXyGoodsIds() == null ? new ArrayList<>() :
+                reqDTO.getXyGoodsIds().stream()
+                        .filter(Objects::nonNull)
+                        .map(String::trim)
+                        .filter(id -> !id.isEmpty())
+                        .distinct()
+                        .toList();
+        if (goodsIds.isEmpty() && reqDTO.getXyGoodsId() != null && !reqDTO.getXyGoodsId().isBlank()) {
+            goodsIds = List.of(reqDTO.getXyGoodsId().trim());
+        }
+        if (reqDTO.getXianyuAccountId() == null || goodsIds.isEmpty()) {
             return ResultObject.failed("账号和商品不能为空");
+        }
+        if (accountService.getXianyuUserId(reqDTO.getXianyuAccountId()) == null) {
+            return ResultObject.failed("账号不存在或无权操作");
+        }
+        if (goodsIds.size() > 200) {
+            return ResultObject.failed("单次最多批量设置200个商品");
+        }
+        LambdaQueryWrapper<XianyuGoodsInfo> goodsQuery = new LambdaQueryWrapper<>();
+        goodsQuery.eq(XianyuGoodsInfo::getXianyuAccountId, reqDTO.getXianyuAccountId())
+                .in(XianyuGoodsInfo::getXyGoodId, goodsIds);
+        Set<String> ownedGoodsIds = goodsInfoMapper.selectList(goodsQuery).stream()
+                .map(XianyuGoodsInfo::getXyGoodId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (ownedGoodsIds.size() != goodsIds.size()) {
+            return ResultObject.failed("商品不存在或无权操作");
         }
         if (reqDTO.getXianyuAutoRateOn() == null && reqDTO.getXianyuAutoPolishOn() == null
                 && reqDTO.getXianyuAutoRateContent() == null) {
             return ResultObject.failed("至少需要更新一项自动化设置");
         }
 
-        com.xianyusmart.entity.XianyuGoodsConfig goodsConfig =
-                autoDeliveryService.getGoodsConfig(reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId());
-        if (goodsConfig == null) {
-            goodsConfig = new com.xianyusmart.entity.XianyuGoodsConfig();
-            goodsConfig.setXianyuAccountId(reqDTO.getXianyuAccountId());
-            goodsConfig.setXyGoodsId(reqDTO.getXyGoodsId());
-            goodsConfig.setCreateTime(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
-        }
-        if (reqDTO.getXianyuAutoRateOn() != null) {
-            goodsConfig.setXianyuAutoRateOn(reqDTO.getXianyuAutoRateOn() == 1 ? 1 : 0);
-        }
+        String rateContent = null;
         if (reqDTO.getXianyuAutoRateContent() != null) {
-            String content = reqDTO.getXianyuAutoRateContent().trim();
-            if (content.isEmpty() || content.length() > 500) {
-                return ResultObject.failed("评价内容长度应为1至500个字符");
+            if (reqDTO.getXianyuAutoRateContent().isBlank()) {
+                return ResultObject.failed("至少需要一条评价文案");
             }
-            goodsConfig.setXianyuAutoRateContent(content);
+            rateContent = ratingContentService.normalizeForStorage(reqDTO.getXianyuAutoRateContent());
         }
-        if (reqDTO.getXianyuAutoPolishOn() != null) {
-            goodsConfig.setXianyuAutoPolishOn(reqDTO.getXianyuAutoPolishOn() == 1 ? 1 : 0);
+
+        String now = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date());
+        for (String goodsId : goodsIds) {
+            com.xianyusmart.entity.XianyuGoodsConfig goodsConfig =
+                    autoDeliveryService.getGoodsConfig(reqDTO.getXianyuAccountId(), goodsId);
+            if (goodsConfig == null) {
+                goodsConfig = new com.xianyusmart.entity.XianyuGoodsConfig();
+                goodsConfig.setXianyuAccountId(reqDTO.getXianyuAccountId());
+                goodsConfig.setXyGoodsId(goodsId);
+                goodsConfig.setCreateTime(now);
+            }
+            if (reqDTO.getXianyuAutoRateOn() != null) {
+                goodsConfig.setXianyuAutoRateOn(reqDTO.getXianyuAutoRateOn() == 1 ? 1 : 0);
+            }
+            if (rateContent != null) {
+                goodsConfig.setXianyuAutoRateContent(rateContent);
+            }
+            if (reqDTO.getXianyuAutoPolishOn() != null) {
+                goodsConfig.setXianyuAutoPolishOn(reqDTO.getXianyuAutoPolishOn() == 1 ? 1 : 0);
+            }
+            goodsConfig.setUpdateTime(now);
+            autoDeliveryService.saveOrUpdateGoodsConfig(goodsConfig);
         }
-        goodsConfig.setUpdateTime(new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new java.util.Date()));
-        autoDeliveryService.saveOrUpdateGoodsConfig(goodsConfig);
-        return ResultObject.success("商品运营自动化状态更新成功");
+        return ResultObject.success("已更新" + goodsIds.size() + "个商品的自动化设置");
     }
     
     @Override

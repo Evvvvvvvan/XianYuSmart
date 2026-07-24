@@ -159,8 +159,10 @@ public class ItemController {
     @PostMapping("/updateGoodsAutomationStatus")
     public ResultObject<String> updateGoodsAutomationStatus(@RequestBody UpdateGoodsAutomationReqDTO reqDTO) {
         try {
-            log.info("更新商品运营自动化状态: xianyuAccountId={}, xyGoodsId={}, autoRate={}, autoPolish={}",
-                    reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId(),
+            int goodsCount = reqDTO.getXyGoodsIds() == null ? (reqDTO.getXyGoodsId() == null ? 0 : 1)
+                    : reqDTO.getXyGoodsIds().size();
+            log.info("更新商品运营自动化状态: xianyuAccountId={}, goodsCount={}, autoRate={}, autoPolish={}",
+                    reqDTO.getXianyuAccountId(), goodsCount,
                     reqDTO.getXianyuAutoRateOn(), reqDTO.getXianyuAutoPolishOn());
             return itemService.updateGoodsAutomationStatus(reqDTO);
         } catch (Exception e) {

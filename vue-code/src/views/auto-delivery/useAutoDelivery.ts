@@ -95,6 +95,19 @@ export function useAutoDelivery() {
   })
 
   const hasMultipleSku = computed(() => skuList.value.length > 1)
+  const hasFixedDelivery = computed(() => (configForm.value.deliveryMode & 1) === 1)
+  const hasCardDelivery = computed(() => (configForm.value.deliveryMode & 2) === 2)
+
+  const toggleDeliveryMode = (mode: number, enabled: boolean) => {
+    const nextMode = enabled
+      ? configForm.value.deliveryMode | mode
+      : configForm.value.deliveryMode & ~mode
+    if (nextMode === 0) {
+      showInfo('固定内容和卡密至少选择一种')
+      return
+    }
+    configForm.value.deliveryMode = nextMode
+  }
 
   const parseReceiptFollowUpMessages = (value?: string) => {
     if (!value) return []
@@ -461,16 +474,20 @@ export function useAutoDelivery() {
       return
     }
 
-    if (configForm.value.deliveryMode === 1 && !configForm.value.autoDeliveryContent.trim()) {
+    if (hasFixedDelivery.value && !configForm.value.autoDeliveryContent.trim()) {
       showInfo('请输入自动发货内容')
       return
     }
-    if (configForm.value.deliveryMode === 2 && !configForm.value.kamiConfigIds) {
+    if (hasCardDelivery.value && !configForm.value.kamiConfigIds) {
       showInfo('请绑定卡密配置')
       return
     }
     if (!configForm.value.deliveryMessageTemplate.trim()) {
       showInfo('请输入发货私聊模板')
+      return
+    }
+    if (!configForm.value.deliveryMessageTemplate.includes('{deliveryContent}')) {
+      showInfo('买家私聊消息必须包含“全部发货内容”变量')
       return
     }
     const receiptMessages = configForm.value.receiptFollowUpMessages
@@ -711,11 +728,11 @@ export function useAutoDelivery() {
       showWsDisconnectedTip()
       return
     }
-    if (configForm.value.deliveryMode === 1 && (!configForm.value.autoDeliveryContent || !configForm.value.autoDeliveryContent.trim())) {
+    if (hasFixedDelivery.value && (!configForm.value.autoDeliveryContent || !configForm.value.autoDeliveryContent.trim())) {
       showError('请配置发货内容！')
       return
     }
-    if (configForm.value.deliveryMode === 2 && !configForm.value.kamiConfigIds) {
+    if (hasCardDelivery.value && !configForm.value.kamiConfigIds) {
       showError('请绑定卡密配置！')
       return
     }
@@ -725,9 +742,8 @@ export function useAutoDelivery() {
       return
     }
 
-    const isKamiMode = configForm.value.deliveryMode === 2
-    const dialogMessage = isKamiMode
-      ? `确认重新发货吗？\n\n⚠️ 卡密发货模式：将发送新的卡密，扣减一次卡密库存！\n订单ID: ${record.orderId}`
+    const dialogMessage = hasCardDelivery.value
+      ? `确认重新发货吗？\n\n⚠️ 本次发货包含卡密内容，将重新分配卡密并扣减一次库存。\n订单ID: ${record.orderId}`
       : `确认重新发货吗？订单ID: ${record.orderId}`
 
     confirmDialog.value = {
@@ -800,6 +816,8 @@ export function useAutoDelivery() {
     selectedSkuId,
     skuConfigs,
     hasMultipleSku,
+    hasFixedDelivery,
+    hasCardDelivery,
     goodsCurrentPage,
     goodsTotal,
     goodsLoading,
@@ -822,6 +840,7 @@ export function useAutoDelivery() {
     confirmShipmentParamsJson,
     kamiConfigOptions,
     selectedKamiConfigId,
+    toggleDeliveryMode,
     addReceiptFollowUpMessage,
     removeReceiptFollowUpMessage,
     appendDeliveryVariable,

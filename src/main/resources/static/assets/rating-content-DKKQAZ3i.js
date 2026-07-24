@@ -1,0 +1,1 @@
+const i=r=>{const t=r?.trim();if(!t)return[];try{const n=JSON.parse(t);if(Array.isArray(n))return[...new Set(n.filter(e=>typeof e=="string").map(e=>e.trim()).filter(Boolean))]}catch{}return[t]},s=r=>JSON.stringify([...new Set(r.map(t=>t.trim()).filter(Boolean))]);export{i as p,s};

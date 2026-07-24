@@ -11,6 +11,7 @@ import IconChevronDown from '@/components/icons/IconChevronDown.vue'
 import IconChevronLeft from '@/components/icons/IconChevronLeft.vue'
 import IconChevronRight from '@/components/icons/IconChevronRight.vue'
 import type { GoodsItemWithConfig } from '@/api/goods'
+import { parseRatingContents, serializeRatingContents } from '@/utils/rating-content'
 
 import GoodsTable from './components/GoodsTable.vue'
 import GoodsDetail from './components/GoodsDetail.vue'
@@ -67,27 +68,43 @@ const ratePresets = [
 const rateDialogVisible = ref(false)
 const rateTarget = ref<GoodsItemWithConfig | null>(null)
 const rateEnabled = ref(false)
-const rateContent = ref('')
+const rateContents = ref<string[]>([])
 const rateSaving = ref(false)
 const rateError = computed(() => {
-  const length = rateContent.value.trim().length
-  if (!length) return '请输入评价内容'
-  if (length > 500) return '评价内容不能超过500个字符'
+  const contents = rateContents.value.map(item => item.trim()).filter(Boolean)
+  if (!contents.length) return '至少需要一条评价文案'
+  if (contents.length > 10) return '最多配置10条评价文案'
+  if (contents.some(item => item.length > 500)) return '单条评价文案不能超过500个字符'
   return ''
 })
 
 const openRateSettings = (item: GoodsItemWithConfig) => {
   rateTarget.value = item
   rateEnabled.value = item.xianyuAutoRateOn === 1
-  rateContent.value = item.xianyuAutoRateContent || ratePresets[0]!
+  rateContents.value = parseRatingContents(item.xianyuAutoRateContent)
+  if (!rateContents.value.length) rateContents.value = [ratePresets[0]!]
   rateDialogVisible.value = true
+}
+
+const addRateContent = (content = '') => {
+  if (rateContents.value.length >= 10) return
+  if (content && rateContents.value.includes(content)) return
+  rateContents.value.push(content)
+}
+
+const removeRateContent = (index: number) => {
+  if (rateContents.value.length > 1) rateContents.value.splice(index, 1)
+}
+
+const appendRateVariable = (index: number, variable: string) => {
+  rateContents.value[index] = (rateContents.value[index] || '') + variable
 }
 
 const submitRateSettings = async () => {
   if (!rateTarget.value || rateError.value) return
   rateSaving.value = true
   try {
-    if (await saveRateSettings(rateTarget.value, rateEnabled.value, rateContent.value.trim())) {
+    if (await saveRateSettings(rateTarget.value, rateEnabled.value, serializeRatingContents(rateContents.value))) {
       rateDialogVisible.value = false
     }
   } finally {
@@ -427,15 +444,17 @@ const getPageButtons = () => {
               <span><strong>自动评价</strong><small>仅在买家完成评价后回评，不会提前评价</small></span>
               <input v-model="rateEnabled" type="checkbox">
             </label>
-            <label class="rate-dialog__field">
-              <span>评价内容</span>
-              <textarea v-model="rateContent" maxlength="500" rows="5" placeholder="输入订单完成后发送的评价内容"></textarea>
-              <small :class="{ error: rateError }">{{ rateError || `${rateContent.trim().length}/500，自动和手动评价均可继续编辑` }}</small>
+            <div class="rate-dialog__pool-heading"><span><strong>评价文案池</strong><small>按订单稳定轮换，重试不会更换文案</small></span><button type="button" @click="addRateContent()">添加文案</button></div>
+            <label v-for="(content, index) in rateContents" :key="index" class="rate-dialog__field">
+              <span class="rate-dialog__field-title">文案 {{ index + 1 }}<span><button type="button" @click="appendRateVariable(index, '{buyerName}')">买家</button><button type="button" @click="appendRateVariable(index, '{goodsName}')">商品</button><button type="button" @click="appendRateVariable(index, '{orderId}')">订单号</button><button type="button" :disabled="rateContents.length === 1" @click="removeRateContent(index)">删除</button></span></span>
+              <textarea v-model="rateContents[index]" maxlength="500" rows="3" placeholder="输入买家评价后自动发送的评价内容"></textarea>
+              <small>{{ content.trim().length }}/500</small>
             </label>
             <div class="rate-dialog__presets">
-              <span>快捷文案</span>
-              <button v-for="preset in ratePresets" :key="preset" type="button" @click="rateContent = preset">{{ preset }}</button>
+              <span>添加快捷文案</span>
+              <button v-for="preset in ratePresets" :key="preset" type="button" @click="addRateContent(preset)">{{ preset }}</button>
             </div>
+            <small v-if="rateError" class="rate-dialog__error">{{ rateError }}</small>
           </div>
           <div class="goods__dialog-footer">
             <button type="button" class="goods__dialog-btn goods__dialog-btn--cancel" @click="rateDialogVisible = false">取消</button>
@@ -488,5 +507,5 @@ const getPageButtons = () => {
   opacity: 0;
 }
 
-.rate-dialog{max-width:560px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:18px}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__field small.error{color:#ff3b30}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}
+.rate-dialog{max-width:680px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:14px;max-height:68vh;overflow:auto}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small,.rate-dialog__pool-heading small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__pool-heading,.rate-dialog__field-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.rate-dialog__pool-heading>span{display:flex;flex-direction:column;gap:3px}.rate-dialog__pool-heading button,.rate-dialog__field-title button{border:0;border-radius:6px;padding:5px 8px;background:rgba(0,122,255,.08);color:#007aff;cursor:pointer}.rate-dialog__field-title>span{display:flex;gap:5px;flex-wrap:wrap}.rate-dialog__field-title button:last-child{color:#ff3b30;background:rgba(255,59,48,.07)}.rate-dialog__field-title button:disabled{opacity:.35;cursor:not-allowed}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.rate-dialog__error{color:#ff3b30}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}
 </style>
