@@ -14,6 +14,7 @@ import com.xianyusmart.exception.BusinessException;
 import com.xianyusmart.mapper.XianyuGoodsAutoDeliveryConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.AccountService;
+import com.xianyusmart.service.BuyerMessageService;
 import com.xianyusmart.service.KamiConfigService;
 import com.xianyusmart.service.OrderService;
 import com.xianyusmart.service.delivery.DeliveryContext;
@@ -56,6 +57,9 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private KamiConfigService kamiConfigService;
+
+    @Autowired
+    private BuyerMessageService buyerMessageService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -131,12 +135,17 @@ public class OrderServiceImpl implements OrderService {
                 log.error("【账号{}】❌ 闲鱼新发货API失败: {}", accountId, errorMsg);
 
                 if (result.isTokenExpired()) {
-                    return "令牌过期，请稍后重试或手动更新Cookie";
+                    return null;
                 }
 
                 if (errorMsg != null && errorMsg.contains("ORDER_ALREADY_DELIVERY")) {
-                    log.info("【账号{}】订单已发货(ORDER_ALREADY_DELIVERY)，视为成功: orderId={}", accountId, orderId);
-                    return "虚拟发货成功(已发货)";
+                    log.info("【账号{}】订单已存在发货凭证: orderId={}", accountId, orderId);
+                    return CONSIGN_ALREADY_DELIVERED;
+                }
+
+                if (isUncertainConsignResult(result)) {
+                    log.warn("【账号{}】发货接口结果不确定，保留本次发货内容等待核对: orderId={}", accountId, orderId);
+                    return CONSIGN_UNCERTAIN;
                 }
 
                 return null;
@@ -145,16 +154,26 @@ public class OrderServiceImpl implements OrderService {
             Map<String, Object> responseData = result.extractData();
             if (responseData != null) {
                 log.info("【账号{}】✅ 闲鱼新发货API成功: orderId={}", accountId, orderId);
-                return "虚拟发货成功";
+                return CONSIGN_SUCCESS;
             } else {
                 log.error("【账号{}】响应数据格式错误", accountId);
-                return null;
+                return CONSIGN_UNCERTAIN;
             }
 
         } catch (Exception e) {
             log.error("【账号{}】调用闲鱼新发货API异常: orderId={}", accountId, orderId, e);
-            return null;
+            return CONSIGN_UNCERTAIN;
         }
+    }
+
+    private boolean isUncertainConsignResult(XianyuApiCallUtils.ApiCallResult result) {
+        if (result.getResponse() == null || result.getResponse().isBlank()) {
+            return true;
+        }
+        String errorMessage = result.getErrorMessage();
+        return errorMessage != null && (errorMessage.contains("响应为空")
+                || errorMessage.contains("响应格式错误")
+                || errorMessage.contains("调用异常"));
     }
     
     @Override
@@ -316,7 +335,7 @@ public class OrderServiceImpl implements OrderService {
                 }
             }
 
-            orderMapper.updateOrderDetail(order.getId(), buyerUserName, orderCreateTime, paySuccessTime, consignTime, null, goodsTitle, totalPrice, buyNum);
+            orderMapper.updateOrderDetail(order.getId(), buyerUserName, orderCreateTime, paySuccessTime, consignTime, null, null, goodsTitle, totalPrice, buyNum);
             log.info("【账号{}】从API更新订单详情成功: orderId={}", accountId, orderId);
         } catch (Exception e) {
             log.warn("【账号{}】更新订单详情失败: orderId={}", accountId, orderId, e);
@@ -446,7 +465,12 @@ public class OrderServiceImpl implements OrderService {
     public String consignDummyDeliveryWithConfig(Long accountId, String xyGoodsId, String orderId) {
         log.info("【账号{}】带配置凭证发货: xyGoodsId={}, orderId={}", accountId, xyGoodsId, orderId);
 
-        XianyuGoodsAutoDeliveryConfig deliveryConfig = autoDeliveryConfigMapper.findByAccountIdAndGoodsIdAndSkuId(accountId, xyGoodsId, null);
+        XianyuGoodsOrder existingOrder = orderMapper.selectByAccountIdAndOrderId(accountId, orderId);
+        XianyuGoodsAutoDeliveryConfig deliveryConfig = null;
+        if (existingOrder != null && existingOrder.getSkuId() != null && !existingOrder.getSkuId().isBlank()) {
+            deliveryConfig = autoDeliveryConfigMapper.findByAccountIdAndGoodsIdAndSkuId(
+                    accountId, xyGoodsId, existingOrder.getSkuId());
+        }
         if (deliveryConfig == null) {
             deliveryConfig = autoDeliveryConfigMapper.findByAccountIdAndGoodsIdNoSku(accountId, xyGoodsId);
         }
@@ -459,7 +483,6 @@ public class OrderServiceImpl implements OrderService {
         int deliveryMode = deliveryConfig.getDeliveryMode() != null ? deliveryConfig.getDeliveryMode() : 1;
 
         // 从订单记录中获取 sId 和 buyerUserName，供卡密发货策略使用
-        XianyuGoodsOrder existingOrder = orderMapper.selectByAccountIdAndOrderId(accountId, orderId);
         String sId = null;
         String buyerUserName = null;
         if (existingOrder != null) {
@@ -505,7 +528,7 @@ public class OrderServiceImpl implements OrderService {
         log.info("【账号{}】带配置凭证发货: orderId={}, deliveryMode={}, contentLen={}, imageCount={}", accountId, orderId, deliveryMode, content.length(), imageUrls.size());
         String result = consignDummyDelivery(accountId, orderId, content, imageUrls);
 
-        if (result != null) {
+        if (CONSIGN_SUCCESS.equals(result)) {
             if (deliveryMode == 2) {
                 String buyerUserId = existingOrder != null ? existingOrder.getBuyerUserId() : null;
                 kamiConfigService.commitReservation(orderId, accountId, xyGoodsId, buyerUserId, buyerUserName);
@@ -513,6 +536,11 @@ public class OrderServiceImpl implements OrderService {
             if (existingOrder != null) {
                 orderMapper.updateStateAndContent(existingOrder.getId(), 1, content);
                 orderMapper.updateConfirmState(accountId, orderId);
+                existingOrder.setContent(content);
+                existingOrder.setConfirmState(1);
+                if (!buyerMessageService.queueDeliveryMessage(existingOrder, deliveryConfig, content)) {
+                    log.info("【账号{}】发货私聊已进入重试队列: orderId={}", accountId, orderId);
+                }
                 log.info("【账号{}】凭证发货成功，已更新订单状态: orderId={}", accountId, orderId);
             } else {
                 XianyuGoodsOrder record = new XianyuGoodsOrder();
@@ -526,8 +554,33 @@ public class OrderServiceImpl implements OrderService {
                 orderMapper.insert(record);
                 log.info("【账号{}】凭证发货成功，已新建订单记录: orderId={}", accountId, orderId);
             }
-        } else if (deliveryMode == 2) {
-            kamiConfigService.releaseReservation(orderId);
+        } else if (CONSIGN_UNCERTAIN.equals(result)) {
+            String failReason = "发货结果待确认，请核对平台凭证后处理";
+            if (deliveryMode == 2) {
+                // 外部接口结果不确定时锁定原卡密，避免重试后向同一订单分配不同内容。
+                kamiConfigService.markReservationReviewRequired(orderId);
+            }
+            if (existingOrder != null) {
+                orderMapper.updateStateContentAndFailReason(existingOrder.getId(), -1, content, failReason);
+                orderMapper.markTaskReviewRequired(existingOrder.getId(), failReason);
+            }
+            return null;
+        } else if (CONSIGN_ALREADY_DELIVERED.equals(result)) {
+            String failReason = "订单已存在发货凭证，请核对凭证与私聊内容";
+            if (deliveryMode == 2) {
+                // 已存在凭证时无法确认首次请求是否使用当前卡密，必须锁定等待核对。
+                kamiConfigService.markReservationReviewRequired(orderId);
+            }
+            if (existingOrder != null) {
+                orderMapper.updateStateContentAndFailReason(existingOrder.getId(), -1, content, failReason);
+                orderMapper.markTaskReviewRequired(existingOrder.getId(), failReason);
+            }
+            return null;
+        } else {
+            if (deliveryMode == 2) {
+                kamiConfigService.releaseReservation(orderId);
+            }
+            return null;
         }
 
         return result;

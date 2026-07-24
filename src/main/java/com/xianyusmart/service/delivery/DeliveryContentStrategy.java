@@ -8,7 +8,7 @@ package com.xianyusmart.service.delivery;
  *
  * <h3>两种实现：</h3>
  * <ul>
- *   <li>{@link TextDeliveryStrategy} - 文本发货（deliveryMode=1）：直接返回配置的文本内容</li>
+ *   <li>{@link TextDeliveryStrategy} - 固定内容发货（deliveryMode=1）：每笔订单复用配置内容</li>
  *   <li>{@link KamiDeliveryStrategy} - 卡密发货（deliveryMode=2）：从卡密仓库获取可用卡密，替换模板占位符</li>
  * </ul>
  */
@@ -17,7 +17,7 @@ public interface DeliveryContentStrategy {
     /**
      * 判断是否支持该发货模式
      *
-     * @param deliveryMode 发货模式（1=文本，2=卡密）
+     * @param deliveryMode 发货模式（1=固定内容，2=卡密）
      * @return true=支持
      */
     boolean supports(int deliveryMode);

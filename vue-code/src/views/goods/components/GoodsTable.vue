@@ -114,7 +114,7 @@ const handleImgError = (e: Event) => {
           <div class="goods-card__meta">
             <span class="goods-card__price">{{ formatPrice(item.item.soldPrice) }}</span>
             <div class="goods-card__tags">
-              <span v-if="item.xianyuAutoDeliveryOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">{{ item.autoDeliveryType === 2 ? '卡密发货' : '文本发货' }}</span>
+              <span v-if="item.xianyuAutoDeliveryOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">{{ item.autoDeliveryType === 2 ? '卡密发货' : '固定内容' }}</span>
               <span v-if="item.xianyuAutoReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">AI</span>
               <span v-if="item.xianyuKeywordReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--keyword">关键词</span>
               <span v-if="item.xianyuAutoRateOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">评价</span>

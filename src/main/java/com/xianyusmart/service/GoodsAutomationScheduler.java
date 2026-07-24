@@ -14,11 +14,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class GoodsAutomationScheduler {
 
     private final GoodsAutomationService goodsAutomationService;
+    private final BuyerMessageService buyerMessageService;
     private final AtomicBoolean rating = new AtomicBoolean(false);
     private final AtomicBoolean polishing = new AtomicBoolean(false);
+    private final AtomicBoolean followingUp = new AtomicBoolean(false);
+    private final AtomicBoolean retryingDeliveryMessages = new AtomicBoolean(false);
 
-    public GoodsAutomationScheduler(GoodsAutomationService goodsAutomationService) {
+    public GoodsAutomationScheduler(GoodsAutomationService goodsAutomationService,
+                                    BuyerMessageService buyerMessageService) {
         this.goodsAutomationService = goodsAutomationService;
+        this.buyerMessageService = buyerMessageService;
     }
 
     @Scheduled(fixedDelayString = "${app.automation.rate-delay-ms:600000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
@@ -46,6 +51,34 @@ public class GoodsAutomationScheduler {
             log.error("自动擦亮任务执行异常", e);
         } finally {
             polishing.set(false);
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${app.automation.receipt-follow-up-delay-ms:5000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
+    public void sendReceiptFollowUps() {
+        if (!followingUp.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            goodsAutomationService.runReceiptFollowUps();
+        } catch (Exception e) {
+            log.error("确认收货后话术任务执行异常", e);
+        } finally {
+            followingUp.set(false);
+        }
+    }
+
+    @Scheduled(fixedDelayString = "${app.automation.delivery-message-retry-delay-ms:15000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
+    public void retryDeliveryMessages() {
+        if (!retryingDeliveryMessages.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            buyerMessageService.retryPendingDeliveryMessages();
+        } catch (Exception e) {
+            log.error("发货私聊重试任务执行异常", e);
+        } finally {
+            retryingDeliveryMessages.set(false);
         }
     }
 }

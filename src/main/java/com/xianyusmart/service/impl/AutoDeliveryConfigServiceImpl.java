@@ -8,6 +8,7 @@ import com.xianyusmart.controller.dto.AutoDeliveryConfigReqDTO;
 import com.xianyusmart.controller.dto.AutoDeliveryConfigRespDTO;
 import com.xianyusmart.controller.dto.AutoDeliveryConfigQueryReqDTO;
 import com.xianyusmart.service.AutoDeliveryConfigService;
+import com.xianyusmart.service.BuyerMessageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,10 +23,20 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
     
     @Autowired
     private XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper;
+
+    @Autowired
+    private BuyerMessageService buyerMessageService;
     
     @Override
     public ResultObject<AutoDeliveryConfigRespDTO> saveOrUpdateConfig(AutoDeliveryConfigReqDTO reqDTO) {
         try {
+            validateDeliveryContent(reqDTO);
+            String deliveryMessageTemplate = buyerMessageService.normalizeDeliveryMessageTemplate(
+                    reqDTO.getDeliveryMessageTemplate());
+            String receiptFollowUpMessages = buyerMessageService.normalizeReceiptFollowUpMessages(
+                    reqDTO.getReceiptFollowUpMessages());
+            int receiptFollowUpIntervalSeconds = buyerMessageService.normalizeReceiptFollowUpInterval(
+                    reqDTO.getReceiptFollowUpIntervalSeconds());
             String skuId = reqDTO.getSkuId();
             XianyuGoodsAutoDeliveryConfig existingConfig = null;
             if (skuId != null && !skuId.isEmpty()) {
@@ -49,11 +60,12 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
                 config.setAutoDeliveryContent(reqDTO.getAutoDeliveryContent());
                 config.setKamiConfigIds(reqDTO.getKamiConfigIds());
                 config.setKamiDeliveryTemplate(reqDTO.getKamiDeliveryTemplate());
+                config.setDeliveryMessageTemplate(deliveryMessageTemplate);
+                config.setReceiptFollowUpMessages(receiptFollowUpMessages);
+                config.setReceiptFollowUpIntervalSeconds(receiptFollowUpIntervalSeconds);
                 config.setAutoDeliveryImageUrl(reqDTO.getAutoDeliveryImageUrl());
                 config.setXianyuGoodsId(reqDTO.getXianyuGoodsId());
-                if (reqDTO.getAutoConfirmShipment() != null) {
-                    config.setAutoConfirmShipment(reqDTO.getAutoConfirmShipment());
-                }
+                config.setAutoConfirmShipment(1);
                 
                 autoDeliveryConfigMapper.updateById(config);
                 log.info("更新自动发货配置成功，ID: {}", config.getId());
@@ -63,6 +75,10 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
                 if (config.getSkuId() == null) {
                     config.setSkuId(null);
                 }
+                config.setDeliveryMessageTemplate(deliveryMessageTemplate);
+                config.setReceiptFollowUpMessages(receiptFollowUpMessages);
+                config.setReceiptFollowUpIntervalSeconds(receiptFollowUpIntervalSeconds);
+                config.setAutoConfirmShipment(1);
                 
                 autoDeliveryConfigMapper.insert(config);
                 log.info("创建自动发货配置成功，ID: {}", config.getId());
@@ -176,6 +192,22 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
         } catch (Exception e) {
             log.error("删除自动发货配置失败", e);
             return ResultObject.failed("删除自动发货配置失败: " + e.getMessage());
+        }
+    }
+
+    private void validateDeliveryContent(AutoDeliveryConfigReqDTO reqDTO) {
+        int deliveryMode = reqDTO.getDeliveryMode() == null ? 1 : reqDTO.getDeliveryMode();
+        if (deliveryMode != 1 && deliveryMode != 2) {
+            throw new IllegalArgumentException("仅支持固定内容发货或卡密发货");
+        }
+        if (deliveryMode == 1) {
+            String content = reqDTO.getAutoDeliveryContent() == null ? "" : reqDTO.getAutoDeliveryContent().trim();
+            if (content.isEmpty() || content.length() > 200) {
+                throw new IllegalArgumentException("固定发货内容长度应为1至200个字符");
+            }
+        }
+        if (deliveryMode == 2 && (reqDTO.getKamiConfigIds() == null || reqDTO.getKamiConfigIds().isBlank())) {
+            throw new IllegalArgumentException("卡密发货必须绑定卡密配置");
         }
     }
 }

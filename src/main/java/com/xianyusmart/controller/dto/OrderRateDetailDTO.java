@@ -17,6 +17,10 @@ public class OrderRateDetailDTO {
 
     private String sellerRateStatus;
 
+    private String buyerRateStatus;
+
+    private Boolean buyerRated = false;
+
     private Boolean synced = true;
 
     private Boolean canRate = false;

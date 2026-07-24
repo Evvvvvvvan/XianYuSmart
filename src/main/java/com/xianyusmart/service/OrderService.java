@@ -7,6 +7,10 @@ import java.util.Map;
  * 订单服务接口
  */
 public interface OrderService {
+
+    String CONSIGN_SUCCESS = "虚拟发货成功";
+    String CONSIGN_UNCERTAIN = "虚拟发货结果待确认";
+    String CONSIGN_ALREADY_DELIVERED = "订单已存在发货凭证";
     
     /**
      * 确认发货

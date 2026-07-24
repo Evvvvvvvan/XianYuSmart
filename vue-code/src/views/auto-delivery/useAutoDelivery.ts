@@ -31,6 +31,8 @@ import {
 import type { Account } from '@/types'
 import type { GoodsItemWithConfig } from '@/api/goods'
 
+const DEFAULT_DELIVERY_MESSAGE_TEMPLATE = '您好，{buyerName}，订单 {orderId} 已发货：\n{deliveryContent}'
+
 const copyToClipboard = (text: string) => {
   navigator.clipboard.writeText(text).then(() => {
     showSuccess('已复制到剪贴板')
@@ -78,6 +80,9 @@ export function useAutoDelivery() {
     autoDeliveryContent: '',
     kamiConfigIds: '',
     kamiDeliveryTemplate: '',
+    deliveryMessageTemplate: DEFAULT_DELIVERY_MESSAGE_TEMPLATE,
+    receiptFollowUpMessages: [] as string[],
+    receiptFollowUpIntervalSeconds: 5,
     autoDeliveryImageUrl: '',
     autoConfirmShipment: 0
   })
@@ -90,6 +95,37 @@ export function useAutoDelivery() {
   })
 
   const hasMultipleSku = computed(() => skuList.value.length > 1)
+
+  const parseReceiptFollowUpMessages = (value?: string) => {
+    if (!value) return []
+    try {
+      const messages = JSON.parse(value)
+      return Array.isArray(messages) ? messages.filter(item => typeof item === 'string') : []
+    } catch {
+      return []
+    }
+  }
+
+  const addReceiptFollowUpMessage = () => {
+    if (configForm.value.receiptFollowUpMessages.length >= 5) {
+      showInfo('最多添加5条确认收货后话术')
+      return
+    }
+    configForm.value.receiptFollowUpMessages.push('')
+  }
+
+  const removeReceiptFollowUpMessage = (index: number) => {
+    configForm.value.receiptFollowUpMessages.splice(index, 1)
+  }
+
+  const appendDeliveryVariable = (variable: string) => {
+    configForm.value.deliveryMessageTemplate += variable
+  }
+
+  const appendReceiptVariable = (index: number, variable: string) => {
+    configForm.value.receiptFollowUpMessages[index] =
+      (configForm.value.receiptFollowUpMessages[index] || '') + variable
+  }
 
   const recordsLoading = ref(false)
   const deliveryRecords = ref<any[]>([])
@@ -393,6 +429,9 @@ export function useAutoDelivery() {
           configForm.value.autoDeliveryContent = response.data.autoDeliveryContent || ''
           configForm.value.kamiConfigIds = response.data.kamiConfigIds || ''
           configForm.value.kamiDeliveryTemplate = response.data.kamiDeliveryTemplate || ''
+          configForm.value.deliveryMessageTemplate = response.data.deliveryMessageTemplate || DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+          configForm.value.receiptFollowUpMessages = parseReceiptFollowUpMessages(response.data.receiptFollowUpMessages)
+          configForm.value.receiptFollowUpIntervalSeconds = response.data.receiptFollowUpIntervalSeconds || 5
           configForm.value.autoDeliveryImageUrl = response.data.autoDeliveryImageUrl || ''
           if (response.data.autoConfirmShipment != null) {
             configForm.value.autoConfirmShipment = response.data.autoConfirmShipment
@@ -402,6 +441,9 @@ export function useAutoDelivery() {
           configForm.value.autoDeliveryContent = ''
           configForm.value.kamiConfigIds = ''
           configForm.value.kamiDeliveryTemplate = ''
+          configForm.value.deliveryMessageTemplate = DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+          configForm.value.receiptFollowUpMessages = []
+          configForm.value.receiptFollowUpIntervalSeconds = 5
           configForm.value.autoDeliveryImageUrl = ''
         }
       } else {
@@ -427,6 +469,22 @@ export function useAutoDelivery() {
       showInfo('请绑定卡密配置')
       return
     }
+    if (!configForm.value.deliveryMessageTemplate.trim()) {
+      showInfo('请输入发货私聊模板')
+      return
+    }
+    const receiptMessages = configForm.value.receiptFollowUpMessages
+      .map(message => message.trim())
+      .filter(Boolean)
+    if (receiptMessages.some(message => message.length > 500)) {
+      showInfo('单条确认收货后话术不能超过500字')
+      return
+    }
+    const followUpInterval = Number(configForm.value.receiptFollowUpIntervalSeconds)
+    if (!Number.isInteger(followUpInterval) || followUpInterval < 5 || followUpInterval > 600) {
+      showInfo('话术发送间隔应为5至600秒')
+      return
+    }
 
     saving.value = true
     try {
@@ -444,8 +502,11 @@ export function useAutoDelivery() {
         autoDeliveryContent: configForm.value.autoDeliveryContent.trim(),
         kamiConfigIds: configForm.value.kamiConfigIds,
         kamiDeliveryTemplate: configForm.value.kamiDeliveryTemplate.trim(),
+        deliveryMessageTemplate: configForm.value.deliveryMessageTemplate.trim(),
+        receiptFollowUpMessages: JSON.stringify(receiptMessages),
+        receiptFollowUpIntervalSeconds: followUpInterval,
         autoDeliveryImageUrl: configForm.value.autoDeliveryImageUrl.trim(),
-        autoConfirmShipment: configForm.value.autoConfirmShipment
+        autoConfirmShipment: 1
       }
 
       const response = await saveOrUpdateAutoDeliveryConfig(req)
@@ -761,6 +822,10 @@ export function useAutoDelivery() {
     confirmShipmentParamsJson,
     kamiConfigOptions,
     selectedKamiConfigId,
+    addReceiptFollowUpMessage,
+    removeReceiptFollowUpMessage,
+    appendDeliveryVariable,
+    appendReceiptVariable,
 
     loadAccounts,
     loadGoods,

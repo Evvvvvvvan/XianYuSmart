@@ -50,6 +50,8 @@ export interface OrderRateDetail {
   orderId: string
   tradeStatus?: string
   sellerRateStatus?: string
+  buyerRateStatus?: string
+  buyerRated: boolean
   synced: boolean
   canRate: boolean
   rated: boolean

@@ -424,7 +424,7 @@ const getPageButtons = () => {
           </div>
           <div class="goods__dialog-body rate-dialog__body">
             <label class="rate-dialog__switch-row">
-              <span><strong>自动评价</strong><small>仅处理平台待评价且属于当前商品的订单</small></span>
+              <span><strong>自动评价</strong><small>仅在买家完成评价后回评，不会提前评价</small></span>
               <input v-model="rateEnabled" type="checkbox">
             </label>
             <label class="rate-dialog__field">

@@ -45,8 +45,8 @@ public interface XianyuGoodsOrderMapper {
             """)
     DashboardStatsRespDTO selectDashboardStats();
     
-    @Insert("INSERT INTO xianyu_goods_order (xianyu_account_id, xianyu_goods_id, xy_goods_id, pnm_id, order_id, buyer_user_id, buyer_user_name, sid, content, state, fail_reason, confirm_state, goods_title, sku_name, order_create_time, pay_success_time, consign_time, total_price, buy_num, delivery_status, expected_quantity, delivery_channel) " +
-            "VALUES (#{xianyuAccountId}, #{xianyuGoodsId}, #{xyGoodsId}, #{pnmId}, #{orderId}, #{buyerUserId}, #{buyerUserName}, #{sid}, #{content}, #{state}, #{failReason}, #{confirmState}, #{goodsTitle}, #{skuName}, #{orderCreateTime}, #{paySuccessTime}, #{consignTime}, #{totalPrice}, COALESCE(#{buyNum}, 1), COALESCE(#{deliveryStatus}, CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE 'PENDING' END), COALESCE(#{expectedQuantity}, COALESCE(#{buyNum}, 1)), #{deliveryChannel}) " +
+    @Insert("INSERT INTO xianyu_goods_order (xianyu_account_id, xianyu_goods_id, xy_goods_id, pnm_id, order_id, buyer_user_id, buyer_user_name, sid, content, state, fail_reason, confirm_state, goods_title, sku_name, sku_id, order_create_time, pay_success_time, consign_time, total_price, buy_num, delivery_status, expected_quantity, delivery_channel) " +
+            "VALUES (#{xianyuAccountId}, #{xianyuGoodsId}, #{xyGoodsId}, #{pnmId}, #{orderId}, #{buyerUserId}, #{buyerUserName}, #{sid}, #{content}, #{state}, #{failReason}, #{confirmState}, #{goodsTitle}, #{skuName}, #{skuId}, #{orderCreateTime}, #{paySuccessTime}, #{consignTime}, #{totalPrice}, COALESCE(#{buyNum}, 1), COALESCE(#{deliveryStatus}, CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE 'PENDING' END), COALESCE(#{expectedQuantity}, COALESCE(#{buyNum}, 1)), #{deliveryChannel}) " +
             "ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)")
     @Options(useGeneratedKeys = true, keyProperty = "id")
     int insert(XianyuGoodsOrder record);
@@ -98,6 +98,7 @@ public interface XianyuGoodsOrderMapper {
         @Result(property = "createTime", column = "create_time"),
         @Result(property = "goodsTitle", column = "goods_title"),
         @Result(property = "skuName", column = "sku_name"),
+        @Result(property = "skuId", column = "sku_id"),
         @Result(property = "orderCreateTime", column = "order_create_time"),
         @Result(property = "paySuccessTime", column = "pay_success_time"),
         @Result(property = "consignTime", column = "consign_time"),
@@ -164,7 +165,8 @@ public interface XianyuGoodsOrderMapper {
     int completeTask(@Param("id") Long id);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = #{status}, next_retry_time = #{nextRetryTime}, " +
-            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_FAILED', last_error_message = #{errorMessage} WHERE id = #{id}")
+            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_FAILED', last_error_message = #{errorMessage} " +
+            "WHERE id = #{id} AND delivery_status NOT IN ('REVIEW_REQUIRED', 'COMPLETED')")
     int retryOrFailTask(@Param("id") Long id, @Param("status") String status,
                         @Param("nextRetryTime") java.time.LocalDateTime nextRetryTime,
                         @Param("errorMessage") String errorMessage);
@@ -196,6 +198,58 @@ public interface XianyuGoodsOrderMapper {
     int updateRateResult(@Param("accountId") Long accountId, @Param("orderId") String orderId,
                          @Param("rateStatus") Integer rateStatus, @Param("rateContent") String rateContent,
                          @Param("rateSource") String rateSource);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_content = #{content}, delivery_message_state = 0, " +
+            "delivery_message_attempt_count = 0, delivery_message_next_retry_time = NOW(3) WHERE id = #{id}")
+    int prepareDeliveryMessage(@Param("id") Long id, @Param("content") String content);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_state = 1, delivery_message_next_retry_time = NULL WHERE id = #{id}")
+    int markDeliveryMessageSent(@Param("id") Long id);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_state = 2, " +
+            "delivery_message_next_retry_time = DATE_ADD(NOW(3), INTERVAL 2 MINUTE) WHERE id = #{id} " +
+            "AND delivery_message_content IS NOT NULL AND delivery_message_state IN (0, 2) " +
+            "AND (delivery_message_next_retry_time IS NULL OR delivery_message_next_retry_time <= NOW(3))")
+    int claimDeliveryMessage(@Param("id") Long id);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_state = 0, " +
+            "delivery_message_attempt_count = delivery_message_attempt_count + 1, " +
+            "delivery_message_next_retry_time = #{nextRetryTime} WHERE id = #{id} AND delivery_message_state IN (0, 2)")
+    int deferDeliveryMessage(@Param("id") Long id, @Param("nextRetryTime") java.time.LocalDateTime nextRetryTime);
+
+    @Select("SELECT * FROM xianyu_goods_order WHERE delivery_message_content IS NOT NULL AND delivery_message_state IN (0, 2) " +
+            "AND (delivery_message_next_retry_time IS NULL OR delivery_message_next_retry_time <= NOW(3)) " +
+            "ORDER BY delivery_message_next_retry_time ASC LIMIT #{limit}")
+    List<XianyuGoodsOrder> selectDueDeliveryMessages(@Param("limit") int limit);
+
+    @Select("SELECT o.* FROM xianyu_goods_order o WHERE o.state = 1 AND o.receipt_follow_up_completed = 0 " +
+            "AND (o.receipt_follow_up_next_time IS NULL OR o.receipt_follow_up_next_time <= NOW(3)) " +
+            "AND EXISTS (SELECT 1 FROM xianyu_goods_auto_delivery_config c " +
+            "WHERE c.xianyu_account_id = o.xianyu_account_id AND c.xy_goods_id = o.xy_goods_id " +
+            "AND (c.sku_id IS NULL OR c.sku_id = o.sku_id) " +
+            "AND c.receipt_follow_up_messages IS NOT NULL AND c.receipt_follow_up_messages NOT IN ('', '[]')) " +
+            "ORDER BY o.receipt_follow_up_next_time ASC, o.create_time ASC LIMIT #{limit}")
+    List<XianyuGoodsOrder> selectDueReceiptFollowUps(@Param("limit") int limit);
+
+    @Update("UPDATE xianyu_goods_order SET buyer_confirmed_receipt = 1 WHERE id = #{id}")
+    int markBuyerConfirmedReceipt(@Param("id") Long id);
+
+    @Update("UPDATE xianyu_goods_order SET receipt_follow_up_next_time = DATE_ADD(NOW(3), INTERVAL 2 MINUTE) " +
+            "WHERE id = #{id} AND receipt_follow_up_completed = 0 AND receipt_follow_up_sent_count = #{sentCount} " +
+            "AND (receipt_follow_up_next_time IS NULL OR receipt_follow_up_next_time <= NOW(3))")
+    int claimReceiptFollowUp(@Param("id") Long id, @Param("sentCount") Integer sentCount);
+
+    @Update("UPDATE xianyu_goods_order SET receipt_follow_up_sent_count = #{sentCount}, " +
+            "receipt_follow_up_completed = #{completed}, receipt_follow_up_next_time = #{nextTime} " +
+            "WHERE id = #{id} AND receipt_follow_up_completed = 0 AND receipt_follow_up_sent_count = #{expectedSentCount}")
+    int updateReceiptFollowUpProgress(@Param("id") Long id, @Param("sentCount") Integer sentCount,
+                                      @Param("completed") Integer completed,
+                                      @Param("nextTime") java.time.LocalDateTime nextTime,
+                                      @Param("expectedSentCount") Integer expectedSentCount);
+
+    @Update("UPDATE xianyu_goods_order SET receipt_follow_up_next_time = #{nextTime} " +
+            "WHERE id = #{id} AND receipt_follow_up_completed = 0")
+    int deferReceiptFollowUp(@Param("id") Long id, @Param("nextTime") java.time.LocalDateTime nextTime);
     
     @Select("SELECT * FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId} AND pnm_id = #{pnmId}")
     XianyuGoodsOrder selectByPnmId(@Param("accountId") Long accountId, @Param("pnmId") String pnmId);
@@ -254,6 +308,7 @@ public interface XianyuGoodsOrderMapper {
         @Result(property = "createTime", column = "create_time"),
         @Result(property = "goodsTitle", column = "goods_title"),
         @Result(property = "skuName", column = "sku_name"),
+        @Result(property = "skuId", column = "sku_id"),
         @Result(property = "orderCreateTime", column = "order_create_time"),
         @Result(property = "paySuccessTime", column = "pay_success_time"),
         @Result(property = "consignTime", column = "consign_time"),
@@ -299,8 +354,8 @@ public interface XianyuGoodsOrderMapper {
     @Update("UPDATE xianyu_goods_order SET sku_name = #{skuName} WHERE id = #{id}")
     int updateSkuName(@Param("id") Long id, @Param("skuName") String skuName);
 
-    @Update("UPDATE xianyu_goods_order SET buyer_user_name = #{buyerUserName}, order_create_time = #{orderCreateTime}, pay_success_time = #{paySuccessTime}, consign_time = #{consignTime}, sku_name = #{skuName}, goods_title = #{goodsTitle}, total_price = #{totalPrice}, buy_num = #{buyNum} WHERE id = #{id}")
-    int updateOrderDetail(@Param("id") Long id, @Param("buyerUserName") String buyerUserName, @Param("orderCreateTime") String orderCreateTime, @Param("paySuccessTime") String paySuccessTime, @Param("consignTime") String consignTime, @Param("skuName") String skuName, @Param("goodsTitle") String goodsTitle, @Param("totalPrice") String totalPrice, @Param("buyNum") Integer buyNum);
+    @Update("UPDATE xianyu_goods_order SET buyer_user_name = #{buyerUserName}, order_create_time = #{orderCreateTime}, pay_success_time = #{paySuccessTime}, consign_time = #{consignTime}, sku_name = #{skuName}, sku_id = COALESCE(#{skuId}, sku_id), goods_title = #{goodsTitle}, total_price = #{totalPrice}, buy_num = #{buyNum} WHERE id = #{id}")
+    int updateOrderDetail(@Param("id") Long id, @Param("buyerUserName") String buyerUserName, @Param("orderCreateTime") String orderCreateTime, @Param("paySuccessTime") String paySuccessTime, @Param("consignTime") String consignTime, @Param("skuName") String skuName, @Param("skuId") String skuId, @Param("goodsTitle") String goodsTitle, @Param("totalPrice") String totalPrice, @Param("buyNum") Integer buyNum);
 
     @Select("SELECT COALESCE(SUM(CAST(total_price AS DECIMAL(12, 2))), 0) FROM xianyu_goods_order WHERE state = 1 AND confirm_state = 1 AND date(create_time) = #{date}")
     double sumDeliverySuccessAmountByDate(@Param("date") String date);

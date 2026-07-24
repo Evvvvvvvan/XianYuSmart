@@ -22,7 +22,7 @@ public class DeliveryStrategyResolver {
     /**
      * 根据发货模式解析发货内容
      *
-     * @param deliveryMode 发货模式（1=文本，2=卡密）
+     * @param deliveryMode 发货模式（1=固定内容，2=卡密）
      * @param context      发货上下文
      * @return 发货内容文本，null表示无法发货
      */

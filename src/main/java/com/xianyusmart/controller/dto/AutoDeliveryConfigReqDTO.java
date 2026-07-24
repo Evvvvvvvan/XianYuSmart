@@ -28,7 +28,7 @@ public class AutoDeliveryConfigReqDTO {
     private String xyGoodsId;
     
     /**
-     * 发货模式：1-自动发货，2-卡密发货，3-自定义发货
+     * 发货模式：1-固定内容发货，2-卡密发货
      */
     private Integer deliveryMode = 1;
 
@@ -47,6 +47,21 @@ public class AutoDeliveryConfigReqDTO {
      * 卡密发货文案模板，使用{kmKey}占位符替换卡密内容
      */
     private String kamiDeliveryTemplate;
+
+    /**
+     * 发货私聊模板，支持{buyerName}、{orderId}、{deliveryContent}
+     */
+    private String deliveryMessageTemplate;
+
+    /**
+     * 买家确认收货后按顺序发送的话术列表JSON
+     */
+    private String receiptFollowUpMessages;
+
+    /**
+     * 收货后话术发送间隔秒数
+     */
+    private Integer receiptFollowUpIntervalSeconds;
 
     /**
      * 自动发货图片URL

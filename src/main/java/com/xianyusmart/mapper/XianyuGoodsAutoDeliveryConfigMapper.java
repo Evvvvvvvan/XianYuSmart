@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface XianyuGoodsAutoDeliveryConfigMapper extends BaseMapper<XianyuGoodsAutoDeliveryConfig> {
     
-    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
+    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, delivery_message_template, receipt_follow_up_messages, receipt_follow_up_interval_seconds, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
             "DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') as create_time, " +
             "DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') as update_time " +
             "FROM xianyu_goods_auto_delivery_config " +
@@ -22,7 +22,7 @@ public interface XianyuGoodsAutoDeliveryConfigMapper extends BaseMapper<XianyuGo
                                                                      @Param("xyGoodsId") String xyGoodsId,
                                                                      @Param("skuId") String skuId);
     
-    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
+    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, delivery_message_template, receipt_follow_up_messages, receipt_follow_up_interval_seconds, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
             "DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') as create_time, " +
             "DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') as update_time " +
             "FROM xianyu_goods_auto_delivery_config " +
@@ -31,7 +31,7 @@ public interface XianyuGoodsAutoDeliveryConfigMapper extends BaseMapper<XianyuGo
     XianyuGoodsAutoDeliveryConfig findByAccountIdAndGoodsIdNoSku(@Param("xianyuAccountId") Long xianyuAccountId,
                                                                   @Param("xyGoodsId") String xyGoodsId);
     
-    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
+    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, delivery_message_template, receipt_follow_up_messages, receipt_follow_up_interval_seconds, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
             "DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') as create_time, " +
             "DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') as update_time " +
             "FROM xianyu_goods_auto_delivery_config " +
@@ -40,7 +40,7 @@ public interface XianyuGoodsAutoDeliveryConfigMapper extends BaseMapper<XianyuGo
     List<XianyuGoodsAutoDeliveryConfig> findByAccountIdAndGoodsId(@Param("xianyuAccountId") Long xianyuAccountId,
                                                                    @Param("xyGoodsId") String xyGoodsId);
     
-    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
+    @Select("SELECT id, xianyu_account_id, xianyu_goods_id, xy_goods_id, delivery_mode, sku_id, sku_name, auto_delivery_content, kami_config_ids, kami_delivery_template, delivery_message_template, receipt_follow_up_messages, receipt_follow_up_interval_seconds, auto_delivery_image_url, auto_confirm_shipment, rag_delay_seconds, " +
             "DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') as create_time, " +
             "DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s') as update_time " +
             "FROM xianyu_goods_auto_delivery_config " +

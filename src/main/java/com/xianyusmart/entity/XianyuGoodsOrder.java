@@ -47,12 +47,30 @@ public class XianyuGoodsOrder {
     private String rateContent;
 
     private String rateSource;
+
+    private String deliveryMessageContent;
+
+    private Integer deliveryMessageState;
+
+    private Integer deliveryMessageAttemptCount;
+
+    private LocalDateTime deliveryMessageNextRetryTime;
+
+    private Integer buyerConfirmedReceipt;
+
+    private Integer receiptFollowUpSentCount;
+
+    private LocalDateTime receiptFollowUpNextTime;
+
+    private Integer receiptFollowUpCompleted;
     
     private String createTime;
     
     private String goodsTitle;
 
     private String skuName;
+
+    private String skuId;
 
     private String orderCreateTime;
 

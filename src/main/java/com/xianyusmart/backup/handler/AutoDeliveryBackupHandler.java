@@ -50,6 +50,9 @@ public class AutoDeliveryBackupHandler implements DataBackupHandler {
             map.put("autoDeliveryContent", config.getAutoDeliveryContent());
             map.put("kamiConfigIds", config.getKamiConfigIds());
             map.put("kamiDeliveryTemplate", config.getKamiDeliveryTemplate());
+            map.put("deliveryMessageTemplate", config.getDeliveryMessageTemplate());
+            map.put("receiptFollowUpMessages", config.getReceiptFollowUpMessages());
+            map.put("receiptFollowUpIntervalSeconds", config.getReceiptFollowUpIntervalSeconds());
             map.put("autoDeliveryImageUrl", config.getAutoDeliveryImageUrl());
             map.put("autoConfirmShipment", config.getAutoConfirmShipment());
             result.add(map);
@@ -104,6 +107,10 @@ public class AutoDeliveryBackupHandler implements DataBackupHandler {
                 config.setAutoDeliveryContent((String) map.get("autoDeliveryContent"));
                 config.setKamiConfigIds((String) map.get("kamiConfigIds"));
                 config.setKamiDeliveryTemplate((String) map.get("kamiDeliveryTemplate"));
+                config.setDeliveryMessageTemplate((String) map.get("deliveryMessageTemplate"));
+                config.setReceiptFollowUpMessages((String) map.get("receiptFollowUpMessages"));
+                config.setReceiptFollowUpIntervalSeconds(map.get("receiptFollowUpIntervalSeconds") != null
+                        ? ((Number) map.get("receiptFollowUpIntervalSeconds")).intValue() : null);
                 config.setAutoDeliveryImageUrl((String) map.get("autoDeliveryImageUrl"));
                 config.setAutoConfirmShipment(map.get("autoConfirmShipment") != null ? ((Number) map.get("autoConfirmShipment")).intValue() : null);
 

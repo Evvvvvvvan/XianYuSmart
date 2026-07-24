@@ -1025,6 +1025,111 @@
   color: var(--d-text-tertiary);
 }
 
+.ad__section-note {
+  margin: -4px 0 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--d-text-tertiary);
+}
+
+.ad__textarea--compact {
+  min-height: 84px;
+}
+
+.ad__field-heading,
+.ad__follow-up-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 8px;
+  font-size: 13px;
+  color: var(--d-text-secondary);
+}
+
+.ad__variable-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.ad__variable-list button,
+.ad__add-message-btn {
+  padding: 5px 9px;
+  color: var(--d-accent);
+  background: rgba(0, 122, 255, 0.08);
+  border: 0;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ad__variable-list .ad__variable-remove {
+  color: var(--d-danger);
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.ad__follow-up-heading {
+  align-items: flex-end;
+  margin-top: 24px;
+}
+
+.ad__follow-up-heading div {
+  display: grid;
+  gap: 4px;
+}
+
+.ad__follow-up-heading strong {
+  color: var(--d-text-primary);
+  font-size: 14px;
+}
+
+.ad__follow-up-heading span,
+.ad__follow-up-empty {
+  color: var(--d-text-tertiary);
+  font-size: 12px;
+}
+
+.ad__follow-up-empty {
+  padding: 16px;
+  text-align: center;
+  background: rgba(120, 120, 128, 0.06);
+  border-radius: var(--d-radius-sm);
+}
+
+.ad__follow-up-item {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(120, 120, 128, 0.05);
+  border: 1px solid var(--d-border);
+  border-radius: var(--d-radius-sm);
+}
+
+.ad__follow-up-item .ad__field-heading {
+  margin-top: 0;
+}
+
+.ad__interval-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--d-text-secondary);
+}
+
+.ad__interval-field input {
+  width: 88px;
+  height: 34px;
+  padding: 0 10px;
+  color: var(--d-text-primary);
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--d-border-strong);
+  border-radius: 7px;
+  outline: none;
+}
+
 /* --- Image Section --- */
 .ad__image-section {
   margin-top: 16px;
@@ -1840,6 +1945,16 @@
 
   .ad__textarea {
     min-height: 100px;
+  }
+
+  .ad__field-heading,
+  .ad__follow-up-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ad__variable-list {
+    justify-content: flex-start;
   }
 
   .ad__config-header {

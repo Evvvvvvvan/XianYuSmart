@@ -351,7 +351,7 @@ const executeConfirmShipment = async () => {
     </div>
 
     <div class="evaluation-guide">
-      <div><strong>评价处理</strong><span>状态与双方评价内容均从闲鱼平台同步，只有交易完成且待评价的订单可以提交。</span></div>
+      <div><strong>评价处理</strong><span>状态与双方评价内容均从闲鱼平台同步；自动评价仅在买家评价后触发，手动评价仍按平台可评价状态提交。</span></div>
       <span class="evaluation-guide__count">当前列表可评价 {{ pendingRateCount }} 条</span>
     </div>
 
@@ -534,7 +534,7 @@ const executeConfirmShipment = async () => {
           <div class="orders__dialog-header"><div><h3 class="orders__dialog-title">自动评价规则</h3><p>按商品保存开关与固定评价文案</p></div></div>
           <div class="orders__dialog-body rate-dialog__body">
             <label class="rate-dialog__field"><span>商品</span><select v-model="rateRuleGoodsId" @change="syncRateRuleForm"><option v-for="goods in goodsList" :key="goods.item.xyGoodId" :value="goods.item.xyGoodId">{{ goods.item.title }}</option></select></label>
-            <label class="rate-dialog__switch"><span><strong>启用自动评价</strong><small>后台定期检查待评价订单，成功后立即回写状态</small></span><input v-model="rateRuleEnabled" type="checkbox"></label>
+            <label class="rate-dialog__switch"><span><strong>启用自动评价</strong><small>买家评价后自动回评，成功后立即回写平台状态</small></span><input v-model="rateRuleEnabled" type="checkbox"></label>
             <label class="rate-dialog__field"><span>自动评价内容</span><textarea v-model="rateRuleContent" maxlength="500" rows="5"></textarea><small>{{ rateRuleContent.trim().length }}/500</small></label>
             <div class="rate-dialog__presets"><span>快捷文案</span><button v-for="preset in ratePresets" :key="preset" type="button" @click="rateRuleContent = preset">{{ preset }}</button></div>
           </div>

@@ -3,6 +3,7 @@ package com.xianyusmart.service;
 import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.entity.XianyuGoodsOrder;
+import com.xianyusmart.enums.DeliveryStatus;
 import com.xianyusmart.enums.KamiStatus;
 import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
@@ -102,6 +103,8 @@ public class DeliveryTaskScheduler {
             XianyuGoodsOrder result = orderMapper.selectById(task.getId());
             if (result != null && Integer.valueOf(1).equals(result.getState())) {
                 deliveryTaskService.complete(task.getId());
+            } else if (result != null && DeliveryStatus.REVIEW_REQUIRED.name().equals(result.getDeliveryStatus())) {
+                log.warn("订单发货结果待人工核对: taskId={}, orderId={}", task.getId(), task.getOrderId());
             } else if (kamiItemMapper.countByOrderAndStatus(task.getOrderId(), KamiStatus.REVIEW_REQUIRED.getCode()) > 0) {
                 deliveryTaskService.markReviewRequired(task.getId(), result != null ? result.getFailReason() : null);
             } else {

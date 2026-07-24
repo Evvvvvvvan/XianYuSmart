@@ -238,7 +238,7 @@ public class PendingOrderPollService {
             }
             if (existing == null) return;
 
-            orderMapper.updateOrderDetail(existing.getId(), buyerUserName, orderCreateTime, paySuccessTime, consignTime, skuName, goodsTitle, totalPrice, buyNum);
+            orderMapper.updateOrderDetail(existing.getId(), buyerUserName, orderCreateTime, paySuccessTime, consignTime, skuName, null, goodsTitle, totalPrice, buyNum);
             log.info("【账号{}】从详情API补充订单字段: orderId={}", accountId, orderId);
         } catch (Exception e) {
             log.warn("【账号{}】补充订单详情异常: orderId={}", accountId, orderId, e);

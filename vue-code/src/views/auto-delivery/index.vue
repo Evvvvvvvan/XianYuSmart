@@ -78,6 +78,10 @@ const {
   getRecordStatusClass,
   kamiConfigOptions,
   selectedKamiConfigId,
+  addReceiptFollowUpMessage,
+  removeReceiptFollowUpMessage,
+  appendDeliveryVariable,
+  appendReceiptVariable,
   apiHintUrl,
   apiHintParamsJson,
   confirmShipmentUrl,
@@ -330,7 +334,7 @@ onMounted(() => {
 
         <!-- Config content -->
         <div v-if="selectedGoods" class="ad__config-scroll">
-          <!-- Master Toggles: 自动发货 + 自动确认发货 -->
+          <!-- 自动发货开关与固定启用的发货凭证 -->
           <div class="ad__config-section ad__config-section--no-pad-bottom">
             <div class="ad__master-toggles">
               <div class="ad__master-toggle">
@@ -346,12 +350,12 @@ onMounted(() => {
                 </label>
               </div>
               <div class="ad__master-toggle">
-                <div class="ad__toggle-label">自动确认发货</div>
+                <div class="ad__toggle-label">同步发货凭证</div>
                 <label class="ad__switch ad__switch--sm">
                   <input
                     type="checkbox"
-                    :checked="configForm.autoConfirmShipment === 1"
-                    :disabled="selectedGoods.xianyuAutoDeliveryOn !== 1"
+                    :checked="true"
+                    :disabled="true"
                     @change="toggleAutoConfirmShipment(($event.target as HTMLInputElement).checked)"
                   />
                   <span class="ad__switch-track"></span>
@@ -387,7 +391,7 @@ onMounted(() => {
                 @click="configForm.deliveryMode = 1"
               >
                 <IconText />
-                文本发货
+                固定内容发货
               </button>
               <button
                 class="ad__tab-btn"
@@ -400,6 +404,70 @@ onMounted(() => {
             </div>
           </div>
 
+          <div class="ad__config-section">
+            <div class="ad__config-section-title">发货私聊</div>
+            <div class="ad__section-note">发货成功后，同一份实际发货内容会写入发货凭证并通过私聊发送；私聊失败会自动重试。</div>
+            <div class="ad__field-heading">
+              <span>私聊模板</span>
+              <div class="ad__variable-list">
+                <button type="button" @click="appendDeliveryVariable('{buyerName}')">会员名称</button>
+                <button type="button" @click="appendDeliveryVariable('{orderId}')">订单号</button>
+                <button type="button" @click="appendDeliveryVariable('{deliveryContent}')">发货内容</button>
+              </div>
+            </div>
+            <textarea
+              v-model="configForm.deliveryMessageTemplate"
+              class="ad__textarea ad__textarea--compact"
+              maxlength="1000"
+              placeholder="例：您好，{buyerName}，订单 {orderId} 已发货：{deliveryContent}"
+            ></textarea>
+            <div class="ad__textarea-footer">
+              <span class="ad__textarea-hint">变量会在发送前自动替换，卡密仅分配一次</span>
+              <span class="ad__textarea-count">{{ configForm.deliveryMessageTemplate.length }} / 1000</span>
+            </div>
+
+            <div class="ad__follow-up-heading">
+              <div>
+                <strong>确认收货后好评引导</strong>
+                <span>检测到买家确认收货后，按顺序逐条发送</span>
+              </div>
+              <button type="button" class="ad__add-message-btn" @click="addReceiptFollowUpMessage">添加话术</button>
+            </div>
+            <div v-if="configForm.receiptFollowUpMessages.length === 0" class="ad__follow-up-empty">
+              暂未配置，确认收货后不会发送引导消息
+            </div>
+            <div
+              v-for="(message, index) in configForm.receiptFollowUpMessages"
+              :key="index"
+              class="ad__follow-up-item"
+            >
+              <div class="ad__field-heading">
+                <span>第 {{ index + 1 }} 条</span>
+                <div class="ad__variable-list">
+                  <button type="button" @click="appendReceiptVariable(index, '{buyerName}')">会员名称</button>
+                  <button type="button" @click="appendReceiptVariable(index, '{orderId}')">订单号</button>
+                  <button type="button" @click="appendReceiptVariable(index, '{deliveryContent}')">发货内容</button>
+                  <button type="button" class="ad__variable-remove" @click="removeReceiptFollowUpMessage(index)">删除</button>
+                </div>
+              </div>
+              <textarea
+                v-model="configForm.receiptFollowUpMessages[index]"
+                class="ad__textarea ad__textarea--compact"
+                maxlength="500"
+                placeholder="例：感谢支持，满意的话欢迎点亮小红花。"
+              ></textarea>
+              <div class="ad__textarea-footer">
+                <span class="ad__textarea-hint">单条独立发送</span>
+                <span class="ad__textarea-count">{{ message.length }} / 500</span>
+              </div>
+            </div>
+            <label v-if="configForm.receiptFollowUpMessages.length > 1" class="ad__interval-field">
+              <span>每条间隔</span>
+              <input v-model.number="configForm.receiptFollowUpIntervalSeconds" type="number" min="5" max="600" />
+              <span>秒</span>
+            </label>
+          </div>
+
           <!-- ====== 自动发货视图 ====== -->
           <template v-if="configForm.deliveryMode === 1">
             <!-- Content Section -->
@@ -409,17 +477,17 @@ onMounted(() => {
               <textarea
                 v-model="configForm.autoDeliveryContent"
                 class="ad__textarea"
-                placeholder="请输入自动发货内容，买家下单后将自动发送此内容（最多200字）"
+                placeholder="请输入每笔订单固定复用的发货内容（最多200字）"
                 maxlength="200"
               ></textarea>
               <div class="ad__textarea-footer">
-                <span class="ad__textarea-hint">支持文本、链接、卡密等内容，最多200字</span>
+                <span class="ad__textarea-hint">每次复用且不扣卡密库存，凭证和私聊使用同一内容</span>
                 <span class="ad__textarea-count">{{ configForm.autoDeliveryContent.length }} / 200</span>
               </div>
 
               <div class="ad__image-section">
                 <div class="ad__image-section-title">发货图片</div>
-                <div class="ad__image-section-hint">可选，最多3张，买家下单后先发送图片再发送文本</div>
+                <div class="ad__image-section-hint">可选，最多3张，同时写入发货凭证并发送至买家私聊</div>
                 <MultiImageUploader
                   v-if="selectedAccountId"
                   :account-id="selectedAccountId"
@@ -484,7 +552,7 @@ onMounted(() => {
 
               <div class="ad__image-section">
                 <div class="ad__image-section-title">发货图片</div>
-                <div class="ad__image-section-hint">可选，最多3张，买家下单后先发送图片再发送卡密</div>
+                <div class="ad__image-section-hint">可选，最多3张，同时写入发货凭证并发送至买家私聊</div>
                 <MultiImageUploader
                   v-if="selectedAccountId"
                   :account-id="selectedAccountId"

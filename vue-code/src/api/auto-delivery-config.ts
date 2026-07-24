@@ -12,6 +12,9 @@ export interface AutoDeliveryConfig {
   autoDeliveryContent: string;
   kamiConfigIds?: string;
   kamiDeliveryTemplate?: string;
+  deliveryMessageTemplate?: string;
+  receiptFollowUpMessages?: string;
+  receiptFollowUpIntervalSeconds?: number;
   autoDeliveryImageUrl?: string;
   autoConfirmShipment?: number;
   createTime: string;
@@ -28,6 +31,9 @@ export interface SaveAutoDeliveryConfigReq {
   autoDeliveryContent: string;
   kamiConfigIds?: string;
   kamiDeliveryTemplate?: string;
+  deliveryMessageTemplate?: string;
+  receiptFollowUpMessages?: string;
+  receiptFollowUpIntervalSeconds?: number;
   autoDeliveryImageUrl?: string;
   autoConfirmShipment?: number;
 }
