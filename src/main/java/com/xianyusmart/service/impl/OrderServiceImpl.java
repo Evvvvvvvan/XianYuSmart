@@ -409,6 +409,10 @@ public class OrderServiceImpl implements OrderService {
             );
 
             if (!result.isSuccess()) {
+                // 鱼小铺订单接口对普通账号返回无权限，自动切换通用卖家订单接口。
+                if (isPermissionDenied(result)) {
+                    return queryStandardPendingOrders(accountId, cookieStr);
+                }
                 log.warn("【账号{}】查询待发货订单失败: {}", accountId, result.getErrorMessage());
                 return List.of();
             }
@@ -429,6 +433,117 @@ public class OrderServiceImpl implements OrderService {
             log.error("【账号{}】查询待发货订单异常", accountId, e);
             return List.of();
         }
+    }
+
+    private boolean isPermissionDenied(XianyuApiCallUtils.ApiCallResult result) {
+        String errorMessage = result.getErrorMessage();
+        return errorMessage != null && errorMessage.startsWith("PERMISSION_EXCEPTION");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> queryStandardPendingOrders(Long accountId, String cookieStr) {
+        Map<String, Object> dataMap = new HashMap<>();
+        dataMap.put("pageNumber", 1);
+        dataMap.put("orderStatus", "NOT_SHIP");
+        dataMap.put("offsetRow", 0);
+
+        Map<String, String> extraHeaders = new HashMap<>();
+        extraHeaders.put("Origin", "https://h5.m.goofish.com");
+        extraHeaders.put("Referer", "https://h5.m.goofish.com/");
+
+        Map<String, String> extraQueryParams = new HashMap<>();
+        extraQueryParams.put("type", "originaljson");
+        extraQueryParams.put("valueType", "original");
+
+        XianyuApiCallUtils.ApiCallResult result = xianyuApiCallUtils.callApiWithRetry(
+                accountId,
+                "mtop.taobao.idle.trade.sold.get",
+                "5.0",
+                dataMap,
+                cookieStr,
+                extraHeaders,
+                extraQueryParams
+        );
+
+        if (!result.isSuccess()) {
+            log.warn("【账号{}】普通卖家待发货订单查询失败: {}", accountId, result.getErrorMessage());
+            return List.of();
+        }
+
+        Map<String, Object> responseData = result.extractData();
+        if (responseData == null || !(responseData.get("items") instanceof List)) {
+            return List.of();
+        }
+
+        List<Map<String, Object>> orders = new ArrayList<>();
+        for (Object item : (List<?>) responseData.get("items")) {
+            if (item instanceof Map) {
+                Map<String, Object> order = (Map<String, Object>) item;
+                String orderId = toStringValue(order.get("bizOrderId"));
+                String itemId = toStringValue(order.get("auctionId"));
+                // 以真实状态校验待发货，防止接口忽略筛选条件后误入自动发货队列。
+                if (isStandardPendingOrder(order) && hasText(orderId) && hasText(itemId)) {
+                    orders.add(normalizeStandardOrder(order));
+                }
+            }
+        }
+        log.info("【账号{}】已通过普通卖家接口获取待发货订单: count={}", accountId, orders.size());
+        return orders;
+    }
+
+    private Map<String, Object> normalizeStandardOrder(Map<String, Object> order) {
+        // 统一为现有待发货结构，避免下游发货逻辑感知账号类型。
+        Map<String, Object> commonData = new HashMap<>();
+        commonData.put("orderId", toStringValue(order.get("bizOrderId")));
+        commonData.put("itemId", toStringValue(order.get("auctionId")));
+        commonData.put("orderStatus", "待发货");
+        commonData.put("createTime", order.get("createTime"));
+
+        Map<String, Object> buyerInfo = new HashMap<>();
+        buyerInfo.put("userId", toStringValue(order.get("buyerId")));
+        buyerInfo.put("userNick", order.get("buyerNick"));
+
+        Map<String, Object> itemInfo = new HashMap<>();
+        itemInfo.put("title", order.get("auctionTitle"));
+
+        Map<String, Object> priceInfo = new HashMap<>();
+        priceInfo.put("totalPrice", toStringValue(order.get("totalFee")));
+        priceInfo.put("buyNum", order.get("buyAmount"));
+
+        Map<String, Object> normalized = new HashMap<>();
+        normalized.put("commonData", commonData);
+        normalized.put("buyerInfoVO", buyerInfo);
+        normalized.put("itemVO", itemInfo);
+        normalized.put("priceVO", priceInfo);
+        return normalized;
+    }
+
+    private boolean isStandardPendingOrder(Map<String, Object> order) {
+        String orderStatus = toStringValue(order.get("orderStatus"));
+        if (orderStatus == null) {
+            orderStatus = toStringValue(order.get("status"));
+        }
+        if ("2".equals(orderStatus)) {
+            return true;
+        }
+
+        String orderStatusMsg = toStringValue(order.get("orderStatusMsg"));
+        if (orderStatusMsg == null) {
+            orderStatusMsg = toStringValue(order.get("statusMsg"));
+        }
+        if (orderStatusMsg == null) {
+            return false;
+        }
+        String normalizedStatusMsg = orderStatusMsg.trim();
+        return "待发货".equals(normalizedStatusMsg) || "等待卖家发货".equals(normalizedStatusMsg);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String toStringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
     }
 
     @Override
