@@ -269,9 +269,6 @@ public class GoodsAutomationService {
         int attemptedCount = 0;
         // 先完成分页快照再回评，避免评价成功后列表收缩导致跨页订单被跳过。
         for (Map<String, Object> item : pendingItems.values()) {
-            if (!isRateEligible(item)) {
-                continue;
-            }
             String orderId = extractOrderId(item);
             if (orderId == null) {
                 continue;
@@ -279,6 +276,9 @@ public class GoodsAutomationService {
             XianyuGoodsOrder order = goodsOrderMapper.selectByAccountIdAndOrderId(accountId, orderId);
             XianyuGoodsConfig config = order == null ? null : configsByGoodsId.get(order.getXyGoodsId());
             if (config == null) {
+                continue;
+            }
+            if (!isRateEligible(item, config.getXianyuAutoRateOn())) {
                 continue;
             }
             if (attemptedCount >= MAX_RATE_PER_ACCOUNT) {
@@ -491,12 +491,18 @@ public class GoodsAutomationService {
         return request;
     }
 
-    private boolean isRateEligible(Map<String, Object> item) {
-        return isAutoRateEligible(parseRateDetail(item));
+    private boolean isRateEligible(Map<String, Object> item, Integer autoRateMode) {
+        return isAutoRateEligible(parseRateDetail(item), autoRateMode);
     }
 
-    boolean isAutoRateEligible(OrderRateDetailDTO detail) {
-        return Boolean.TRUE.equals(detail.getCanRate()) && Boolean.TRUE.equals(detail.getBuyerRated());
+    boolean isAutoRateEligible(OrderRateDetailDTO detail, Integer autoRateMode) {
+        if (!Boolean.TRUE.equals(detail.getCanRate())) {
+            return false;
+        }
+        // 始终评价只要求订单可评价；买家评价后模式额外校验买家评价状态。
+        return Integer.valueOf(XianyuGoodsConfig.AUTO_RATE_ALWAYS).equals(autoRateMode)
+                || (Integer.valueOf(XianyuGoodsConfig.AUTO_RATE_AFTER_BUYER).equals(autoRateMode)
+                && Boolean.TRUE.equals(detail.getBuyerRated()));
     }
 
     private String resolveRateStatusText(OrderRateDetailDTO detail) {

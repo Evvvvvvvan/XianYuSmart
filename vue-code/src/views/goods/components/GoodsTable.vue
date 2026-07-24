@@ -23,7 +23,6 @@ interface Emits {
   (e: 'edit', item: GoodsItemWithConfig): void
   (e: 'toggleAutoDelivery', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoReply', item: GoodsItemWithConfig, value: boolean): void
-  (e: 'toggleAutoRate', item: GoodsItemWithConfig, value: boolean): void
   (e: 'toggleAutoPolish', item: GoodsItemWithConfig, value: boolean): void
   (e: 'configAutoRate', item: GoodsItemWithConfig): void
   (e: 'configAutoDelivery', item: GoodsItemWithConfig): void
@@ -32,6 +31,12 @@ interface Emits {
 
 defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+const getAutoRateModeText = (mode: number) => {
+  if (mode === 1) return '始终评价'
+  if (mode === 2) return '买家评价后'
+  return '已关闭'
+}
 
 const isMobile = ref(false)
 const checkScreenSize = () => {
@@ -117,7 +122,7 @@ const handleImgError = (e: Event) => {
               <span v-if="item.xianyuAutoDeliveryOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">{{ item.autoDeliveryType === 2 ? '卡密发货' : '固定内容' }}</span>
               <span v-if="item.xianyuAutoReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">AI</span>
               <span v-if="item.xianyuKeywordReplyOn === 1" class="goods-card__mode-tag goods-card__mode-tag--keyword">关键词</span>
-              <span v-if="item.xianyuAutoRateOn === 1" class="goods-card__mode-tag goods-card__mode-tag--ai">评价</span>
+              <span v-if="item.xianyuAutoRateOn > 0" class="goods-card__mode-tag goods-card__mode-tag--ai">{{ getAutoRateModeText(item.xianyuAutoRateOn) }}</span>
               <span v-if="item.xianyuAutoPolishOn === 1" class="goods-card__mode-tag goods-card__mode-tag--delivery">擦亮</span>
             </div>
           </div>
@@ -238,12 +243,14 @@ const handleImgError = (e: Event) => {
             </div>
           </td>
           <td class="table__td table__td--switch">
-            <div class="automation-setting">
-              <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoRateOn === 1 }" @click="emit('toggleAutoRate', item, item.xianyuAutoRateOn !== 1)">
-                <span class="toggle-btn__track"><span class="toggle-btn__thumb"></span></span>
-              </button>
-              <button class="automation-setting__link" @click="emit('configAutoRate', item)">设置文案</button>
-            </div>
+            <button
+              class="auto-rate-rule"
+              :class="{ 'auto-rate-rule--on': item.xianyuAutoRateOn > 0 }"
+              @click="emit('configAutoRate', item)"
+            >
+              <strong>{{ getAutoRateModeText(item.xianyuAutoRateOn) }}</strong>
+              <small>设置规则</small>
+            </button>
           </td>
           <td class="table__td table__td--switch">
             <button class="toggle-btn" :class="{ 'toggle-btn--on': item.xianyuAutoPolishOn === 1 }" @click="emit('toggleAutoPolish', item, item.xianyuAutoPolishOn !== 1)">
@@ -724,19 +731,34 @@ const handleImgError = (e: Event) => {
   text-align: center;
 }
 
-.automation-setting {
+.auto-rate-rule {
   display: inline-flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  min-width: 84px;
+  border: 1px solid rgba(60, 60, 67, 0.12);
+  border-radius: 8px;
+  padding: 6px 9px;
+  background: #fff;
+  color: var(--c-text-muted);
+  cursor: pointer;
 }
 
-.automation-setting__link {
-  border: 0;
-  background: transparent;
+.auto-rate-rule strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.auto-rate-rule small {
   color: var(--c-accent);
-  font-size: 11px;
-  cursor: pointer;
+  font-size: 10px;
+}
+
+.auto-rate-rule--on {
+  border-color: rgba(0, 122, 255, 0.2);
+  background: rgba(0, 122, 255, 0.05);
+  color: var(--c-text);
 }
 
 .toggle-btn {

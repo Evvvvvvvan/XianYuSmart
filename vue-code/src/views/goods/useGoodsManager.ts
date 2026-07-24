@@ -314,16 +314,12 @@ export function useGoodsManager() {
     }
   }
 
-  const toggleAutoRate = (item: GoodsItemWithConfig, value: boolean) => {
-    return updateOperationsAutomation(item, value ? 1 : 0, item.xianyuAutoPolishOn || 0)
-  }
-
   const toggleAutoPolish = (item: GoodsItemWithConfig, value: boolean) => {
     return updateOperationsAutomation(item, item.xianyuAutoRateOn || 0, value ? 1 : 0)
   }
 
-  const saveRateSettings = (item: GoodsItemWithConfig, enabled: boolean, content: string) => {
-    return updateOperationsAutomation(item, enabled ? 1 : 0, item.xianyuAutoPolishOn || 0, content)
+  const saveRateSettings = (item: GoodsItemWithConfig, mode: number, content: string) => {
+    return updateOperationsAutomation(item, mode, item.xianyuAutoPolishOn || 0, content)
   }
 
   // 删除商品
@@ -415,7 +411,6 @@ export function useGoodsManager() {
     configAutoDelivery,
     toggleAutoDelivery,
     toggleAutoReply,
-    toggleAutoRate,
     toggleAutoPolish,
     saveRateSettings,
     confirmDelete,

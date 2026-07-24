@@ -47,7 +47,7 @@ public interface XianyuGoodsConfigMapper {
     @Update("UPDATE xianyu_goods_config SET fixed_material = #{fixedMaterial} WHERE xianyu_account_id = #{accountId} AND xy_goods_id = #{xyGoodsId}")
     int updateFixedMaterial(@Param("accountId") Long accountId, @Param("xyGoodsId") String xyGoodsId, @Param("fixedMaterial") String fixedMaterial);
 
-    @Select("SELECT * FROM xianyu_goods_config WHERE xianyu_auto_rate_on = 1 ORDER BY xianyu_account_id, id")
+    @Select("SELECT * FROM xianyu_goods_config WHERE xianyu_auto_rate_on IN (1, 2) ORDER BY xianyu_account_id, id")
     java.util.List<XianyuGoodsConfig> selectAutoRateEnabled();
 
     @Select("SELECT * FROM xianyu_goods_config WHERE xianyu_auto_polish_on = 1 ORDER BY xianyu_account_id, id")

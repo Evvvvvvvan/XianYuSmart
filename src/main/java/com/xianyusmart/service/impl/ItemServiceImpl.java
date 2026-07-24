@@ -1039,6 +1039,12 @@ public class ItemServiceImpl implements ItemService {
                 && reqDTO.getXianyuAutoRateContent() == null) {
             return ResultObject.failed("至少需要更新一项自动化设置");
         }
+        if (reqDTO.getXianyuAutoRateOn() != null
+                && reqDTO.getXianyuAutoRateOn() != com.xianyusmart.entity.XianyuGoodsConfig.AUTO_RATE_OFF
+                && reqDTO.getXianyuAutoRateOn() != com.xianyusmart.entity.XianyuGoodsConfig.AUTO_RATE_ALWAYS
+                && reqDTO.getXianyuAutoRateOn() != com.xianyusmart.entity.XianyuGoodsConfig.AUTO_RATE_AFTER_BUYER) {
+            return ResultObject.failed("自动评价模式仅支持关闭、始终评价或买家评价后评价");
+        }
 
         String rateContent = null;
         if (reqDTO.getXianyuAutoRateContent() != null) {
@@ -1059,7 +1065,7 @@ public class ItemServiceImpl implements ItemService {
                 goodsConfig.setCreateTime(now);
             }
             if (reqDTO.getXianyuAutoRateOn() != null) {
-                goodsConfig.setXianyuAutoRateOn(reqDTO.getXianyuAutoRateOn() == 1 ? 1 : 0);
+                goodsConfig.setXianyuAutoRateOn(reqDTO.getXianyuAutoRateOn());
             }
             if (rateContent != null) {
                 goodsConfig.setXianyuAutoRateContent(rateContent);

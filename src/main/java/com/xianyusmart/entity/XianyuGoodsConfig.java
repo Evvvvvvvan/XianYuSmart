@@ -9,6 +9,9 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 @Data
 public class XianyuGoodsConfig {
 
+    public static final int AUTO_RATE_OFF = 0;
+    public static final int AUTO_RATE_ALWAYS = 1;
+    public static final int AUTO_RATE_AFTER_BUYER = 2;
     public static final String DEFAULT_AUTO_RATE_CONTENT = "交易愉快，感谢支持，期待再次合作。满意的话欢迎点亮小红花。";
     
     /**
@@ -45,7 +48,7 @@ public class XianyuGoodsConfig {
     private Integer xianyuAutoReplyOn = 0;
 
     /**
-     * 自动评价开关：1-开启，0-关闭，默认关闭
+     * 自动评价模式：0-关闭，1-始终评价，2-买家评价后评价
      */
     private Integer xianyuAutoRateOn = 0;
 

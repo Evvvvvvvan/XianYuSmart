@@ -49,7 +49,6 @@ const {
   configAutoDelivery,
   toggleAutoDelivery,
   toggleAutoReply,
-  toggleAutoRate,
   toggleAutoPolish,
   saveRateSettings,
   confirmDelete,
@@ -67,10 +66,11 @@ const ratePresets = [
 ]
 const rateDialogVisible = ref(false)
 const rateTarget = ref<GoodsItemWithConfig | null>(null)
-const rateEnabled = ref(false)
+const rateMode = ref<0 | 1 | 2>(0)
 const rateContents = ref<string[]>([])
 const rateSaving = ref(false)
 const rateError = computed(() => {
+  if (rateMode.value === 0) return ''
   const contents = rateContents.value.map(item => item.trim()).filter(Boolean)
   if (!contents.length) return '至少需要一条评价文案'
   if (contents.length > 10) return '最多配置10条评价文案'
@@ -80,7 +80,9 @@ const rateError = computed(() => {
 
 const openRateSettings = (item: GoodsItemWithConfig) => {
   rateTarget.value = item
-  rateEnabled.value = item.xianyuAutoRateOn === 1
+  rateMode.value = item.xianyuAutoRateOn === 1 || item.xianyuAutoRateOn === 2
+    ? item.xianyuAutoRateOn
+    : 0
   rateContents.value = parseRatingContents(item.xianyuAutoRateContent)
   if (!rateContents.value.length) rateContents.value = [ratePresets[0]!]
   rateDialogVisible.value = true
@@ -100,11 +102,15 @@ const appendRateVariable = (index: number, variable: string) => {
   rateContents.value[index] = (rateContents.value[index] || '') + variable
 }
 
+const toggleRateEnabled = (event: Event) => {
+  rateMode.value = (event.target as HTMLInputElement).checked ? (rateMode.value || 2) : 0
+}
+
 const submitRateSettings = async () => {
   if (!rateTarget.value || rateError.value) return
   rateSaving.value = true
   try {
-    if (await saveRateSettings(rateTarget.value, rateEnabled.value, serializeRatingContents(rateContents.value))) {
+    if (await saveRateSettings(rateTarget.value, rateMode.value, serializeRatingContents(rateContents.value))) {
       rateDialogVisible.value = false
     }
   } finally {
@@ -372,7 +378,6 @@ const getPageButtons = () => {
           @sync="syncSingleGoods"
           @toggle-auto-delivery="toggleAutoDelivery"
           @toggle-auto-reply="toggleAutoReply"
-          @toggle-auto-rate="toggleAutoRate"
           @toggle-auto-polish="toggleAutoPolish"
           @config-auto-rate="openRateSettings"
           @config-auto-delivery="configAutoDelivery"
@@ -441,19 +446,35 @@ const getPageButtons = () => {
           </div>
           <div class="goods__dialog-body rate-dialog__body">
             <label class="rate-dialog__switch-row">
-              <span><strong>自动评价</strong><small>仅在买家完成评价后回评，不会提前评价</small></span>
-              <input v-model="rateEnabled" type="checkbox">
+              <span><strong>自动评价</strong><small>开启后选择一种触发方式，关闭时不会自动评价</small></span>
+              <input
+                type="checkbox"
+                :checked="rateMode !== 0"
+                @change="toggleRateEnabled"
+              >
             </label>
-            <div class="rate-dialog__pool-heading"><span><strong>评价文案池</strong><small>按订单稳定轮换，重试不会更换文案</small></span><button type="button" @click="addRateContent()">添加文案</button></div>
-            <label v-for="(content, index) in rateContents" :key="index" class="rate-dialog__field">
-              <span class="rate-dialog__field-title">文案 {{ index + 1 }}<span><button type="button" @click="appendRateVariable(index, '{buyerName}')">买家</button><button type="button" @click="appendRateVariable(index, '{goodsName}')">商品</button><button type="button" @click="appendRateVariable(index, '{orderId}')">订单号</button><button type="button" :disabled="rateContents.length === 1" @click="removeRateContent(index)">删除</button></span></span>
-              <textarea v-model="rateContents[index]" maxlength="500" rows="3" placeholder="输入买家评价后自动发送的评价内容"></textarea>
-              <small>{{ content.trim().length }}/500</small>
-            </label>
-            <div class="rate-dialog__presets">
-              <span>添加快捷文案</span>
-              <button v-for="preset in ratePresets" :key="preset" type="button" @click="addRateContent(preset)">{{ preset }}</button>
+            <div v-if="rateMode !== 0" class="rate-dialog__mode-options">
+              <button type="button" :class="{ active: rateMode === 1 }" @click="rateMode = 1">
+                <strong>始终自动评价</strong>
+                <small>订单进入可评价状态后自动评价，不等待买家评价</small>
+              </button>
+              <button type="button" :class="{ active: rateMode === 2 }" @click="rateMode = 2">
+                <strong>买家评价后自动评价</strong>
+                <small>买家没有评价时保持等待，不会主动评价</small>
+              </button>
             </div>
+            <template v-if="rateMode !== 0">
+              <div class="rate-dialog__pool-heading"><span><strong>评价文案池</strong><small>按订单稳定轮换，重试不会更换文案</small></span><button type="button" @click="addRateContent()">添加文案</button></div>
+              <label v-for="(content, index) in rateContents" :key="index" class="rate-dialog__field">
+                <span class="rate-dialog__field-title">文案 {{ index + 1 }}<span><button type="button" @click="appendRateVariable(index, '{buyerName}')">买家</button><button type="button" @click="appendRateVariable(index, '{goodsName}')">商品</button><button type="button" @click="appendRateVariable(index, '{orderId}')">订单号</button><button type="button" :disabled="rateContents.length === 1" @click="removeRateContent(index)">删除</button></span></span>
+                <textarea v-model="rateContents[index]" maxlength="500" rows="3" placeholder="输入自动评价内容"></textarea>
+                <small>{{ content.trim().length }}/500</small>
+              </label>
+              <div class="rate-dialog__presets">
+                <span>添加快捷文案</span>
+                <button v-for="preset in ratePresets" :key="preset" type="button" @click="addRateContent(preset)">{{ preset }}</button>
+              </div>
+            </template>
             <small v-if="rateError" class="rate-dialog__error">{{ rateError }}</small>
           </div>
           <div class="goods__dialog-footer">
@@ -507,5 +528,5 @@ const getPageButtons = () => {
   opacity: 0;
 }
 
-.rate-dialog{max-width:680px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:14px;max-height:68vh;overflow:auto}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small,.rate-dialog__pool-heading small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__pool-heading,.rate-dialog__field-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.rate-dialog__pool-heading>span{display:flex;flex-direction:column;gap:3px}.rate-dialog__pool-heading button,.rate-dialog__field-title button{border:0;border-radius:6px;padding:5px 8px;background:rgba(0,122,255,.08);color:#007aff;cursor:pointer}.rate-dialog__field-title>span{display:flex;gap:5px;flex-wrap:wrap}.rate-dialog__field-title button:last-child{color:#ff3b30;background:rgba(255,59,48,.07)}.rate-dialog__field-title button:disabled{opacity:.35;cursor:not-allowed}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.rate-dialog__error{color:#ff3b30}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}
+.rate-dialog{max-width:680px}.rate-dialog__subtitle{margin:5px 0 0;color:#86868b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rate-dialog__body{display:flex;flex-direction:column;gap:14px;max-height:68vh;overflow:auto}.rate-dialog__switch-row{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px;border:1px solid rgba(60,60,67,.12);border-radius:10px}.rate-dialog__switch-row span{display:flex;flex-direction:column;gap:4px}.rate-dialog__switch-row small,.rate-dialog__field small,.rate-dialog__pool-heading small{color:#86868b;font-size:12px}.rate-dialog__switch-row input{width:18px;height:18px}.rate-dialog__mode-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.rate-dialog__mode-options button{display:flex;flex-direction:column;gap:5px;text-align:left;border:1px solid rgba(60,60,67,.14);border-radius:9px;padding:12px;background:#fff;cursor:pointer}.rate-dialog__mode-options button.active{border-color:#007aff;background:rgba(0,122,255,.06);color:#007aff}.rate-dialog__mode-options small{color:#6e6e73;line-height:1.5}.rate-dialog__pool-heading,.rate-dialog__field-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.rate-dialog__pool-heading>span{display:flex;flex-direction:column;gap:3px}.rate-dialog__pool-heading button,.rate-dialog__field-title button{border:0;border-radius:6px;padding:5px 8px;background:rgba(0,122,255,.08);color:#007aff;cursor:pointer}.rate-dialog__field-title>span{display:flex;gap:5px;flex-wrap:wrap}.rate-dialog__field-title button:last-child{color:#ff3b30;background:rgba(255,59,48,.07)}.rate-dialog__field-title button:disabled{opacity:.35;cursor:not-allowed}.rate-dialog__field{display:flex;flex-direction:column;gap:7px;font-size:13px;font-weight:600}.rate-dialog__field textarea{width:100%;box-sizing:border-box;border:1px solid rgba(60,60,67,.2);border-radius:8px;padding:10px;font:inherit;resize:vertical}.rate-dialog__presets{display:flex;flex-direction:column;gap:7px}.rate-dialog__presets>span{font-size:13px;font-weight:600}.rate-dialog__presets button{text-align:left;border:1px solid rgba(0,122,255,.15);background:rgba(0,122,255,.04);color:#1d1d1f;border-radius:8px;padding:9px 10px;cursor:pointer}.rate-dialog__error{color:#ff3b30}.goods__dialog-btn--confirm{color:#fff;background:#007aff;border-color:#007aff}.goods__dialog-btn:disabled{opacity:.5;cursor:not-allowed}@media(max-width:767px){.rate-dialog__mode-options{grid-template-columns:1fr}}
 </style>
