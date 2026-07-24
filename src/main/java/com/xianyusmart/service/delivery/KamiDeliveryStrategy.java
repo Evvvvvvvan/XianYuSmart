@@ -9,16 +9,16 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 /**
- * 卡密发货策略（deliveryMode 包含卡密标记）
+ * 卡密发货策略
  *
- * <p>从卡密仓库获取可用卡密，用模板替换 {kmKey} 占位符后返回发货内容。</p>
+ * <p>从卡密仓库获取可用卡密，返回本单全部卡密原始内容。</p>
  *
  * <h3>流程：</h3>
  * <ol>
  *   <li>遍历绑定的卡密配置ID列表（逗号分隔）</li>
  *   <li>按订单购买数量一次性预占完整卡密</li>
  *   <li>发送结果确认后统一提交或释放预占</li>
- *   <li>用模板替换 {kmKey} 占位符</li>
+ *   <li>按购买数量组合为一份发货内容</li>
  * </ol>
  */
 @Slf4j
@@ -31,14 +31,13 @@ public class KamiDeliveryStrategy implements DeliveryContentStrategy {
 
     @Override
     public boolean supports(int deliveryMode) {
-        return (deliveryMode & 2) == 2;
+        return deliveryMode == 2;
     }
 
     @Override
     public String resolve(DeliveryContext context) {
         String content = acquireKamiContent(
                 context.getDeliveryConfig().getKamiConfigIds(),
-                context.getDeliveryConfig().getKamiDeliveryTemplate(),
                 context.getOrderId(),
                 context.getAccountId(),
                 context.getXyGoodsId(),
@@ -55,8 +54,8 @@ public class KamiDeliveryStrategy implements DeliveryContentStrategy {
         return content;
     }
 
-    private String acquireKamiContent(String kamiConfigIds, String kamiDeliveryTemplate,
-                                       String orderId, Long accountId, String xyGoodsId, String sId,
+    private String acquireKamiContent(String kamiConfigIds, String orderId,
+                                       Long accountId, String xyGoodsId, String sId,
                                        String buyerUserName, int quantity) {
         if (kamiConfigIds == null || kamiConfigIds.trim().isEmpty()) {
             log.warn("【账号{}】卡密发货未绑定卡密配置: xyGoodsId={}", accountId, xyGoodsId);
@@ -69,7 +68,6 @@ public class KamiDeliveryStrategy implements DeliveryContentStrategy {
                 Long configId = Long.parseLong(configIdStr.trim());
                 return kamiConfigService.reserveKami(configId, orderId, quantity).stream()
                         .map(XianyuKamiItem::getKamiContent)
-                        .map(kamiContent -> applyTemplate(kamiDeliveryTemplate, kamiContent))
                         .reduce((left, right) -> left + "\n" + right)
                         .orElse(null);
             } catch (NumberFormatException e) {
@@ -85,10 +83,4 @@ public class KamiDeliveryStrategy implements DeliveryContentStrategy {
         return null;
     }
 
-    private String applyTemplate(String template, String kamiContent) {
-        if (template == null || template.isBlank()) {
-            return kamiContent;
-        }
-        return template.replace("{kmKey}", kamiContent);
-    }
 }

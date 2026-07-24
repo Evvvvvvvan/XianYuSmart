@@ -69,6 +69,12 @@ const router = createRouter({
       meta: { title: '自动发货', icon: '🤖' }
     },
     {
+      path: '/fixed-delivery-templates',
+      name: 'fixed-delivery-templates',
+      component: () => import('@/views/fixed-delivery-templates/index.vue'),
+      meta: { title: '固定内容模板', icon: '📄' }
+    },
+    {
       path: '/pending-orders',
       name: 'pending-orders',
       component: () => import('@/views/pending-orders/index.vue'),

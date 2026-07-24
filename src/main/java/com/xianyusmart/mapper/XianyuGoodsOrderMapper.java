@@ -151,6 +151,7 @@ public interface XianyuGoodsOrderMapper {
     @Select("SELECT * FROM xianyu_goods_order WHERE " +
             "((delivery_status IN ('PENDING', 'RETRY_WAIT') AND (next_retry_time IS NULL OR next_retry_time <= NOW(3))) " +
             "OR (delivery_status = 'PROCESSING' AND lease_expire_time < NOW(3))) " +
+            "AND delivery_message_state NOT IN (3, 4, 5) " +
             "ORDER BY create_time ASC LIMIT #{limit} FOR UPDATE")
     List<XianyuGoodsOrder> lockDueTasks(@Param("limit") int limit);
 
@@ -200,8 +201,50 @@ public interface XianyuGoodsOrderMapper {
                          @Param("rateSource") String rateSource);
 
     @Update("UPDATE xianyu_goods_order SET delivery_message_content = #{content}, delivery_message_state = 0, " +
-            "delivery_message_attempt_count = 0, delivery_message_next_retry_time = NOW(3) WHERE id = #{id}")
+            "delivery_message_attempt_count = 0, delivery_message_next_retry_time = NOW(3), " +
+            "state = 1, content = #{content}, fail_reason = NULL, delivery_status = 'COMPLETED', " +
+            "delivered_quantity = expected_quantity, next_retry_time = NULL, lease_owner = NULL, " +
+            "lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL WHERE id = #{id}")
     int prepareDeliveryMessage(@Param("id") Long id, @Param("content") String content);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_content = #{content}, delivery_message_state = #{holdState}, " +
+            "delivery_message_attempt_count = 0, delivery_message_next_retry_time = " +
+            "DATE_ADD(NOW(3), INTERVAL 30 MINUTE) " +
+            "WHERE id = #{id}")
+    int holdDeliveryMessage(@Param("id") Long id, @Param("content") String content,
+                            @Param("holdState") int holdState);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_state = 0, delivery_message_next_retry_time = NOW(3), " +
+            "state = 1, content = delivery_message_content, fail_reason = NULL, delivery_status = 'COMPLETED', " +
+            "delivered_quantity = expected_quantity, next_retry_time = NULL, lease_owner = NULL, " +
+            "lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL " +
+            "WHERE id = #{id} AND delivery_message_content IS NOT NULL AND delivery_message_state IN (3, 5)")
+    int activateDeliveryMessage(@Param("id") Long id);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_content = NULL, delivery_message_state = 0, " +
+            "delivery_message_attempt_count = 0, delivery_message_next_retry_time = NULL " +
+            "WHERE id = #{id} AND delivery_message_state IN (3, 4, 5)")
+    int cancelHeldDeliveryMessage(@Param("id") Long id);
+
+    @Update("UPDATE xianyu_goods_order SET confirm_state = 1, delivery_message_state = 5, " +
+            "delivery_message_next_retry_time = NULL WHERE xianyu_account_id = #{accountId} " +
+            "AND order_id = #{orderId} AND delivery_message_state = 4")
+    int confirmFixedHeldDeliveryMessage(@Param("accountId") Long accountId, @Param("orderId") String orderId);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_message_content = NULL, delivery_message_state = 0, " +
+            "delivery_message_attempt_count = 0, delivery_message_next_retry_time = NULL " +
+            "WHERE delivery_message_state = 4 AND delivery_message_next_retry_time <= NOW(3) LIMIT #{limit}")
+    int cancelStaleFixedHeldDeliveryMessages(@Param("limit") int limit);
+
+    @Update("UPDATE xianyu_goods_order SET delivery_status = 'REVIEW_REQUIRED', " +
+            "last_error_code = 'DELIVERY_HELD_TIMEOUT', last_error_message = '卡密已暂存但履约结果未确认', " +
+            "delivery_message_next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL " +
+            "WHERE delivery_message_state = 3 AND delivery_message_next_retry_time <= NOW(3) " +
+            "AND NOT EXISTS (SELECT 1 FROM xianyu_kami_usage_record r JOIN xianyu_kami_item i " +
+            "ON i.id = r.kami_item_id WHERE r.xianyu_account_id = xianyu_goods_order.xianyu_account_id " +
+            "AND r.order_id = xianyu_goods_order.order_id AND r.delivery_status = 'DELIVERED' " +
+            "AND i.order_id = xianyu_goods_order.order_id AND i.status = 1) LIMIT #{limit}")
+    int markStaleCardHeldMessagesReviewRequired(@Param("limit") int limit);
 
     @Update("UPDATE xianyu_goods_order SET delivery_message_state = 1, delivery_message_next_retry_time = NULL WHERE id = #{id}")
     int markDeliveryMessageSent(@Param("id") Long id);
@@ -221,6 +264,15 @@ public interface XianyuGoodsOrderMapper {
             "AND (delivery_message_next_retry_time IS NULL OR delivery_message_next_retry_time <= NOW(3)) " +
             "ORDER BY delivery_message_next_retry_time ASC LIMIT #{limit}")
     List<XianyuGoodsOrder> selectDueDeliveryMessages(@Param("limit") int limit);
+
+    @Select("SELECT o.* FROM xianyu_goods_order o WHERE o.delivery_message_content IS NOT NULL AND (" +
+            "(o.delivery_message_state = 3 AND EXISTS (SELECT 1 FROM xianyu_kami_usage_record r " +
+            "JOIN xianyu_kami_item i ON i.id = r.kami_item_id WHERE r.xianyu_account_id = o.xianyu_account_id " +
+            "AND r.order_id = o.order_id AND r.delivery_status = 'DELIVERED' " +
+            "AND i.order_id = o.order_id AND i.status = 1)) OR " +
+            "o.delivery_message_state = 5) " +
+            "ORDER BY o.create_time ASC LIMIT #{limit}")
+    List<XianyuGoodsOrder> selectCommittedHeldDeliveryMessages(@Param("limit") int limit);
 
     @Select("SELECT o.* FROM xianyu_goods_order o WHERE o.state = 1 AND o.receipt_follow_up_completed = 0 " +
             "AND (o.receipt_follow_up_next_time IS NULL OR o.receipt_follow_up_next_time <= NOW(3)) " +

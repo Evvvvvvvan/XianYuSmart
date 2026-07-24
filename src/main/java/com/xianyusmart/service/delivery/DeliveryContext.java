@@ -1,6 +1,7 @@
 package com.xianyusmart.service.delivery;
 
 import com.xianyusmart.entity.XianyuGoodsAutoDeliveryConfig;
+import com.xianyusmart.entity.XianyuFixedDeliveryTemplate;
 import lombok.Builder;
 import lombok.Data;
 
@@ -20,4 +21,5 @@ public class DeliveryContext {
     private String buyerUserName;
     private Integer quantity;
     private XianyuGoodsAutoDeliveryConfig deliveryConfig;
+    private XianyuFixedDeliveryTemplate fixedTemplate;
 }

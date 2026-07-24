@@ -578,7 +578,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public String consignDummyDeliveryWithConfig(Long accountId, String xyGoodsId, String orderId) {
-        log.info("【账号{}】带配置凭证发货: xyGoodsId={}, orderId={}", accountId, xyGoodsId, orderId);
+        log.info("【账号{}】按商品配置发货: xyGoodsId={}, orderId={}", accountId, xyGoodsId, orderId);
 
         XianyuGoodsOrder existingOrder = orderMapper.selectByAccountIdAndOrderId(accountId, orderId);
         XianyuGoodsAutoDeliveryConfig deliveryConfig = null;
@@ -596,8 +596,11 @@ public class OrderServiceImpl implements OrderService {
         }
 
         int deliveryMode = deliveryConfig.getDeliveryMode() != null ? deliveryConfig.getDeliveryMode() : 1;
+        boolean cardDelivery = deliveryMode == 2;
+        boolean voucherDeliveryEnabled = !Integer.valueOf(0).equals(deliveryConfig.getVoucherDeliveryEnabled());
+        boolean chatDeliveryEnabled = !Integer.valueOf(0).equals(deliveryConfig.getChatDeliveryEnabled());
 
-        // 从订单记录中获取 sId 和 buyerUserName，供卡密发货策略使用
+        // 从订单记录中获取买家信息，保证模板变量和卡密记录一致。
         String sId = null;
         String buyerUserName = null;
         if (existingOrder != null) {
@@ -620,18 +623,24 @@ public class OrderServiceImpl implements OrderService {
 
         String content = deliveryStrategyResolver.resolve(deliveryMode, ctx);
         if (content == null) {
-            String failMsg = deliveryMode == 1 ? "未配置固定发货内容"
-                    : deliveryMode == 2 ? "卡密库存不足，无可用卡密"
-                    : "固定内容未配置或卡密库存不足";
+            String failMsg = deliveryMode == 1 ? "未配置固定发货模板" : "卡密库存不足，无可用卡密";
             log.warn("【账号{}】发货内容解析失败: {}", accountId, failMsg);
             return null;
         }
 
-        if (content.length() > 200) {
-            if ((deliveryMode & 2) == 2) {
+        String messageTemplate = deliveryMode == 1
+                ? ctx.getFixedTemplate().getMessageTemplate()
+                : deliveryConfig.getDeliveryMessageTemplate();
+        String finalDeliveryContent = buyerMessageService.renderVariables(
+                buyerMessageService.normalizeDeliveryMessageTemplate(messageTemplate),
+                buyerUserName, orderId, content);
+
+        if (voucherDeliveryEnabled && finalDeliveryContent.length() > 200) {
+            if (cardDelivery) {
                 kamiConfigService.releaseReservation(orderId);
             }
-            log.warn("【账号{}】发货内容超过虚拟发货接口限制: orderId={}, contentLen={}", accountId, orderId, content.length());
+            log.warn("【账号{}】渲染后的发货内容超过凭证接口限制: orderId={}, contentLen={}",
+                    accountId, orderId, finalDeliveryContent.length());
             return null;
         }
 
@@ -644,64 +653,114 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        log.info("【账号{}】带配置凭证发货: orderId={}, deliveryMode={}, contentLen={}, imageCount={}", accountId, orderId, deliveryMode, content.length(), imageUrls.size());
-        String result = consignDummyDelivery(accountId, orderId, content, imageUrls);
-
-        if (CONSIGN_SUCCESS.equals(result)) {
-            if ((deliveryMode & 2) == 2) {
-                String buyerUserId = existingOrder != null ? existingOrder.getBuyerUserId() : null;
-                kamiConfigService.commitReservation(orderId, accountId, xyGoodsId, buyerUserId, buyerUserName);
+        boolean cardReservationCommitted = false;
+        boolean deliveryMessageHeld = false;
+        XianyuGoodsOrder deliveryOrder = existingOrder;
+        try {
+            if (deliveryOrder == null) {
+                deliveryOrder = new XianyuGoodsOrder();
+                deliveryOrder.setXianyuAccountId(accountId);
+                deliveryOrder.setXyGoodsId(xyGoodsId);
+                deliveryOrder.setOrderId(orderId);
+                deliveryOrder.setPnmId("api_" + orderId);
+                deliveryOrder.setContent(finalDeliveryContent);
+                deliveryOrder.setState(0);
+                deliveryOrder.setConfirmState(0);
+                orderMapper.insert(deliveryOrder);
             }
-            if (existingOrder != null) {
-                orderMapper.updateStateAndContent(existingOrder.getId(), 1, content);
-                orderMapper.updateConfirmState(accountId, orderId);
-                existingOrder.setContent(content);
-                existingOrder.setConfirmState(1);
-                if (!buyerMessageService.queueDeliveryMessage(existingOrder, deliveryConfig, content)) {
+
+            if (chatDeliveryEnabled && (cardDelivery || voucherDeliveryEnabled)) {
+                boolean held = cardDelivery
+                        ? buyerMessageService.holdDeliveryMessage(deliveryOrder, finalDeliveryContent)
+                        : buyerMessageService.holdFixedDeliveryMessage(deliveryOrder, finalDeliveryContent);
+                if (!held) {
+                    throw new IllegalStateException("发货私聊暂存失败");
+                }
+                deliveryMessageHeld = true;
+            }
+
+            if (voucherDeliveryEnabled) {
+                log.info("【账号{}】先提交发货凭证: orderId={}, deliveryMode={}, contentLen={}, imageCount={}",
+                        accountId, orderId, deliveryMode, finalDeliveryContent.length(), imageUrls.size());
+                String result = consignDummyDelivery(accountId, orderId, finalDeliveryContent, imageUrls);
+                if (CONSIGN_UNCERTAIN.equals(result) || CONSIGN_ALREADY_DELIVERED.equals(result)) {
+                    String failReason = CONSIGN_UNCERTAIN.equals(result)
+                            ? "发货结果待确认，请核对平台凭证后处理"
+                            : "订单已存在发货凭证，请核对凭证与私聊内容";
+                    if (cardDelivery) {
+                        // 凭证状态不明确时锁定卡密，避免人工核对前再次分配。
+                        kamiConfigService.markReservationReviewRequired(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    orderMapper.updateStateContentAndFailReason(
+                            deliveryOrder.getId(), -1, finalDeliveryContent, failReason);
+                    orderMapper.markTaskReviewRequired(deliveryOrder.getId(), failReason);
+                    return null;
+                }
+                if (!CONSIGN_SUCCESS.equals(result)) {
+                    if (cardDelivery) {
+                        kamiConfigService.releaseReservation(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    return null;
+                }
+                if (deliveryMessageHeld && !cardDelivery) {
+                    if (orderMapper.confirmFixedHeldDeliveryMessage(accountId, orderId) != 1) {
+                        throw new IllegalStateException("固定内容凭证状态确认失败");
+                    }
+                    deliveryOrder.setDeliveryMessageState(5);
+                } else {
+                    orderMapper.updateConfirmState(accountId, orderId);
+                }
+                deliveryOrder.setConfirmState(1);
+            }
+
+            if (cardDelivery) {
+                // 卡密提交成功后，暂存私聊才允许进入发送队列。
+                kamiConfigService.commitReservation(orderId, accountId, xyGoodsId,
+                        deliveryOrder.getBuyerUserId(), buyerUserName);
+                cardReservationCommitted = true;
+            }
+
+            orderMapper.updateStateAndContent(deliveryOrder.getId(), 1, finalDeliveryContent);
+            deliveryOrder.setContent(finalDeliveryContent);
+            deliveryOrder.setState(1);
+
+            if (chatDeliveryEnabled) {
+                boolean messageSent = deliveryMessageHeld
+                        ? buyerMessageService.activateAndSendDeliveryMessage(deliveryOrder)
+                        : buyerMessageService.queueDeliveryMessage(deliveryOrder, finalDeliveryContent);
+                if (!messageSent) {
                     log.info("【账号{}】发货私聊已进入重试队列: orderId={}", accountId, orderId);
                 }
-                log.info("【账号{}】凭证发货成功，已更新订单状态: orderId={}", accountId, orderId);
-            } else {
-                XianyuGoodsOrder record = new XianyuGoodsOrder();
-                record.setXianyuAccountId(accountId);
-                record.setXyGoodsId(xyGoodsId);
-                record.setOrderId(orderId);
-                record.setPnmId("api_" + orderId);
-                record.setContent(content);
-                record.setState(1);
-                record.setConfirmState(1);
-                orderMapper.insert(record);
-                log.info("【账号{}】凭证发货成功，已新建订单记录: orderId={}", accountId, orderId);
             }
-        } else if (CONSIGN_UNCERTAIN.equals(result)) {
-            String failReason = "发货结果待确认，请核对平台凭证后处理";
-            if ((deliveryMode & 2) == 2) {
-                // 外部接口结果不确定时锁定原卡密，避免重试后向同一订单分配不同内容。
-                kamiConfigService.markReservationReviewRequired(orderId);
+        } catch (RuntimeException e) {
+            if (!cardDelivery && deliveryMessageHeld
+                    && !Integer.valueOf(5).equals(deliveryOrder.getDeliveryMessageState())) {
+                buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                deliveryMessageHeld = false;
             }
-            if (existingOrder != null) {
-                orderMapper.updateStateContentAndFailReason(existingOrder.getId(), -1, content, failReason);
-                orderMapper.markTaskReviewRequired(existingOrder.getId(), failReason);
+            if (cardDelivery && !cardReservationCommitted) {
+                if (deliveryMessageHeld) {
+                    buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                    deliveryMessageHeld = false;
+                }
+                if (voucherDeliveryEnabled) {
+                    kamiConfigService.markReservationReviewRequired(orderId);
+                } else {
+                    kamiConfigService.releaseReservation(orderId);
+                }
             }
-            return null;
-        } else if (CONSIGN_ALREADY_DELIVERED.equals(result)) {
-            String failReason = "订单已存在发货凭证，请核对凭证与私聊内容";
-            if ((deliveryMode & 2) == 2) {
-                // 已存在凭证时无法确认首次请求是否使用当前卡密，必须锁定等待核对。
-                kamiConfigService.markReservationReviewRequired(orderId);
-            }
-            if (existingOrder != null) {
-                orderMapper.updateStateContentAndFailReason(existingOrder.getId(), -1, content, failReason);
-                orderMapper.markTaskReviewRequired(existingOrder.getId(), failReason);
-            }
-            return null;
-        } else {
-            if ((deliveryMode & 2) == 2) {
-                kamiConfigService.releaseReservation(orderId);
-            }
-            return null;
+            throw e;
         }
-
-        return result;
+        log.info("【账号{}】商品配置发货完成: orderId={}, voucher={}, chat={}",
+                accountId, orderId, voucherDeliveryEnabled, chatDeliveryEnabled);
+        return CONSIGN_SUCCESS;
     }
 }

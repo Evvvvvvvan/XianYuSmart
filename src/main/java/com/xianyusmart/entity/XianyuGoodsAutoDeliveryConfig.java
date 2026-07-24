@@ -34,9 +34,11 @@ public class XianyuGoodsAutoDeliveryConfig {
     private String xyGoodsId;
     
     /**
-     * 发货内容位标记：1-固定内容，2-卡密，3-固定内容和卡密
+     * 发货类型：1-固定内容，2-卡密
      */
     private Integer deliveryMode;
+
+    private Long fixedTemplateId;
 
     private String skuId;
 
@@ -58,6 +60,16 @@ public class XianyuGoodsAutoDeliveryConfig {
      * 发货私聊模板，支持买家名称、订单号和实际发货内容变量
      */
     private String deliveryMessageTemplate;
+
+    /**
+     * 发货凭证开关：0-关闭，1-开启
+     */
+    private Integer voucherDeliveryEnabled;
+
+    /**
+     * 买家私聊开关：0-关闭，1-开启
+     */
+    private Integer chatDeliveryEnabled;
 
     /**
      * 买家确认收货后按顺序发送的话术列表

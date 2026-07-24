@@ -28,6 +28,10 @@ import {
   getKamiConfigsByAccountId,
   type KamiConfig
 } from '@/api/kami-config'
+import {
+  getFixedDeliveryTemplates,
+  type FixedDeliveryTemplate
+} from '@/api/fixed-delivery-template'
 import type { Account } from '@/types'
 import type { GoodsItemWithConfig } from '@/api/goods'
 
@@ -77,10 +81,11 @@ export function useAutoDelivery() {
 
   const configForm = ref({
     deliveryMode: 1,
-    autoDeliveryContent: '',
+    fixedTemplateId: null as number | null,
     kamiConfigIds: '',
-    kamiDeliveryTemplate: '',
     deliveryMessageTemplate: DEFAULT_DELIVERY_MESSAGE_TEMPLATE,
+    voucherDeliveryEnabled: 1,
+    chatDeliveryEnabled: 1,
     receiptFollowUpMessages: [] as string[],
     receiptFollowUpIntervalSeconds: 5,
     autoDeliveryImageUrl: '',
@@ -88,6 +93,7 @@ export function useAutoDelivery() {
   })
 
   const kamiConfigOptions = ref<KamiConfig[]>([])
+  const fixedTemplateOptions = ref<FixedDeliveryTemplate[]>([])
 
   const selectedKamiConfigId = computed({
     get: () => configForm.value.kamiConfigIds || '',
@@ -95,18 +101,19 @@ export function useAutoDelivery() {
   })
 
   const hasMultipleSku = computed(() => skuList.value.length > 1)
-  const hasFixedDelivery = computed(() => (configForm.value.deliveryMode & 1) === 1)
-  const hasCardDelivery = computed(() => (configForm.value.deliveryMode & 2) === 2)
+  const hasFixedDelivery = computed(() => configForm.value.deliveryMode === 1)
+  const hasCardDelivery = computed(() => configForm.value.deliveryMode === 2)
+  const selectedFixedTemplate = computed(() =>
+    fixedTemplateOptions.value.find(template => template.id === configForm.value.fixedTemplateId) || null)
 
-  const toggleDeliveryMode = (mode: number, enabled: boolean) => {
-    const nextMode = enabled
-      ? configForm.value.deliveryMode | mode
-      : configForm.value.deliveryMode & ~mode
-    if (nextMode === 0) {
-      showInfo('固定内容和卡密至少选择一种')
-      return
+  const selectDeliveryMode = (mode: number) => {
+    configForm.value.deliveryMode = mode
+    if (mode === 1) {
+      configForm.value.kamiConfigIds = ''
+      configForm.value.deliveryMessageTemplate = DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+    } else {
+      configForm.value.fixedTemplateId = null
     }
-    configForm.value.deliveryMode = nextMode
   }
 
   const parseReceiptFollowUpMessages = (value?: string) => {
@@ -133,6 +140,13 @@ export function useAutoDelivery() {
 
   const appendDeliveryVariable = (variable: string) => {
     configForm.value.deliveryMessageTemplate += variable
+  }
+
+  const goToFixedTemplates = () => {
+    router.push({
+      path: '/fixed-delivery-templates',
+      query: selectedAccountId.value ? { accountId: String(selectedAccountId.value) } : {}
+    })
   }
 
   const appendReceiptVariable = (index: number, variable: string) => {
@@ -325,7 +339,9 @@ export function useAutoDelivery() {
   const handleAccountChange = () => {
     selectedGoods.value = null
     currentConfig.value = null
+    fixedTemplateOptions.value = []
     goodsCurrentPage.value = 1
+    loadFixedTemplateOptions()
     loadGoods()
   }
 
@@ -392,6 +408,7 @@ export function useAutoDelivery() {
     await loadConfig()
     await loadDeliveryRecords()
     await loadKamiConfigOptions()
+    await loadFixedTemplateOptions()
 
     if (isMobile.value) { mobileView.value = 'config' }
   }
@@ -408,6 +425,16 @@ export function useAutoDelivery() {
         kamiConfigOptions.value = res.data || []
       }
     } catch {}
+  }
+
+  const loadFixedTemplateOptions = async () => {
+    if (!selectedAccountId.value) return
+    try {
+      const res = await getFixedDeliveryTemplates(selectedAccountId.value)
+      fixedTemplateOptions.value = res.code === 200 ? (res.data || []) : []
+    } catch {
+      fixedTemplateOptions.value = []
+    }
   }
 
   const loadConfig = async () => {
@@ -438,11 +465,18 @@ export function useAutoDelivery() {
       if (response.code === 0 || response.code === 200) {
         currentConfig.value = response.data || null
         if (response.data) {
-          configForm.value.deliveryMode = response.data.deliveryMode || 1
-          configForm.value.autoDeliveryContent = response.data.autoDeliveryContent || ''
-          configForm.value.kamiConfigIds = response.data.kamiConfigIds || ''
-          configForm.value.kamiDeliveryTemplate = response.data.kamiDeliveryTemplate || ''
-          configForm.value.deliveryMessageTemplate = response.data.deliveryMessageTemplate || DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+          configForm.value.deliveryMode = response.data.deliveryMode === 2 ? 2 : 1
+          configForm.value.fixedTemplateId = configForm.value.deliveryMode === 1
+            ? response.data.fixedTemplateId || null
+            : null
+          configForm.value.kamiConfigIds = configForm.value.deliveryMode === 2
+            ? response.data.kamiConfigIds || ''
+            : ''
+          configForm.value.deliveryMessageTemplate = configForm.value.deliveryMode === 2
+            ? response.data.deliveryMessageTemplate || DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+            : DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+          configForm.value.voucherDeliveryEnabled = response.data.voucherDeliveryEnabled === 0 ? 0 : 1
+          configForm.value.chatDeliveryEnabled = response.data.chatDeliveryEnabled === 0 ? 0 : 1
           configForm.value.receiptFollowUpMessages = parseReceiptFollowUpMessages(response.data.receiptFollowUpMessages)
           configForm.value.receiptFollowUpIntervalSeconds = response.data.receiptFollowUpIntervalSeconds || 5
           configForm.value.autoDeliveryImageUrl = response.data.autoDeliveryImageUrl || ''
@@ -451,10 +485,11 @@ export function useAutoDelivery() {
           }
         } else {
           configForm.value.deliveryMode = 1
-          configForm.value.autoDeliveryContent = ''
+          configForm.value.fixedTemplateId = null
           configForm.value.kamiConfigIds = ''
-          configForm.value.kamiDeliveryTemplate = ''
           configForm.value.deliveryMessageTemplate = DEFAULT_DELIVERY_MESSAGE_TEMPLATE
+          configForm.value.voucherDeliveryEnabled = 1
+          configForm.value.chatDeliveryEnabled = 1
           configForm.value.receiptFollowUpMessages = []
           configForm.value.receiptFollowUpIntervalSeconds = 5
           configForm.value.autoDeliveryImageUrl = ''
@@ -474,21 +509,27 @@ export function useAutoDelivery() {
       return
     }
 
-    if (hasFixedDelivery.value && !configForm.value.autoDeliveryContent.trim()) {
-      showInfo('请输入自动发货内容')
+    if (hasFixedDelivery.value && !configForm.value.fixedTemplateId) {
+      showInfo('请选择固定内容模板')
       return
     }
     if (hasCardDelivery.value && !configForm.value.kamiConfigIds) {
       showInfo('请绑定卡密配置')
       return
     }
-    if (!configForm.value.deliveryMessageTemplate.trim()) {
-      showInfo('请输入发货私聊模板')
+    if (!configForm.value.voucherDeliveryEnabled && !configForm.value.chatDeliveryEnabled) {
+      showInfo('发货凭证和买家私聊至少开启一个')
       return
     }
-    if (!configForm.value.deliveryMessageTemplate.includes('{deliveryContent}')) {
-      showInfo('买家私聊消息必须包含“全部发货内容”变量')
-      return
+    if (hasCardDelivery.value) {
+      if (!configForm.value.deliveryMessageTemplate.trim()) {
+        showInfo('请输入卡密发货模板')
+        return
+      }
+      if (!configForm.value.deliveryMessageTemplate.includes('{deliveryContent}')) {
+        showInfo('卡密发货模板必须包含“全部发货内容”变量')
+        return
+      }
     }
     const receiptMessages = configForm.value.receiptFollowUpMessages
       .map(message => message.trim())
@@ -514,12 +555,15 @@ export function useAutoDelivery() {
         xianyuGoodsId: selectedGoods.value.item.id,
         xyGoodsId: selectedGoods.value.item.xyGoodId,
         deliveryMode: configForm.value.deliveryMode,
+        fixedTemplateId: hasFixedDelivery.value ? configForm.value.fixedTemplateId : null,
         skuId: selectedSkuId.value,
         skuName,
-        autoDeliveryContent: configForm.value.autoDeliveryContent.trim(),
-        kamiConfigIds: configForm.value.kamiConfigIds,
-        kamiDeliveryTemplate: configForm.value.kamiDeliveryTemplate.trim(),
-        deliveryMessageTemplate: configForm.value.deliveryMessageTemplate.trim(),
+        kamiConfigIds: hasCardDelivery.value ? configForm.value.kamiConfigIds : undefined,
+        deliveryMessageTemplate: hasCardDelivery.value
+          ? configForm.value.deliveryMessageTemplate.trim()
+          : undefined,
+        voucherDeliveryEnabled: configForm.value.voucherDeliveryEnabled,
+        chatDeliveryEnabled: configForm.value.chatDeliveryEnabled,
         receiptFollowUpMessages: JSON.stringify(receiptMessages),
         receiptFollowUpIntervalSeconds: followUpInterval,
         autoDeliveryImageUrl: configForm.value.autoDeliveryImageUrl.trim(),
@@ -728,8 +772,8 @@ export function useAutoDelivery() {
       showWsDisconnectedTip()
       return
     }
-    if (hasFixedDelivery.value && (!configForm.value.autoDeliveryContent || !configForm.value.autoDeliveryContent.trim())) {
-      showError('请配置发货内容！')
+    if (hasFixedDelivery.value && !configForm.value.fixedTemplateId) {
+      showError('请选择固定内容模板！')
       return
     }
     if (hasCardDelivery.value && !configForm.value.kamiConfigIds) {
@@ -839,8 +883,11 @@ export function useAutoDelivery() {
     confirmShipmentUrl,
     confirmShipmentParamsJson,
     kamiConfigOptions,
+    fixedTemplateOptions,
+    selectedFixedTemplate,
     selectedKamiConfigId,
-    toggleDeliveryMode,
+    selectDeliveryMode,
+    goToFixedTemplates,
     addReceiptFollowUpMessage,
     removeReceiptFollowUpMessage,
     appendDeliveryVariable,

@@ -98,7 +98,10 @@ public class DataBackupServiceImpl implements DataBackupService {
 
         Map<String, Object> importContext = new LinkedHashMap<>();
 
-        for (String moduleKey : modulesData.keySet()) {
+        List<String> moduleKeys = new ArrayList<>(modulesData.keySet());
+        // 账号和卡密仓库必须先恢复，自动发货才能安全重写外键。
+        moduleKeys.sort(Comparator.comparingInt(this::getImportPriority));
+        for (String moduleKey : moduleKeys) {
             if (moduleKey.startsWith("_")) continue;
             if (selectedModules != null && !selectedModules.contains(moduleKey)) continue;
 
@@ -125,5 +128,14 @@ public class DataBackupServiceImpl implements DataBackupService {
         respBO.setSuccessCount(successCount);
         respBO.setFailedModules(failedModules);
         return respBO;
+    }
+
+    private int getImportPriority(String moduleKey) {
+        return switch (moduleKey) {
+            case "account" -> 0;
+            case "kami" -> 1;
+            case "autoDelivery" -> 2;
+            default -> 3;
+        };
     }
 }

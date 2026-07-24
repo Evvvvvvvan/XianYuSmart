@@ -17,7 +17,7 @@ public interface DeliveryContentStrategy {
     /**
      * 判断是否支持该发货模式
      *
-     * @param deliveryMode 发货模式位标记（1=固定内容，2=卡密，3=组合）
+     * @param deliveryMode 发货类型（1=固定内容，2=卡密）
      * @return true=支持
      */
     boolean supports(int deliveryMode);

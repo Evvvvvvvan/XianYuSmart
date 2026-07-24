@@ -123,19 +123,82 @@ public class BuyerMessageService {
      */
     public boolean queueDeliveryMessage(XianyuGoodsOrder order, XianyuGoodsAutoDeliveryConfig config,
                                         String actualDeliveryContent) {
+        String message = renderDeliveryMessage(config, order == null ? null : order.getBuyerUserName(),
+                order == null ? null : order.getOrderId(), actualDeliveryContent);
+        return queueDeliveryMessage(order, message);
+    }
+
+    /**
+     * 持久化已经渲染完成的发货内容，保证凭证和私聊发送完全一致。
+     */
+    public boolean queueDeliveryMessage(XianyuGoodsOrder order, String message) {
         if (order == null || order.getId() == null) {
             return false;
         }
-        String message = renderDeliveryMessage(config, order.getBuyerUserName(), order.getOrderId(),
-                actualDeliveryContent);
-        orderMapper.prepareDeliveryMessage(order.getId(), message);
+        if (orderMapper.prepareDeliveryMessage(order.getId(), message) != 1) {
+            throw new IllegalStateException("发货私聊入队失败");
+        }
         order.setDeliveryMessageContent(message);
         order.setDeliveryMessageState(0);
         order.setDeliveryMessageAttemptCount(0);
         return sendPreparedDeliveryMessage(order);
     }
 
+    /**
+     * 外部履约确认前将消息置为不可调度状态，避免进程中断时提前发送未确认内容。
+     */
+    public boolean holdDeliveryMessage(XianyuGoodsOrder order, String message) {
+        return holdDeliveryMessage(order, message, 3);
+    }
+
+    public boolean holdFixedDeliveryMessage(XianyuGoodsOrder order, String message) {
+        return holdDeliveryMessage(order, message, 4);
+    }
+
+    private boolean holdDeliveryMessage(XianyuGoodsOrder order, String message, int holdState) {
+        if (order == null || order.getId() == null || message == null || message.isBlank()) {
+            return false;
+        }
+        if (orderMapper.holdDeliveryMessage(order.getId(), message, holdState) != 1) {
+            return false;
+        }
+        order.setDeliveryMessageContent(message);
+        order.setDeliveryMessageState(holdState);
+        order.setDeliveryMessageAttemptCount(0);
+        return true;
+    }
+
+    public boolean activateAndSendDeliveryMessage(XianyuGoodsOrder order) {
+        if (order == null || order.getId() == null
+                || orderMapper.activateDeliveryMessage(order.getId()) != 1) {
+            return false;
+        }
+        return sendPreparedDeliveryMessage(order);
+    }
+
+    public void cancelHeldDeliveryMessage(XianyuGoodsOrder order) {
+        if (order != null && order.getId() != null) {
+            orderMapper.cancelHeldDeliveryMessage(order.getId());
+            order.setDeliveryMessageContent(null);
+        }
+    }
+
     public void retryPendingDeliveryMessages() {
+        // 固定内容在凭证确认前异常退出时只清理暂存消息，不改变历史订单确认状态。
+        orderMapper.cancelStaleFixedHeldDeliveryMessages(100);
+        // 卡密履约长时间未确认时转人工核对，避免自动重跑造成重复发货。
+        orderMapper.markStaleCardHeldMessagesReviewRequired(100);
+        // 进程在履约确认后异常退出时，先恢复已确认交付的暂存消息，再进入常规重试。
+        for (XianyuGoodsOrder order : orderMapper.selectCommittedHeldDeliveryMessages(100)) {
+            try {
+                TenantContext.set(order.getTenantId());
+                if (orderMapper.activateDeliveryMessage(order.getId()) == 1) {
+                    order.setDeliveryMessageState(0);
+                }
+            } finally {
+                TenantContext.clear();
+            }
+        }
         for (XianyuGoodsOrder order : orderMapper.selectDueDeliveryMessages(100)) {
             try {
                 TenantContext.set(order.getTenantId());

@@ -48,6 +48,7 @@ public class KamiBackupHandler implements DataBackupHandler {
             if (account == null) continue;
 
             Map<String, Object> map = new LinkedHashMap<>();
+            map.put("sourceId", config.getId());
             map.put("unb", account.getUnb());
             map.put("aliasName", config.getAliasName());
             map.put("alertEnabled", config.getAlertEnabled());
@@ -89,6 +90,7 @@ public class KamiBackupHandler implements DataBackupHandler {
                 : Collections.emptyMap();
 
         Map<String, Long> configKeyToId = new HashMap<>();
+        Map<String, Long> sourceIdToId = new HashMap<>();
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> configMaps = (List<Map<String, Object>>) data.get("kamiConfigs");
@@ -131,6 +133,9 @@ public class KamiBackupHandler implements DataBackupHandler {
                         kamiConfigMapper.updateById(config);
                     }
                     configKeyToId.put(unb + ":" + aliasName, config.getId());
+                    if (map.get("sourceId") != null) {
+                        sourceIdToId.put(String.valueOf(map.get("sourceId")), config.getId());
+                    }
                 } catch (Exception e) {
                     log.warn("[KamiBackup] 导入单条卡密配置失败: {}", e.getMessage());
                 }
@@ -139,6 +144,7 @@ public class KamiBackupHandler implements DataBackupHandler {
                 log.warn("[KamiBackup] 共跳过 {} 条配置数据（账号不存在）", skippedCount);
             }
         }
+        context.put("kamiConfigIdMap", sourceIdToId);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> itemMaps = (List<Map<String, Object>>) data.get("kamiItems");

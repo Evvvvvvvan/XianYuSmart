@@ -31,9 +31,11 @@ public class AutoDeliveryConfigRespDTO {
     private String xyGoodsId;
     
     /**
-     * 发货内容位标记：1-固定内容，2-卡密，3-固定内容和卡密
+     * 发货类型：1-固定内容，2-卡密
      */
     private Integer deliveryMode;
+
+    private Long fixedTemplateId;
 
     private String skuId;
 
@@ -55,6 +57,10 @@ public class AutoDeliveryConfigRespDTO {
      * 发货私聊模板，支持{buyerName}、{orderId}、{deliveryContent}
      */
     private String deliveryMessageTemplate;
+
+    private Integer voucherDeliveryEnabled;
+
+    private Integer chatDeliveryEnabled;
 
     /**
      * 买家确认收货后按顺序发送的话术列表JSON

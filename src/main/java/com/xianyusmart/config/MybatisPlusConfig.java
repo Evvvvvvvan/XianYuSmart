@@ -23,6 +23,7 @@ public class MybatisPlusConfig {
     private static final Set<String> TENANT_TABLES = Set.of(
             "xianyu_account", "xianyu_cookie", "xianyu_goods", "xianyu_chat_message",
             "xianyu_goods_config", "xianyu_goods_auto_delivery_config", "xianyu_goods_order",
+            "xianyu_fixed_delivery_template",
             "xianyu_goods_auto_reply_record", "xianyu_operation_log", "xianyu_sys_setting",
             "xianyu_kami_config", "xianyu_kami_item", "xianyu_kami_usage_record",
             "xianyu_keyword_reply_rule", "xianyu_keyword_reply_content", "xianyu_goods_sku",

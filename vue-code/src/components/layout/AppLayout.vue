@@ -67,6 +67,7 @@ const pageTitleMap: Record<string, string> = {
   '/orders': '发货记录',
   '/messages': '消息管理',
   '/auto-delivery': '自动发货',
+  '/fixed-delivery-templates': '固定内容模板',
 
   '/auto-reply': '自动回复',
   '/operation-log': '操作日志',
@@ -83,6 +84,7 @@ const pageIconMap: Record<string, any> = {
   '/pending-orders': markRaw(IconTruck),
   '/messages': markRaw(IconMessage),
   '/auto-delivery': markRaw(IconRobot),
+  '/fixed-delivery-templates': markRaw(IconTruck),
   '/kami-config': markRaw(IconShield),
   '/auto-reply': markRaw(IconChat),
   '/operation-log': markRaw(IconLog),

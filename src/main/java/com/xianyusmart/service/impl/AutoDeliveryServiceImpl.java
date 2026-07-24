@@ -346,7 +346,10 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
     public void executeDelivery(Long recordId, Long accountId, String xyGoodsId, String sId, String orderId, String buyerUserName, boolean needHumanLikeDelay) {
         boolean cardDelivery = false;
         boolean cardDeliveryAttempted = false;
+        boolean cardReservationCommitted = false;
+        boolean deliveryMessageHeld = false;
         boolean anySuccess = false;
+        XianyuGoodsOrder deliveryOrder = null;
         StringBuilder allContent = new StringBuilder();
         try {
             log.info("【账号{}】开始执行自动发货: recordId={}, xyGoodsId={}, orderId={}", accountId, recordId, xyGoodsId, orderId);
@@ -389,8 +392,12 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             }
 
             int deliveryMode = deliveryConfig.getDeliveryMode() != null ? deliveryConfig.getDeliveryMode() : 1;
-            cardDelivery = (deliveryMode & 2) == 2;
+            cardDelivery = deliveryMode == 2;
+            boolean voucherDeliveryEnabled = !Integer.valueOf(0).equals(deliveryConfig.getVoucherDeliveryEnabled());
+            boolean chatDeliveryEnabled = !Integer.valueOf(0).equals(deliveryConfig.getChatDeliveryEnabled());
             String cid = sId.replace("@goofish", "");
+            String resolvedBuyerName = orderDetail != null && orderDetail.buyerUserName != null
+                    && !orderDetail.buyerUserName.isBlank() ? orderDetail.buyerUserName : buyerUserName;
 
             DeliveryContext ctx = DeliveryContext.builder()
                     .recordId(recordId)
@@ -398,27 +405,33 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
                     .xyGoodsId(xyGoodsId)
                     .sId(sId)
                     .orderId(orderId)
-                    .buyerUserName(buyerUserName)
+                    .buyerUserName(resolvedBuyerName)
                     .quantity(buyNum)
                     .deliveryConfig(deliveryConfig)
                     .build();
 
             String content = deliveryStrategyResolver.resolve(deliveryMode, ctx);
             if (content == null) {
-                String failMsg = deliveryMode == 1 ? "未配置固定发货内容"
-                        : deliveryMode == 2 ? "卡密库存不足，无可用卡密"
-                        : "固定内容未配置或卡密库存不足";
+                String failMsg = deliveryMode == 1 ? "未配置固定发货模板" : "卡密库存不足，无可用卡密";
                 log.warn("【账号{}】发货内容解析失败: {}", accountId, failMsg);
                 updateRecordState(recordId, -1, null, failMsg);
                 emailNotifyService.sendAutoDeliveryFailEmail(null, xyGoodsId, orderId, failMsg);
                 return;
             }
 
-            if (content.length() > 200) {
+            String messageTemplate = deliveryMode == 1
+                    ? ctx.getFixedTemplate().getMessageTemplate()
+                    : deliveryConfig.getDeliveryMessageTemplate();
+            String finalDeliveryContent = buyerMessageService.renderVariables(
+                    buyerMessageService.normalizeDeliveryMessageTemplate(messageTemplate),
+                    resolvedBuyerName, orderId, content);
+            allContent.append(finalDeliveryContent);
+
+            if (voucherDeliveryEnabled && finalDeliveryContent.length() > 200) {
                 if (cardDelivery) {
                     kamiConfigService.releaseReservation(orderId);
                 }
-                String failMsg = "发货内容超过凭证接口200字符限制，请缩短发货内容或模板";
+                String failMsg = "渲染后的发货内容超过凭证接口200字符限制，请缩短模板或关闭凭证发货";
                 updateRecordState(recordId, -1, null, failMsg);
                 emailNotifyService.sendAutoDeliveryFailEmail(null, xyGoodsId, orderId, failMsg);
                 return;
@@ -433,55 +446,11 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
                 }
             }
 
-            // 实际发货内容只解析一次，同时用于凭证和私聊，防止卡密重复扣减。
-            cardDeliveryAttempted = cardDelivery;
-            String deliveryResult = orderService.consignDummyDelivery(accountId, orderId, content, imageUrls);
-            if (OrderService.CONSIGN_UNCERTAIN.equals(deliveryResult)) {
-                String failReason = "发货结果待确认，请核对平台凭证后处理";
-                if (cardDelivery) {
-                    // 外部接口结果不确定时锁定原卡密，避免重试后向同一订单分配不同内容。
-                    kamiConfigService.markReservationReviewRequired(orderId);
+            if (chatDeliveryEnabled) {
+                deliveryOrder = orderMapper.selectById(recordId);
+                if (deliveryOrder == null) {
+                    throw new IllegalStateException("发货订单记录不存在");
                 }
-                updateRecordState(recordId, -1, content, failReason);
-                orderMapper.markTaskReviewRequired(recordId, failReason);
-                log.warn("【账号{}】发货结果待确认: recordId={}", accountId, recordId);
-                return;
-            }
-            if (OrderService.CONSIGN_ALREADY_DELIVERED.equals(deliveryResult)) {
-                String failReason = "订单已存在发货凭证，请核对凭证与私聊内容";
-                if (cardDelivery) {
-                    // 已存在凭证时无法确认首次请求是否使用当前卡密，必须锁定等待核对。
-                    kamiConfigService.markReservationReviewRequired(orderId);
-                }
-                updateRecordState(recordId, -1, content, failReason);
-                orderMapper.markTaskReviewRequired(recordId, failReason);
-                log.warn("【账号{}】订单已存在发货凭证: recordId={}", accountId, recordId);
-                return;
-            }
-            if (!OrderService.CONSIGN_SUCCESS.equals(deliveryResult)) {
-                if (cardDelivery) {
-                    kamiConfigService.releaseReservation(orderId);
-                }
-                log.error("【账号{}】❌ 发货凭证提交失败: recordId={}", accountId, recordId);
-                updateRecordState(recordId, -1, content, "发货凭证提交失败");
-                emailNotifyService.sendAutoDeliveryFailEmail(null, xyGoodsId, orderId, "发货凭证提交失败");
-                return;
-            }
-
-            anySuccess = true;
-            allContent.append(content);
-            orderMapper.updateConfirmState(accountId, orderId);
-            if (cardDelivery) {
-                kamiConfigService.commitReservation(orderId, accountId, xyGoodsId, cid, buyerUserName);
-            }
-
-            if (needHumanLikeDelay) {
-                HumanLikeDelayUtils.mediumDelay();
-                HumanLikeDelayUtils.typingDelay(content.length());
-            }
-
-            XianyuGoodsOrder deliveryOrder = orderMapper.selectById(recordId);
-            if (deliveryOrder != null) {
                 if (deliveryOrder.getSid() == null || deliveryOrder.getSid().isBlank()) {
                     deliveryOrder.setSid(sId);
                 }
@@ -489,22 +458,119 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
                         && orderDetail != null) {
                     deliveryOrder.setBuyerUserName(orderDetail.buyerUserName);
                 }
-                boolean messageSent = buyerMessageService.queueDeliveryMessage(deliveryOrder, deliveryConfig, content);
+                if (cardDelivery || voucherDeliveryEnabled) {
+                    boolean held = cardDelivery
+                            ? buyerMessageService.holdDeliveryMessage(deliveryOrder, finalDeliveryContent)
+                            : buyerMessageService.holdFixedDeliveryMessage(deliveryOrder, finalDeliveryContent);
+                    if (!held) {
+                        throw new IllegalStateException("发货私聊暂存失败");
+                    }
+                    deliveryMessageHeld = true;
+                }
+            }
+
+            // 两个渠道共用同一次渲染结果，开启双渠道时严格先写凭证再发私聊。
+            if (voucherDeliveryEnabled) {
+                cardDeliveryAttempted = cardDelivery;
+                String deliveryResult = orderService.consignDummyDelivery(
+                        accountId, orderId, finalDeliveryContent, imageUrls);
+                if (OrderService.CONSIGN_UNCERTAIN.equals(deliveryResult)) {
+                    String failReason = "发货结果待确认，请核对平台凭证后处理";
+                    if (cardDelivery) {
+                        // 外部接口结果不确定时锁定原卡密，避免重试后向同一订单分配不同内容。
+                        kamiConfigService.markReservationReviewRequired(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    updateRecordState(recordId, -1, finalDeliveryContent, failReason);
+                    orderMapper.markTaskReviewRequired(recordId, failReason);
+                    log.warn("【账号{}】发货结果待确认: recordId={}", accountId, recordId);
+                    return;
+                }
+                if (OrderService.CONSIGN_ALREADY_DELIVERED.equals(deliveryResult)) {
+                    String failReason = "订单已存在发货凭证，请核对凭证与私聊内容";
+                    if (cardDelivery) {
+                        // 已存在凭证时无法确认首次请求是否使用当前卡密，必须锁定等待核对。
+                        kamiConfigService.markReservationReviewRequired(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    updateRecordState(recordId, -1, finalDeliveryContent, failReason);
+                    orderMapper.markTaskReviewRequired(recordId, failReason);
+                    log.warn("【账号{}】订单已存在发货凭证: recordId={}", accountId, recordId);
+                    return;
+                }
+                if (!OrderService.CONSIGN_SUCCESS.equals(deliveryResult)) {
+                    if (cardDelivery) {
+                        kamiConfigService.releaseReservation(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    log.error("【账号{}】❌ 发货凭证提交失败: recordId={}", accountId, recordId);
+                    updateRecordState(recordId, -1, finalDeliveryContent, "发货凭证提交失败");
+                    emailNotifyService.sendAutoDeliveryFailEmail(null, xyGoodsId, orderId, "发货凭证提交失败");
+                    return;
+                }
+                anySuccess = true;
+                if (deliveryMessageHeld && !cardDelivery) {
+                    if (orderMapper.confirmFixedHeldDeliveryMessage(accountId, orderId) != 1) {
+                        throw new IllegalStateException("固定内容凭证状态确认失败");
+                    }
+                    deliveryOrder.setConfirmState(1);
+                    deliveryOrder.setDeliveryMessageState(5);
+                } else {
+                    orderMapper.updateConfirmState(accountId, orderId);
+                }
+            }
+
+            if (cardDelivery) {
+                try {
+                    // 私聊内容已处于不可调度状态，卡密提交成功后再激活发送。
+                    kamiConfigService.commitReservation(orderId, accountId, xyGoodsId, cid, resolvedBuyerName);
+                    cardReservationCommitted = true;
+                } catch (RuntimeException e) {
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    throw e;
+                }
+            }
+
+            if (chatDeliveryEnabled && needHumanLikeDelay) {
+                HumanLikeDelayUtils.mediumDelay();
+                HumanLikeDelayUtils.typingDelay(finalDeliveryContent.length());
+            }
+
+            if (chatDeliveryEnabled) {
+                boolean messageSent = deliveryMessageHeld
+                        ? buyerMessageService.activateAndSendDeliveryMessage(deliveryOrder)
+                        : buyerMessageService.queueDeliveryMessage(deliveryOrder, finalDeliveryContent);
+                anySuccess = true;
                 if (messageSent) {
                     sendDeliveryImages(accountId, xyGoodsId, cid, cid, deliveryConfig, needHumanLikeDelay);
                 } else {
                     log.info("【账号{}】发货私聊已进入重试队列: orderId={}", accountId, orderId);
                 }
             }
-            log.info("【账号{}】✅ 发货凭证提交成功并已处理私聊: recordId={}, deliveryMode={}",
-                    accountId, recordId, deliveryMode);
+            log.info("【账号{}】✅ 自动发货渠道处理完成: recordId={}, deliveryMode={}, voucher={}, chat={}",
+                    accountId, recordId, deliveryMode, voucherDeliveryEnabled, chatDeliveryEnabled);
 
             if (anySuccess) {
                 updateRecordState(recordId, 1, allContent.toString(), null);
             }
 
         } catch (Exception e) {
-            if (cardDelivery) {
+            if (deliveryMessageHeld && !anySuccess && !cardReservationCommitted) {
+                buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+            }
+            if (cardDelivery && !cardReservationCommitted) {
                 if (cardDeliveryAttempted) {
                     kamiConfigService.markReservationReviewRequired(orderId);
                 } else {

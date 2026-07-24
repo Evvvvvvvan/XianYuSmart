@@ -20,6 +20,7 @@ import com.xianyusmart.entity.MerchantShortLink;
 import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.entity.XianyuGoodsInfo;
 import com.xianyusmart.entity.XianyuGoodsAutoDeliveryConfig;
+import com.xianyusmart.entity.XianyuKamiConfig;
 import com.xianyusmart.mapper.MerchantDistributionMapper;
 import com.xianyusmart.mapper.MerchantResourceMapper;
 import com.xianyusmart.mapper.MerchantTaskMapper;
@@ -514,11 +515,15 @@ public class MerchantOperationsService {
             }
             Long kamiConfigId = longValue(data.get("kamiConfigId"));
             if (kamiConfigId != null) {
-                if (kamiConfigMapper.selectById(kamiConfigId) == null) {
+                XianyuKamiConfig kamiConfig = kamiConfigMapper.selectById(kamiConfigId);
+                if (kamiConfig == null) {
                     throw new IllegalArgumentException("卡券仓库不存在或无权访问");
                 }
                 if (resource.getXianyuAccountId() == null || resource.getXyGoodsId() == null) {
                     throw new IllegalArgumentException("卡券补偿需先完成商品发布和账号关联");
+                }
+                if (!resource.getXianyuAccountId().equals(kamiConfig.getXianyuAccountId())) {
+                    throw new IllegalArgumentException("卡券仓库与商品账号不一致");
                 }
                 XianyuGoodsAutoDeliveryConfig deliveryConfig = autoDeliveryConfigMapper.findByAccountIdAndGoodsIdNoSku(
                         resource.getXianyuAccountId(), resource.getXyGoodsId());
@@ -527,16 +532,30 @@ public class MerchantOperationsService {
                     deliveryConfig.setXianyuAccountId(resource.getXianyuAccountId());
                     deliveryConfig.setXyGoodsId(resource.getXyGoodsId());
                     deliveryConfig.setDeliveryMode(2);
+                    deliveryConfig.setFixedTemplateId(null);
+                    deliveryConfig.setAutoDeliveryContent(null);
                     deliveryConfig.setKamiConfigIds(String.valueOf(kamiConfigId));
-                    deliveryConfig.setKamiDeliveryTemplate("{kmKey}");
+                    deliveryConfig.setKamiDeliveryTemplate(null);
+                    deliveryConfig.setDeliveryMessageTemplate(BuyerMessageService.DEFAULT_DELIVERY_MESSAGE_TEMPLATE);
+                    deliveryConfig.setVoucherDeliveryEnabled(1);
+                    deliveryConfig.setChatDeliveryEnabled(1);
                     deliveryConfig.setAutoConfirmShipment(0);
                     deliveryConfig.setRagDelaySeconds(10);
                     autoDeliveryConfigMapper.insert(deliveryConfig);
                 } else {
                     deliveryConfig.setDeliveryMode(2);
+                    deliveryConfig.setFixedTemplateId(null);
+                    deliveryConfig.setAutoDeliveryContent(null);
                     deliveryConfig.setKamiConfigIds(String.valueOf(kamiConfigId));
-                    if (deliveryConfig.getKamiDeliveryTemplate() == null || deliveryConfig.getKamiDeliveryTemplate().isBlank()) {
-                        deliveryConfig.setKamiDeliveryTemplate("{kmKey}");
+                    deliveryConfig.setKamiDeliveryTemplate(null);
+                    if (deliveryConfig.getDeliveryMessageTemplate() == null
+                            || deliveryConfig.getDeliveryMessageTemplate().isBlank()) {
+                        deliveryConfig.setDeliveryMessageTemplate(
+                                BuyerMessageService.DEFAULT_DELIVERY_MESSAGE_TEMPLATE);
+                    }
+                    if (!Integer.valueOf(1).equals(deliveryConfig.getVoucherDeliveryEnabled())
+                            && !Integer.valueOf(1).equals(deliveryConfig.getChatDeliveryEnabled())) {
+                        deliveryConfig.setVoucherDeliveryEnabled(1);
                     }
                     autoDeliveryConfigMapper.updateById(deliveryConfig);
                 }
