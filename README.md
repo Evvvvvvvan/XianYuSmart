@@ -54,11 +54,11 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 ## Star History
 
-<a href="https://www.star-history.com/#Evvvvvvvan/XianYuSmart&Date">
+<a href="https://www.star-history.com/?repos=Evvvvvvvan%2FXianYuSmart&type=date&legend=top-left">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=evvvvvvvan/xianyusmart&type=date&theme=dark&legend=top-left" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=evvvvvvvan/xianyusmart&type=date&legend=top-left" />
-    <img alt="XianYuSmart Star History Chart" src="https://api.star-history.com/svg?repos=evvvvvvvan/xianyusmart&type=date&legend=top-left" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Evvvvvvvan/XianYuSmart&type=date&theme=dark&legend=top-left&sealed_token=J_OgquuwcaEKmgGf1EFy5Fb_REc2dJ8QZZ5GU3mTg1zsH9-2vrm2VaCFZuK9KdC-tsqnZuoVCJrct0TmRCYHx5WPkUMa6GOYSG4rxQCucZLX9FLDoqwYUw" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Evvvvvvvan/XianYuSmart&type=date&legend=top-left&sealed_token=J_OgquuwcaEKmgGf1EFy5Fb_REc2dJ8QZZ5GU3mTg1zsH9-2vrm2VaCFZuK9KdC-tsqnZuoVCJrct0TmRCYHx5WPkUMa6GOYSG4rxQCucZLX9FLDoqwYUw" />
+    <img alt="XianYuSmart Star History Chart" src="https://api.star-history.com/chart?repos=Evvvvvvvan/XianYuSmart&type=date&legend=top-left&sealed_token=J_OgquuwcaEKmgGf1EFy5Fb_REc2dJ8QZZ5GU3mTg1zsH9-2vrm2VaCFZuK9KdC-tsqnZuoVCJrct0TmRCYHx5WPkUMa6GOYSG4rxQCucZLX9FLDoqwYUw" />
   </picture>
 </a>
 
