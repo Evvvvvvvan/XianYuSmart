@@ -52,27 +52,6 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 > 如果这些工程问题也是关注重点，欢迎 Star 关注项目演进；需要定制交付或回复链路时，可以 Fork 后沿现有策略接口扩展。
 
-## 交流与支持
-
-真实使用中的问题、经验和建议，会让 XianYuSmart 变得更稳定、更好用。欢迎加入微信群聊交流部署配置、连接排查、自动发货和运营实践；如果项目确实节省了时间或解决了经营中的实际问题，也欢迎自愿赞赏，支持项目持续维护。
-
-<table>
-  <tr>
-    <td width="50%" align="center" valign="top">
-      <strong>加入微信群聊</strong>
-      <p>与开发者和实际使用者交流配置、排错与使用经验，及时了解项目进展。欢迎提出需求、分享实践，也欢迎参与项目共建。</p>
-      <img src="docs/assets/community/wechat-group-qr.jpg" width="360" alt="XianYuSmart 微信群聊二维码">
-      <p><sub>二维码具有时效性，失效后将在仓库更新</sub></p>
-    </td>
-    <td width="50%" align="center" valign="top">
-      <strong>赞赏项目</strong>
-      <p>每一份支持都会转化为文档完善、兼容性验证、问题修复和持续维护的动力。金额不论多少，都是对项目继续向前的鼓励。</p>
-      <img src="docs/assets/community/wechat-reward-qr.jpg" width="360" alt="XianYuSmart 项目赞赏码">
-      <p><sub>赞赏完全自愿，不对应商业服务、功能优先权或任何承诺</sub></p>
-    </td>
-  </tr>
-</table>
-
 ## 解决的问题
 
 | 经营问题 | 处理方式 |
@@ -430,6 +409,27 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 - 本项目按“现状”提供，在适用法律允许的最大范围内不对账号、数据、交易或业务损失承担责任。
 
 下载、复制、修改、部署、运行或分发本项目，即表示已阅读并接受 [完整使用限制与免责声明](DISCLAIMER.md)。
+
+## 交流与支持
+
+真实使用中的问题、经验和建议，会让 XianYuSmart 变得更稳定、更好用。欢迎加入微信群聊交流部署配置、连接排查、自动发货和运营实践；如果项目确实节省了时间或解决了经营中的实际问题，也欢迎自愿赞赏，支持项目持续维护。
+
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <strong>加入微信群聊</strong>
+      <p>与开发者和实际使用者交流配置、排错与使用经验，及时了解项目进展。欢迎提出需求、分享实践，也欢迎参与项目共建。</p>
+      <img src="docs/assets/community/wechat-group-qr.jpg" width="360" alt="XianYuSmart 微信群聊二维码">
+      <p><sub>二维码具有时效性，失效后将在仓库更新</sub></p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <strong>赞赏项目</strong>
+      <p>每一份支持都会转化为文档完善、兼容性验证、问题修复和持续维护的动力。金额不论多少，都是对项目继续向前的鼓励。</p>
+      <img src="docs/assets/community/wechat-reward-qr.jpg" width="360" alt="XianYuSmart 项目赞赏码">
+      <p><sub>赞赏完全自愿，不对应商业服务、功能优先权或任何承诺</sub></p>
+    </td>
+  </tr>
+</table>
 
 ## Star History
 
