@@ -29,7 +29,7 @@ services:
   app:
     build:
       context: .
-    image: ${APP_IMAGE:-xianyusmart:1.0.0}
+    image: ${APP_IMAGE:-xianyusmart:2.0.0}
     restart: unless-stopped
     depends_on:
       mysql:

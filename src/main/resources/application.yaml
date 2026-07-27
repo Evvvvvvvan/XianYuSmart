@@ -2,7 +2,7 @@ server:
   port: 12400
 
 app:
-  version: 1.0.0
+  version: 2.0.0
   update:
     release-api: ${UPDATE_RELEASE_API:}
   executor:

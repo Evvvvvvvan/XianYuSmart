@@ -16,7 +16,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 它不只是在收到订单后发送一段文本，而是把 **订单发现、幂等入队、库存预占、双通道交付、失败重试和人工复核** 串成可恢复的完整链路。固定内容与卡密两种交付模式严格互斥，账号、商品、消息、订单、库存、任务和 AI 知识库按租户隔离。核心任务链路只依赖 MySQL，不强制引入 Redis 或消息队列，兼顾部署成本与后续扩展。
 
-当前版本：`1.0.0`
+当前版本：[2.0.0](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.0) · [查看更新日志](CHANGELOG.md)
 
 [商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [Star History](#star-history) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [开发构建](#开发构建) · [许可证与免责声明](#许可证与免责声明)
 
@@ -173,7 +173,7 @@ flowchart LR
 每个正式 Release 会自动发布 `linux/amd64` 镜像到 GitHub Container Registry。固定版本适合生产部署，`latest` 适合体验最新正式版本。
 
 ```bash
-docker pull ghcr.io/evvvvvvvan/xianyusmart:v1.0.0
+docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.0.0
 docker pull ghcr.io/evvvvvvvan/xianyusmart:latest
 ```
 
@@ -184,7 +184,7 @@ Linux：
 ```bash
 cp .env.example .env
 # 修改 .env 中的数据库密码和 JWT 强密钥
-export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v1.0.0
+export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.0.0
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -194,7 +194,7 @@ Windows PowerShell：
 ```powershell
 Copy-Item .env.example .env
 notepad .env
-$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v1.0.0'
+$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.0.0'
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -271,7 +271,7 @@ docker compose --profile proxy up -d --build
 | `JWT_SECRET` | 登录令牌签名密钥 | 48 字节以上随机值 |
 | `ALLOWED_ORIGINS` | 允许访问的前端来源 | 完整 HTTPS 域名 |
 | `TRUST_PROXY` | 是否信任代理头 | 仅 Nginx 部署设为 `true` |
-| `UPDATE_RELEASE_API` | 自有 GitHub 发行版 API | 留空关闭，格式为 `https://api.github.com/repos/OWNER/REPO/releases/latest` |
+| `UPDATE_RELEASE_API` | GitHub 发行版 API | 默认使用本项目最新 Release，留空可关闭更新检查 |
 | `DB_POOL_MAX_SIZE` | 最大数据库连接数 | 单实例默认 `10` |
 | `DB_POOL_MIN_IDLE` | 最小空闲连接数 | 默认 `2` |
 | `JAVA_OPTS` | JVM 容器内存策略 | 默认值适合小型实例 |

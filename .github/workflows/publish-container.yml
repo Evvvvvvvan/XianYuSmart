@@ -8,7 +8,7 @@ on:
       tag:
         description: Git tag to publish
         required: true
-        default: v1.0.0
+        default: v2.0.0
 
 permissions:
   contents: read
@@ -57,7 +57,7 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           labels: |
             org.opencontainers.image.title=XianYuSmart
-            org.opencontainers.image.description=单商家私有化闲鱼虚拟商品经营助手
+            org.opencontainers.image.description=多租户闲鱼虚拟商品运营平台
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ steps.image.outputs.revision }}
             org.opencontainers.image.version=${{ steps.image.outputs.tag }}

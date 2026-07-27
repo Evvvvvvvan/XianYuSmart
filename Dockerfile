@@ -43,8 +43,8 @@ RUN --mount=type=cache,target=/root/.m2/repository ./mvnw dependency:build-class
 FROM eclipse-temurin:21-jre-jammy
 
 LABEL org.opencontainers.image.title="XianYuSmart"
-LABEL org.opencontainers.image.description="单商家私有化闲鱼虚拟商品经营助手"
-LABEL org.opencontainers.image.version="1.0.0"
+LABEL org.opencontainers.image.description="多租户闲鱼虚拟商品运营平台"
+LABEL org.opencontainers.image.version="2.0.0"
 LABEL org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 
 WORKDIR /app
@@ -65,7 +65,7 @@ RUN groupadd --system xianyusmart && useradd --system --gid xianyusmart --home-d
     && chown -R xianyusmart:xianyusmart /app
 
 # 从构建阶段复制 JAR
-COPY --from=backend-build --chown=xianyusmart:xianyusmart /app/target/xianyusmart-1.0.0.jar app.jar
+COPY --from=backend-build --chown=xianyusmart:xianyusmart /app/target/xianyusmart-2.0.0.jar app.jar
 COPY --from=backend-build --chown=xianyusmart:xianyusmart /ms-playwright /app/ms-playwright
 
 # 暴露端口

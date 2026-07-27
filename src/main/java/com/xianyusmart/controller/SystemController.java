@@ -31,7 +31,7 @@ import java.time.Duration;
 @RequestMapping("/api/system")
 public class SystemController {
 
-    @Value("${app.version:1.0.0}")
+    @Value("${app.version:2.0.0}")
     private String currentVersion;
 
     @Value("${app.update.release-api:}")
