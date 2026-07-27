@@ -18,7 +18,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 当前版本：`1.0.0`
 
-[商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [开发构建](#开发构建) · [许可证与免责声明](#许可证与免责声明)
+[商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [Star History](#star-history) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [开发构建](#开发构建) · [许可证与免责声明](#许可证与免责声明)
 
 ## 商家能得到什么
 
@@ -51,6 +51,16 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 这套实现适合研究 **可靠任务调度、事件驱动自动化、多租户数据隔离、虚拟库存一致性和 AI 客服编排**。仓库提供的是从前端工作台、后端状态机、数据库迁移到容器部署的完整闭环，而不是只能运行单一路径的代码片段。
 
 > 如果这些工程问题也是关注重点，欢迎 Star 关注项目演进；需要定制交付或回复链路时，可以 Fork 后沿现有策略接口扩展。
+
+## Star History
+
+<a href="https://www.star-history.com/#Evvvvvvvan/XianYuSmart&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=evvvvvvvan/xianyusmart&type=date&theme=dark&legend=top-left" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=evvvvvvvan/xianyusmart&type=date&legend=top-left" />
+    <img alt="XianYuSmart Star History Chart" src="https://api.star-history.com/svg?repos=evvvvvvvan/xianyusmart&type=date&legend=top-left" />
+  </picture>
+</a>
 
 ## 解决的问题
 
