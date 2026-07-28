@@ -145,25 +145,22 @@ public class PlatformPublishService {
         if (cookieText == null || cookieText.isBlank()) {
             throw new IllegalStateException("账号Cookie不可用");
         }
-        try (BrowserContext context = playwrightManager.createContext()) {
-            addCookies(context, cookieText);
-            Page page = context.newPage();
-            page.navigate("https://www.goofish.com/item?id=" + goodsId,
-                    new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(60000));
-            page.waitForTimeout(2000);
-            ensureLoggedIn(page);
-            Locator deleteButton = page.locator("button:has-text(\"删除\"),button:has-text(\"下架\")").first();
-            if (deleteButton.count() == 0) {
-                throw new IllegalStateException("商品页面未找到删除或下架操作");
-            }
-            deleteButton.click();
-            Locator confirmButton = page.locator("button:has-text(\"确定\"),button:has-text(\"确认\")").last();
-            if (confirmButton.count() > 0) {
-                confirmButton.click();
-            }
-            page.waitForTimeout(2000);
-            return Map.of("success", true, "itemId", goodsId);
+        XianyuApiCallUtils.ApiCallResult offShelfResult = apiCallUtils.callApiWithRetry(
+                accountId, "mtop.taobao.idle.item.downshelf", "2.0",
+                Map.of("itemId", goodsId), cookieText, null, null);
+        if (!offShelfResult.isSuccess()) {
+            throw new IllegalStateException("平台下架失败: " + offShelfResult.getErrorMessage());
         }
+        String refreshedCookie = accountService.getCookieByAccountId(accountId);
+        XianyuApiCallUtils.ApiCallResult deleteResult = apiCallUtils.callApiWithRetry(
+                accountId, "com.taobao.idle.item.delete", "1.1",
+                Map.of("itemId", goodsId),
+                refreshedCookie == null || refreshedCookie.isBlank() ? cookieText : refreshedCookie,
+                null, null);
+        if (!deleteResult.isSuccess()) {
+            throw new IllegalStateException("商品已下架，但平台删除失败: " + deleteResult.getErrorMessage());
+        }
+        return Map.of("success", true, "itemId", goodsId, "deleted", true);
     }
 
     public Map<String, Object> changeListingStatus(Long accountId, String goodsId, boolean onSale) {
@@ -171,6 +168,15 @@ public class PlatformPublishService {
         if (cookieText == null || cookieText.isBlank()) {
             throw new IllegalStateException("账号 Cookie 不可用");
         }
+        if (!onSale) {
+            XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
+                    accountId, "mtop.taobao.idle.item.downshelf", "2.0",
+                    Map.of("itemId", goodsId), cookieText, null, null);
+            if (!result.isSuccess()) {
+                throw new IllegalStateException("平台下架失败: " + result.getErrorMessage());
+            }
+            return Map.of("success", true, "itemId", goodsId, "onSale", false);
+        }
         try (BrowserContext context = playwrightManager.createContext()) {
             addCookies(context, cookieText);
             Page page = context.newPage();
@@ -178,9 +184,7 @@ public class PlatformPublishService {
                     new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(60000));
             page.waitForTimeout(2000);
             ensureLoggedIn(page);
-            String selector = onSale
-                    ? "button:has-text(\"上架\"),button:has-text(\"重新上架\")"
-                    : "button:has-text(\"下架\")";
+            String selector = "button:has-text(\"上架\"),button:has-text(\"重新上架\")";
             Locator actionButton = page.locator(selector).first();
             if (actionButton.count() == 0) {
                 throw new IllegalStateException(onSale ? "商品页面未找到上架操作" : "商品页面未找到下架操作");
