@@ -77,6 +77,8 @@ public class AuthServiceImpl implements AuthService {
         SysUser user = new SysUser();
         user.setUsername(reqBO.getUsername());
         user.setPassword(passwordEncoder.encode(reqBO.getPassword()));
+        // 公开注册只创建普通租户，避免全新环境的管理员权限被匿名抢占
+        user.setRole(SysUser.ROLE_USER);
         user.setStatus(1);
         user.setCreatedTime(LocalDateTime.now().format(FORMATTER));
         user.setUpdatedTime(LocalDateTime.now().format(FORMATTER));

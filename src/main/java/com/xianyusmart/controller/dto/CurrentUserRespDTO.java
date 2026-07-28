@@ -9,5 +9,6 @@ import lombok.Data;
 @Data
 public class CurrentUserRespDTO {
     private String username;
+    private String role;
     private String lastLoginTime;
 }

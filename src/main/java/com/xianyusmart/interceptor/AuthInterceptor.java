@@ -2,6 +2,7 @@ package com.xianyusmart.interceptor;
 
 import com.xianyusmart.annotation.NoAuth;
 import com.xianyusmart.common.ResultObject;
+import com.xianyusmart.entity.SysUser;
 import com.xianyusmart.service.AuthService;
 import com.xianyusmart.util.JwtUtil;
 import com.google.gson.Gson;
@@ -72,6 +73,11 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 将用户信息放入request属性，供Controller使用
         Long userId = jwtUtil.getUserIdFromToken(token);
         String username = jwtUtil.getUsernameFromToken(token);
+        SysUser currentUser = authService.getCurrentUser(userId);
+        if (currentUser == null || !Integer.valueOf(1).equals(currentUser.getStatus())) {
+            writeUnauthorized(response, "账号已被禁用");
+            return false;
+        }
         request.setAttribute("currentUserId", userId);
         request.setAttribute("currentUsername", username);
         

@@ -50,6 +50,7 @@ public class SystemController {
             }
             CurrentUserRespDTO respDTO = new CurrentUserRespDTO();
             respDTO.setUsername(user.getUsername());
+            respDTO.setRole(user.getRole());
             respDTO.setLastLoginTime(user.getLastLoginTime());
             return ResultObject.success(respDTO);
         } catch (Exception e) {
@@ -103,7 +104,10 @@ public class SystemController {
     }
 
     @GetMapping("/checkUpdate")
-    public ResultObject<VersionInfoRespDTO> checkUpdate() {
+    public ResultObject<VersionInfoRespDTO> checkUpdate(HttpServletRequest request) {
+        if (!isAdmin(request)) {
+            return ResultObject.forbidden(null);
+        }
         try {
             return ResultObject.success(systemUpdateService.checkUpdate());
         } catch (Exception e) {
@@ -116,12 +120,31 @@ public class SystemController {
         }
     }
 
+    @GetMapping("/update/status")
+    public ResultObject<java.util.Map<String, Object>> updateStatus(HttpServletRequest request) {
+        if (!isAdmin(request)) {
+            return ResultObject.forbidden(null);
+        }
+        return ResultObject.success(systemUpdateService.updateAgentStatus());
+    }
+
     @PostMapping("/update")
-    public ResultObject<java.util.Map<String, Object>> update() {
+    public ResultObject<java.util.Map<String, Object>> update(HttpServletRequest request) {
+        if (!isAdmin(request)) {
+            return ResultObject.forbidden(null);
+        }
         try {
             return ResultObject.success(systemUpdateService.requestUpdate());
         } catch (Exception e) {
             return ResultObject.failed(e.getMessage());
         }
+    }
+
+    private boolean isAdmin(HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("currentUserId");
+        SysUser user = userId == null ? null : authService.getCurrentUser(userId);
+        return user != null
+                && Integer.valueOf(1).equals(user.getStatus())
+                && SysUser.ROLE_ADMIN.equalsIgnoreCase(user.getRole());
     }
 }

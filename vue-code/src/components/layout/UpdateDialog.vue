@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { checkUpdate, getVersion, requestSystemUpdate } from '@/api/system'
+import { ref, computed, onUnmounted } from 'vue'
+import {
+  checkUpdate,
+  getSystemUpdateStatus,
+  getVersion,
+  requestSystemUpdate,
+  type SystemUpdateStatus
+} from '@/api/system'
 import IconClose from '@/components/icons/IconClose.vue'
 import IconCheck from '@/components/icons/IconCheck.vue'
 import IconSparkle from '@/components/icons/IconSparkle.vue'
@@ -11,8 +17,9 @@ const appVersion = __APP_VERSION__ || '2.0.1'
 
 const visible = ref(false)
 const loading = ref(false)
-const updating = ref(false)
-const updateStatus = ref('')
+const submitting = ref(false)
+const localError = ref('')
+const updateTask = ref<SystemUpdateStatus | null>(null)
 const updateInfo = ref<{
   currentVersion: string
   latestVersion: string
@@ -32,55 +39,170 @@ const isUpdateAvailable = computed(() => {
   return updateInfo.value?.hasUpdate === true
 })
 
+const isUpdateRunning = computed(() => updateTask.value?.active === true)
+
+const progressPercent = computed(() => {
+  const progress = Number(updateTask.value?.progress || 0)
+  return Math.min(100, Math.max(0, progress))
+})
+
+const stageLabels: Record<SystemUpdateStatus['status'], string> = {
+  IDLE: '等待更新',
+  REQUESTED: '任务已提交',
+  CHECKING: '检查版本',
+  DOWNLOADING: '下载更新',
+  VERIFYING: '校验文件',
+  INSTALLING: '备份并安装',
+  RESTARTING: '重启服务',
+  HEALTH_CHECKING: '健康检查',
+  SUCCESS: '更新完成',
+  FAILED: '更新失败'
+}
+
+const stageLabel = computed(() => {
+  return updateTask.value ? stageLabels[updateTask.value.status] : ''
+})
+
+const formatBytes = (bytes: number) => {
+  if (!bytes) return '0 B'
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+const downloadText = computed(() => {
+  const task = updateTask.value
+  if (!task || !task.totalBytes) return ''
+  return `${formatBytes(task.downloadedBytes)} / ${formatBytes(task.totalBytes)}`
+})
+
+const taskUpdatedAt = computed(() => {
+  if (!updateTask.value?.updatedAt) return ''
+  return new Date(updateTask.value.updatedAt).toLocaleString()
+})
+
 const formattedDate = computed(() => {
   if (!updateInfo.value?.publishedAt) return ''
   const d = new Date(updateInfo.value.publishedAt)
   return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`
 })
 
+let pollTimer: number | undefined
+let dialogSession = 0
+
+const stopPolling = () => {
+  if (pollTimer !== undefined) {
+    window.clearInterval(pollTimer)
+    pollTimer = undefined
+  }
+}
+
+const reloadAfterSuccessfulUpdate = async () => {
+  const task = updateTask.value
+  if (!visible.value || task?.status !== 'SUCCESS' || !task.version || appVersion === task.version) return
+  const versionResponse = await getVersion()
+  if (visible.value && versionResponse.data === task.version) {
+    window.location.reload()
+  }
+}
+
+const refreshTask = async () => {
+  if (!visible.value) {
+    stopPolling()
+    return
+  }
+  try {
+    const response = await getSystemUpdateStatus()
+    if (!response.data) return
+    updateTask.value = response.data
+    if (!response.data.active) {
+      stopPolling()
+    }
+    await reloadAfterSuccessfulUpdate()
+  } catch {
+    // 应用重启期间继续保留轮询，服务恢复后自动读取持久任务状态
+  }
+}
+
+const startPolling = () => {
+  if (!visible.value || pollTimer !== undefined) return
+  pollTimer = window.setInterval(refreshTask, 2000)
+}
+
 const open = async () => {
+  const session = ++dialogSession
   checkMobile()
   visible.value = true
   loading.value = true
+  localError.value = ''
   try {
-    const res = await checkUpdate()
-    updateInfo.value = res.data || null
+    const [versionResult, statusResult] = await Promise.allSettled([
+      checkUpdate(),
+      getSystemUpdateStatus()
+    ])
+    if (!visible.value || session !== dialogSession) return
+    updateInfo.value = versionResult.status === 'fulfilled' ? versionResult.value.data || null : null
+    updateTask.value = statusResult.status === 'fulfilled' ? statusResult.value.data || null : null
+    if (!updateInfo.value && updateTask.value && updateTask.value.status !== 'IDLE') {
+      updateInfo.value = {
+        currentVersion: appVersion,
+        latestVersion: updateTask.value.version || appVersion,
+        hasUpdate: updateTask.value.status !== 'SUCCESS',
+        updateContent: '',
+        publishedAt: '',
+        downloadUrl: ''
+      }
+    }
+    if (!updateInfo.value) {
+      throw new Error('检查更新失败')
+    }
+    if (updateTask.value?.active) {
+      startPolling()
+    } else {
+      await reloadAfterSuccessfulUpdate()
+    }
   } catch {
-    updateInfo.value = null
+    if (session === dialogSession) {
+      updateInfo.value = null
+    }
   } finally {
-    loading.value = false
+    if (session === dialogSession) {
+      loading.value = false
+    }
   }
 }
 
 const close = () => {
   visible.value = false
+  dialogSession++
+  stopPolling()
 }
 
 const startUpdate = async () => {
-  if (updating.value || !updateInfo.value?.hasUpdate) return
-  updating.value = true
-  updateStatus.value = '正在提交更新任务...'
+  if (submitting.value || isUpdateRunning.value || !updateInfo.value?.hasUpdate) return
+  const session = dialogSession
+  submitting.value = true
+  localError.value = ''
   try {
-    await requestSystemUpdate()
-    updateStatus.value = '正在更新并重启服务，请稍候...'
-    for (let attempt = 0; attempt < 40; attempt++) {
-      await new Promise(resolve => setTimeout(resolve, 3000))
-      try {
-        const response = await getVersion()
-        if (response.data === updateInfo.value.latestVersion) {
-          window.location.reload()
-          return
-        }
-      } catch {
-        // 服务重启期间请求失败属于正常状态。
+    const response = await requestSystemUpdate()
+    if (visible.value && session === dialogSession && response.data) {
+      updateTask.value = response.data
+      startPolling()
+    } else if (visible.value && session !== dialogSession) {
+      await refreshTask()
+      if (updateTask.value?.active) {
+        startPolling()
       }
     }
-    updateStatus.value = '更新仍在执行，可稍后刷新页面查看'
   } catch (error: any) {
-    updateStatus.value = error.message || '自动更新提交失败'
-    updating.value = false
+    if (visible.value && session === dialogSession) {
+      localError.value = error.message || '自动更新提交失败'
+    }
+  } finally {
+    submitting.value = false
   }
 }
+
+onUnmounted(stopPolling)
 
 defineExpose({ open })
 </script>
@@ -132,7 +254,28 @@ defineExpose({ open })
               <IconCheck v-if="!isUpdateAvailable" />
               <span>{{ isUpdateAvailable ? '发现新版本' : '已是最新版本' }}</span>
             </div>
-            <div v-if="updateStatus" class="update-progress">{{ updateStatus }}</div>
+            <div
+              v-if="updateTask && updateTask.status !== 'IDLE'"
+              class="update-progress"
+              :class="{
+                'is-failed': updateTask.status === 'FAILED',
+                'is-success': updateTask.status === 'SUCCESS'
+              }"
+            >
+              <div class="progress-heading">
+                <span>{{ stageLabel }}</span>
+                <strong>{{ progressPercent }}%</strong>
+              </div>
+              <div class="progress-track">
+                <span :style="{ width: `${progressPercent}%` }"></span>
+              </div>
+              <div class="progress-message">{{ updateTask.message }}</div>
+              <div v-if="downloadText || taskUpdatedAt" class="progress-meta">
+                <span v-if="downloadText">{{ downloadText }}</span>
+                <span v-if="taskUpdatedAt">更新于 {{ taskUpdatedAt }}</span>
+              </div>
+            </div>
+            <div v-if="localError" class="update-progress is-failed">{{ localError }}</div>
 
             <!-- Changelog -->
             <div v-if="updateInfo.updateContent" class="changelog">
@@ -149,8 +292,21 @@ defineExpose({ open })
           <!-- Footer -->
           <div v-if="!loading && updateInfo" class="modal-footer">
             <button class="btn btn-secondary" @click="close">关闭</button>
-            <button v-if="isUpdateAvailable" class="btn btn-primary" :disabled="updating" @click="startUpdate">
-              {{ updating ? '更新中' : '立即更新' }}
+            <button
+              v-if="isUpdateAvailable"
+              class="btn btn-primary"
+              :disabled="submitting || isUpdateRunning"
+              @click="startUpdate"
+            >
+              {{
+                submitting
+                  ? '正在提交'
+                  : isUpdateRunning
+                    ? '更新进行中'
+                    : updateTask?.status === 'FAILED'
+                      ? '重新尝试'
+                      : '立即更新'
+              }}
             </button>
           </div>
         </div>
@@ -350,12 +506,76 @@ defineExpose({ open })
 
 .update-progress {
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   border-radius: 6px;
   color: #155eef;
   background: #eef4ff;
   font-size: 13px;
-  text-align: center;
+}
+
+.progress-heading,
+.progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progress-heading strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  height: 6px;
+  margin: 10px 0;
+  overflow: hidden;
+  border-radius: 99px;
+  background: rgba(21, 94, 239, .14);
+}
+
+.progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #155eef;
+  transition: width .25s ease;
+}
+
+.progress-message {
+  color: #344054;
+  line-height: 1.5;
+}
+
+.progress-meta {
+  margin-top: 6px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.update-progress.is-failed {
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.update-progress.is-failed .progress-track {
+  background: rgba(180, 35, 24, .12);
+}
+
+.update-progress.is-failed .progress-track span {
+  background: #d92d20;
+}
+
+.update-progress.is-success {
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.update-progress.is-success .progress-track {
+  background: rgba(6, 118, 71, .12);
+}
+
+.update-progress.is-success .progress-track span {
+  background: #12b76a;
 }
 
 .status-badge svg {

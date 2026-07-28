@@ -1,7 +1,10 @@
 package com.xianyusmart.controller;
 
 import com.xianyusmart.common.ResultObject;
+import com.xianyusmart.entity.SysUser;
+import com.xianyusmart.service.AuthService;
 import com.xianyusmart.service.OperationsDiagnosticsService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -26,14 +29,22 @@ import java.util.Map;
 public class OperationsDiagnosticsController {
 
     private final OperationsDiagnosticsService diagnosticsService;
+    private final AuthService authService;
 
-    public OperationsDiagnosticsController(OperationsDiagnosticsService diagnosticsService) {
+    public OperationsDiagnosticsController(OperationsDiagnosticsService diagnosticsService,
+                                           AuthService authService) {
         this.diagnosticsService = diagnosticsService;
+        this.authService = authService;
     }
 
     @GetMapping("/overview")
-    public ResultObject<Map<String, Object>> overview() {
-        return ResultObject.success(diagnosticsService.overview());
+    public ResultObject<Map<String, Object>> overview(HttpServletRequest request) {
+        Long userId = (Long) request.getAttribute("currentUserId");
+        SysUser user = userId == null ? null : authService.getCurrentUser(userId);
+        boolean platformAdmin = user != null
+                && Integer.valueOf(1).equals(user.getStatus())
+                && SysUser.ROLE_ADMIN.equalsIgnoreCase(user.getRole());
+        return ResultObject.success(diagnosticsService.overview(platformAdmin));
     }
 
     @GetMapping("/exceptions")

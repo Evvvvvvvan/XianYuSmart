@@ -3,7 +3,7 @@ import { ref, shallowRef, onMounted, onUnmounted, computed, provide, markRaw, wa
 import { RouterView, useRoute } from 'vue-router'
 import NavMenu from './NavMenu.vue'
 import UpdateDialog from './UpdateDialog.vue'
-import { checkUpdate } from '@/api/system'
+import { checkUpdate, getCurrentUser } from '@/api/system'
 
 // 导入所有页面图标
 import IconChart from '@/components/icons/IconChart.vue'
@@ -23,10 +23,14 @@ declare const __APP_VERSION__: string
 
 const currentVersion = ref(__APP_VERSION__ || '2.0.1')
 const hasNewVersion = ref(false)
+const isAdmin = ref(false)
 const updateDialog = ref<InstanceType<typeof UpdateDialog> | null>(null)
 
 const loadVersion = async () => {
   try {
+    const userRes = await getCurrentUser()
+    isAdmin.value = userRes.data?.role === 'ADMIN'
+    if (!isAdmin.value) return
     const updateRes = await checkUpdate()
     hasNewVersion.value = updateRes.data?.hasUpdate === true
   } catch {
@@ -35,6 +39,7 @@ const loadVersion = async () => {
 }
 
 const openUpdateDialog = () => {
+  if (!isAdmin.value) return
   updateDialog.value?.open()
 }
 
@@ -151,7 +156,7 @@ onUnmounted(() => {
 
 <template>
   <div class="app-layout">
-    <button v-if="hasNewVersion" class="update-notice" @click="openUpdateDialog">
+    <button v-if="isAdmin && hasNewVersion" class="update-notice" @click="openUpdateDialog">
       <span></span>发现新版本，立即更新
     </button>
     <!-- 手机端: 顶部导航栏 -->
@@ -187,13 +192,13 @@ onUnmounted(() => {
       <div v-if="(isMobile || isTablet) && drawerVisible" class="drawer-overlay" @click="closeDrawer">
         <div class="drawer-menu" @click.stop>
           <div class="drawer-header">
-            <div class="logo" @click="openUpdateDialog" style="cursor: pointer">
+            <div class="logo" :class="{ 'is-update-entry': isAdmin }" @click="openUpdateDialog">
               <div class="logo-icon">X</div>
               <div class="logo-text-wrap">
                 <div class="logo-text">XianYuSmart</div>
-                <div class="version-tag" :class="{ 'has-update': hasNewVersion }">
+                <div class="version-tag" :class="{ 'has-update': isAdmin && hasNewVersion }">
                   v{{ currentVersion }}
-                  <span v-if="hasNewVersion" class="update-dot"></span>
+                  <span v-if="isAdmin && hasNewVersion" class="update-dot"></span>
                 </div>
               </div>
             </div>
@@ -211,13 +216,13 @@ onUnmounted(() => {
     <!-- 桌面端: 固定侧边栏 -->
     <div v-if="isDesktop" class="layout-container">
       <aside class="sidebar">
-        <div class="logo" @click="openUpdateDialog" style="cursor: pointer">
+        <div class="logo" :class="{ 'is-update-entry': isAdmin }" @click="openUpdateDialog">
           <div class="logo-icon">X</div>
           <div class="logo-text-wrap">
             <div class="logo-text">XianYuSmart</div>
-            <div class="version-tag" :class="{ 'has-update': hasNewVersion }">
+            <div class="version-tag" :class="{ 'has-update': isAdmin && hasNewVersion }">
               v{{ currentVersion }}
-              <span v-if="hasNewVersion" class="update-dot"></span>
+              <span v-if="isAdmin && hasNewVersion" class="update-dot"></span>
             </div>
           </div>
         </div>
@@ -245,7 +250,7 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <UpdateDialog ref="updateDialog" />
+    <UpdateDialog v-if="isAdmin" ref="updateDialog" />
   </div>
 </template>
 
@@ -256,6 +261,10 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.logo.is-update-entry {
+  cursor: pointer;
 }
 
 .update-notice {

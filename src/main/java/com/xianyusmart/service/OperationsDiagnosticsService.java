@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,7 +32,7 @@ public class OperationsDiagnosticsService {
         this.systemUpdateService = systemUpdateService;
     }
 
-    public Map<String, Object> overview() {
+    public Map<String, Object> overview(boolean includePlatformChecks) {
         Long tenantId = requireTenantId();
         long accountAbnormal = count("""
                 SELECT COUNT(*)
@@ -124,21 +125,25 @@ public class OperationsDiagnosticsService {
         long websocketDisconnected = activeAccountIds.stream()
                 .filter(accountId -> !webSocketService.isConnected(accountId)).count();
         long versionWarning = 0;
+        long updateAgentWarning = 0;
         String versionAction = "当前已是最新版本";
-        try {
-            var version = systemUpdateService.checkUpdate();
-            if (Boolean.TRUE.equals(version.getHasUpdate())) {
+        boolean updateAgentAvailable = true;
+        if (includePlatformChecks) {
+            try {
+                var version = systemUpdateService.checkUpdate();
+                if (Boolean.TRUE.equals(version.getHasUpdate())) {
+                    versionWarning = 1;
+                    versionAction = "发现新版本 " + version.getLatestVersion() + "，可在右上角自动更新";
+                }
+            } catch (Exception e) {
                 versionWarning = 1;
-                versionAction = "发现新版本 " + version.getLatestVersion() + "，可在右上角自动更新";
+                versionAction = "版本服务暂时不可用，请稍后重试";
             }
-        } catch (Exception e) {
-            versionWarning = 1;
-            versionAction = "版本服务暂时不可用，请稍后重试";
+            updateAgentAvailable = Boolean.TRUE.equals(systemUpdateService.updateAgentStatus().get("available"));
+            updateAgentWarning = updateAgentAvailable ? 0 : 1;
         }
-        boolean updateAgentAvailable = Boolean.TRUE.equals(systemUpdateService.updateAgentStatus().get("available"));
-        long updateAgentWarning = updateAgentAvailable ? 0 : 1;
 
-        List<Map<String, Object>> checks = List.of(
+        List<Map<String, Object>> checks = new ArrayList<>(List.of(
                 check("DATABASE", "数据库服务", 0, "检查数据库连接"),
                 check("WEBSOCKET", "实时连接", websocketDisconnected, "系统正在自动恢复断开的账号连接"),
                 check("ACCOUNT", "账号连接", accountAbnormal + cookieInvalid, "检查异常账号或更新登录凭证"),
@@ -146,11 +151,13 @@ public class OperationsDiagnosticsService {
                 check("REPLY", "自动回复", replyFailed, "检查失败回复记录"),
                 check("STOCK", "卡密库存", lowStock, "补充低库存卡密仓库"),
                 check("EXTERNAL_SUPPLY", "外部卡密供货", externalReview, "核对失败或不确定的外部供货请求"),
-                check("NOTIFICATION", "通知渠道", notificationFailed, "检查近24小时发送失败的通知"),
-                check("VERSION", "版本状态", versionWarning, versionAction),
-                check("UPDATE_AGENT", "自动更新服务", updateAgentWarning,
-                        updateAgentAvailable ? "自动更新服务运行正常" : "自动更新服务尚未就绪")
-        );
+                check("NOTIFICATION", "通知渠道", notificationFailed, "检查近24小时发送失败的通知")
+        ));
+        if (includePlatformChecks) {
+            checks.add(check("VERSION", "版本状态", versionWarning, versionAction));
+            checks.add(check("UPDATE_AGENT", "自动更新服务", updateAgentWarning,
+                    updateAgentAvailable ? "自动更新服务运行正常" : "自动更新服务尚未就绪"));
+        }
         long criticalCount = deliveryFailed + deliveryReview + externalReview;
         long warningCount = accountAbnormal + cookieInvalid + websocketDisconnected
                 + replyFailed + lowStock + notificationFailed + versionWarning + updateAgentWarning;

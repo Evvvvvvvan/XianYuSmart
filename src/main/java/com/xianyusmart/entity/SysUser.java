@@ -13,6 +13,9 @@ import lombok.Data;
 @TableName("sys_user")
 public class SysUser {
 
+    public static final String ROLE_ADMIN = "ADMIN";
+    public static final String ROLE_USER = "USER";
+
     @TableId(type = IdType.AUTO)
     private Long id;
 
@@ -21,6 +24,9 @@ public class SysUser {
 
     /** 密码（BCrypt加密） */
     private String password;
+
+    /** 平台角色：ADMIN 管理员，USER 普通租户 */
+    private String role;
 
     /** 状态 1:正常 0:禁用 */
     private Integer status;

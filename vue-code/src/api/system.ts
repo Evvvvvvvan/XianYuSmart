@@ -1,8 +1,27 @@
 import { request } from '@/utils/request'
 
+export type UserRole = 'ADMIN' | 'USER'
+
+export interface SystemUpdateStatus {
+  available: boolean
+  requestPending: boolean
+  active: boolean
+  canRetry: boolean
+  taskId?: string
+  version?: string
+  status: 'IDLE' | 'REQUESTED' | 'CHECKING' | 'DOWNLOADING' | 'VERIFYING'
+    | 'INSTALLING' | 'RESTARTING' | 'HEALTH_CHECKING' | 'SUCCESS' | 'FAILED'
+  progress: number
+  message?: string
+  downloadedBytes: number
+  totalBytes: number
+  requestedAt?: string
+  updatedAt?: string
+}
+
 /** 获取当前用户信息 */
 export function getCurrentUser() {
-  return request<{ username: string; lastLoginTime: string }>({
+  return request<{ username: string; role: UserRole; lastLoginTime: string }>({
     url: '/system/currentUser',
     method: 'post'
   })
@@ -42,8 +61,16 @@ export function checkUpdate() {
 
 /** 请求服务器自动更新到最新正式版本 */
 export function requestSystemUpdate() {
-  return request<{ version: string; status: string }>({
+  return request<SystemUpdateStatus>({
     url: '/system/update',
     method: 'post'
+  })
+}
+
+/** 获取当前自动更新任务状态 */
+export function getSystemUpdateStatus() {
+  return request<SystemUpdateStatus>({
+    url: '/system/update/status',
+    method: 'get'
   })
 }

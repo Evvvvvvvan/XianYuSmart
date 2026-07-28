@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
+BOOTSTRAP_ADMIN_PASSWORD=""
 
 random_hex() {
     local bytes="$1"
@@ -33,11 +34,13 @@ if [ ! -f .env ]; then
     DB_PASSWORD="$(random_hex 24)"
     DB_ROOT_PASSWORD="$(random_hex 24)"
     JWT_SECRET="$(random_hex 48)"
+    BOOTSTRAP_ADMIN_PASSWORD="$(random_hex 12)"
 
     # 首次安装生成独立密钥，避免示例凭据进入运行环境。
     sed -i "s/change-me-database-password/$DB_PASSWORD/" .env
     sed -i "s/change-me-root-password/$DB_ROOT_PASSWORD/" .env
     sed -i "s/change-me-to-at-least-32-random-bytes/$JWT_SECRET/" .env
+    sed -i "s/change-me-bootstrap-admin-password/$BOOTSTRAP_ADMIN_PASSWORD/" .env
     chmod 600 .env
 fi
 
@@ -46,5 +49,9 @@ docker compose ps
 
 echo
 echo "XianYuSmart 已启动: http://localhost:12400"
+if [ -n "$BOOTSTRAP_ADMIN_PASSWORD" ]; then
+    echo "初始管理员: admin"
+    echo "初始密码: $BOOTSTRAP_ADMIN_PASSWORD"
+fi
 echo "公网部署需先配置 deploy/nginx/certs、ALLOWED_ORIGINS 和 TRUST_PROXY，再执行:"
 echo "docker compose --profile proxy up -d"
