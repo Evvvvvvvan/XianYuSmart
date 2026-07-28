@@ -14,7 +14,7 @@ services:
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-28800000}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
       TRUST_PROXY: ${TRUST_PROXY:-true}
-      UPDATE_RELEASE_API: ${UPDATE_RELEASE_API:-}
+      UPDATE_RELEASE_API: ${UPDATE_RELEASE_API:-https://api.github.com/repos/Evvvvvvvan/XianYuSmart/releases/latest}
       UPDATE_REQUEST_DIR: /app/update
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
       DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-2}

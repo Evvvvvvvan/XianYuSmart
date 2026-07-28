@@ -42,7 +42,7 @@ services:
       JWT_EXPIRATION_MS: ${JWT_EXPIRATION_MS:-28800000}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:12400}
       TRUST_PROXY: ${TRUST_PROXY:-false}
-      UPDATE_RELEASE_API: ${UPDATE_RELEASE_API:-}
+      UPDATE_RELEASE_API: ${UPDATE_RELEASE_API:-https://api.github.com/repos/Evvvvvvvan/XianYuSmart/releases/latest}
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
       DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-2}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -XX:+ExitOnOutOfMemoryError}

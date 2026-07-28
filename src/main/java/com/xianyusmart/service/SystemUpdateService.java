@@ -25,6 +25,9 @@ import java.util.Map;
 @Service
 public class SystemUpdateService {
 
+    private static final String DEFAULT_RELEASE_API =
+            "https://api.github.com/repos/Evvvvvvvan/XianYuSmart/releases/latest";
+
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
@@ -49,12 +52,10 @@ public class SystemUpdateService {
         result.setCurrentVersion(currentVersion);
         result.setLatestVersion(currentVersion);
         result.setHasUpdate(false);
-        if (releaseApi == null || releaseApi.isBlank()) {
-            return result;
-        }
         try {
+            String endpoint = releaseApi == null || releaseApi.isBlank() ? DEFAULT_RELEASE_API : releaseApi;
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(releaseApi))
+                    .uri(URI.create(endpoint))
                     .timeout(Duration.ofSeconds(15))
                     .header("Accept", "application/vnd.github+json")
                     .header("User-Agent", "XianYuSmart")
