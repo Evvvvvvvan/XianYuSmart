@@ -19,6 +19,8 @@ DOWNLOAD_ATTEMPTS=5
 TASK_ID=""
 TARGET_VERSION=""
 REQUESTED_AT=""
+REQUEST_UID=""
+REQUEST_GID=""
 CURRENT_PROGRESS=0
 DOWNLOADED_BYTES=0
 TOTAL_BYTES=0
@@ -56,6 +58,8 @@ status() {
     printf '{"taskId":"%s","version":"%s","status":"%s","progress":%s,"message":"%s","downloadedBytes":%s,"totalBytes":%s,"requestedAt":"%s","updatedAt":"%s"}\n' \
         "$TASK_ID" "$TARGET_VERSION" "$state" "$progress" "$message" "$downloaded" "$total" \
         "$REQUESTED_AT" "$(date -u +%FT%TZ)" > "$STATUS.tmp"
+    # 状态文件保持为应用用户所有，保证粘滞目录中的后续更新请求可以原子替换。
+    chown "$REQUEST_UID:$REQUEST_GID" "$STATUS.tmp"
     mv -f "$STATUS.tmp" "$STATUS"
 }
 
@@ -155,6 +159,9 @@ TASK_ID="${REQUEST_META[0]}"
 TARGET_VERSION="${REQUEST_META[1]}"
 REQUESTED_AT="${REQUEST_META[2]}"
 [[ -n "$TASK_ID" && -n "$TARGET_VERSION" && -n "$REQUESTED_AT" ]]
+REQUEST_UID="$(stat -c %u "$REQUEST")"
+REQUEST_GID="$(stat -c %g "$REQUEST")"
+[[ "$REQUEST_UID" =~ ^[0-9]+$ && "$REQUEST_GID" =~ ^[0-9]+$ ]]
 
 exec 9>"$RUNTIME/deploy.lock"
 flock -w 180 9
