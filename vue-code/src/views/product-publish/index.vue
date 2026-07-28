@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getAccountList } from '@/api/account'
+import { uploadImage } from '@/api/image'
 import { createPublishPlan, getResources, type MerchantResource } from '@/api/merchant'
 import { CHINA_PROVINCES, CHINA_REGIONS } from '@/data/china-regions'
 import type { Account } from '@/types'
@@ -8,7 +9,9 @@ import { toast } from '@/utils/toast'
 import '@/styles/merchant-workbench.css'
 
 const step = ref(1)
+const maxStep = ref(1)
 const loading = ref(false)
+const uploading = ref(false)
 const accounts = ref<Account[]>([])
 const materials = ref<MerchantResource[]>([])
 const form = reactive({
@@ -46,18 +49,54 @@ const useMaterial = (event: Event) => {
   form.imagesText = Array.isArray(material.data?.images) ? material.data.images.join('\n') : ''
 }
 
+const uploadFiles = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const files = Array.from(input.files || [])
+  if (!form.xianyuAccountId) return toast.error('请先选择发布账号')
+  if (images.value.length + files.length > 9) return toast.error('商品图片最多9张')
+  uploading.value = true
+  try {
+    for (const file of files) {
+      const response = await uploadImage(form.xianyuAccountId, file)
+      if (response.data) {
+        form.imagesText = [form.imagesText.trim(), response.data].filter(Boolean).join('\n')
+      }
+    }
+    toast.success(`已上传 ${files.length} 张图片`)
+  } finally {
+    uploading.value = false
+    input.value = ''
+  }
+}
+
+const removeImage = (target: string) => {
+  form.imagesText = images.value.filter(image => image !== target).join('\n')
+}
+
 const next = () => {
   if (step.value === 1 && (!form.name.trim() || !form.description.trim())) return toast.error('请完善标题和详情')
   if (step.value === 2 && (!form.amount || !images.value.length)) return toast.error('请完善价格并添加图片')
   if (step.value === 3 && !form.xianyuAccountId) return toast.error('请选择发布账号')
   step.value = Math.min(4, step.value + 1)
+  maxStep.value = Math.max(maxStep.value, step.value)
+}
+
+const goStep = (target: number) => {
+  if (target <= maxStep.value) step.value = target
 }
 
 const submit = async (dryRun: boolean) => {
   loading.value = true
   try {
-    await createPublishPlan({ ...form, images: images.value, dryRun })
-    toast.success(dryRun ? '发布前校验通过' : '商品发布任务已提交')
+    const response = await createPublishPlan({ ...form, images: images.value, dryRun })
+    if (response.data?.valid === false) {
+      return toast.error(String(response.data.error || '商品发布失败'))
+    }
+    const category = response.data?.platform?.category?.catName
+    const itemId = response.data?.platform?.itemId
+    toast.success(dryRun
+      ? `平台校验通过${category ? `，识别类目：${category}` : ''}`
+      : `平台已确认发布成功${itemId ? `，商品 ID：${itemId}` : ''}`)
   } finally {
     loading.value = false
   }
@@ -72,7 +111,7 @@ onMounted(load)
       <div><h1>商品发布</h1><p>本地行政区划、素材复用和发布前校验均已内置，无需额外 API Key。</p></div>
     </header>
     <div class="workbench__steps">
-      <button v-for="(label, index) in ['1 商品内容', '2 价格图片', '3 账号位置', '4 确认发布']" :key="label" class="workbench__step" :class="{ 'workbench__step--active': step === index + 1 }" @click="step = index + 1">{{ label }}</button>
+      <button v-for="(label, index) in ['1 商品内容', '2 价格图片', '3 账号位置', '4 确认发布']" :key="label" class="workbench__step" :class="{ 'workbench__step--active': step === index + 1 }" :disabled="index + 1 > maxStep" @click="goStep(index + 1)">{{ label }}</button>
     </div>
 
     <form class="workbench__card publish__panel workbench__section" @submit.prevent>
@@ -84,14 +123,16 @@ onMounted(load)
       <template v-else-if="step === 2">
         <div class="workbench__grid workbench__grid--two">
           <label class="workbench__field">售价<input v-model.number="form.amount" class="workbench__input" type="number" min="0.01" step="0.01"></label>
-          <label class="workbench__field">库存<input v-model.number="form.stock" class="workbench__input" type="number" min="0"></label>
-          <label class="workbench__field">商品分类<input v-model="form.category" class="workbench__input"></label>
+          <label class="workbench__field">库存<input v-model.number="form.stock" class="workbench__input" type="number" min="1"></label>
+          <label class="workbench__field">素材分类<input v-model="form.category" class="workbench__input"><small>仅用于站内整理，提交时由闲鱼根据标题、详情和图片识别真实类目。</small></label>
           <label class="workbench__field">交付方式<select v-model="form.deliveryMethod" class="workbench__select"><option>线上交付</option><option>快递发货</option><option>当面交易</option></select></label>
         </div>
-        <label class="workbench__field">图片 HTTPS 地址（每行一张，最多 9 张）<textarea v-model="form.imagesText" class="workbench__textarea" maxlength="5000"></textarea></label>
-        <div class="publish__images"><img v-for="image in images.slice(0, 9)" :key="image" :src="image" alt=""></div>
+        <label class="workbench__field">上传商品图片（最多 9 张）<input class="workbench__input" type="file" accept="image/*" multiple :disabled="uploading" @change="uploadFiles"></label>
+        <label class="workbench__field">或填写图片 HTTPS 地址（每行一张）<textarea v-model="form.imagesText" class="workbench__textarea" maxlength="5000"></textarea></label>
+        <div class="publish__images"><button v-for="image in images.slice(0, 9)" :key="image" type="button" @click="removeImage(image)"><img :src="image" alt=""><span>移除</span></button></div>
       </template>
       <template v-else-if="step === 3">
+        <div class="publish__notice">实际发布位置会读取该闲鱼账号已保存的常用位置；本地行政区划用于整理素材信息，平台未返回有效位置时会停止发布并明确提示。</div>
         <div class="workbench__grid workbench__grid--two">
           <label class="workbench__field">发布账号<select v-model="form.xianyuAccountId" class="workbench__select"><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option></select></label>
           <label class="workbench__field">省份<select v-model="form.province" class="workbench__select" @change="form.city = cities[0] || ''"><option v-for="province in CHINA_PROVINCES" :key="province">{{ province }}</option></select></label>
@@ -109,7 +150,7 @@ onMounted(load)
             <small>{{ form.category }} · {{ form.deliveryMethod }} · {{ form.province }} {{ form.city }} {{ form.district }}</small>
           </div>
         </div>
-        <div class="publish__notice">提交后进入后台任务队列；遇到平台验证时会停止执行并提示人工处理，不会反复重试触发风控。</div>
+        <div class="publish__notice">提交后将立即调用闲鱼发布接口；只有平台返回真实商品 ID 才会显示成功。遇到平台验证时会停止执行并提示人工处理。</div>
       </template>
       <footer class="workbench__actions publish__footer">
         <button v-if="step > 1" class="workbench__btn" @click="step--">上一步</button>
@@ -128,7 +169,9 @@ onMounted(load)
 .publish__panel > .workbench__field { margin-bottom: 14px; }
 .publish__footer { justify-content: flex-end; margin-top: 18px; }
 .publish__images { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-top: 12px; }
-.publish__images img { width: 100%; aspect-ratio: 1; border-radius: 7px; object-fit: cover; background: #f2f4f7; }
+.publish__images button { position: relative; overflow: hidden; padding: 0; border: 0; border-radius: 7px; background: #f2f4f7; cursor: pointer; }
+.publish__images img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.publish__images span { position: absolute; right: 4px; bottom: 4px; padding: 3px 6px; border-radius: 4px; color: #fff; background: rgba(16, 24, 40, .72); font-size: 10px; }
 .publish__summary { display: grid; grid-template-columns: 200px 1fr; gap: 18px; }
 .publish__summary img { width: 200px; height: 200px; border-radius: 8px; object-fit: cover; background: #f2f4f7; }
 .publish__summary p { color: #667085; white-space: pre-wrap; }

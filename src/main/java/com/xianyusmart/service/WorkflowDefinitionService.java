@@ -30,6 +30,7 @@ public class WorkflowDefinitionService {
         }
 
         Map<String, Map<String, Object>> nodeById = new LinkedHashMap<>();
+        Map<String, Integer> typeCounts = new HashMap<>();
         int triggerCount = 0;
         String triggerId = null;
         for (Map<String, Object> node : nodes) {
@@ -42,9 +43,13 @@ public class WorkflowDefinitionService {
                 triggerCount++;
                 triggerId = id;
             }
+            typeCounts.merge(type, 1, Integer::sum);
         }
         if (triggerCount != 1) {
             throw new IllegalArgumentException("工作流必须且只能包含一个触发器");
+        }
+        if (typeCounts.values().stream().anyMatch(count -> count > 1)) {
+            throw new IllegalArgumentException("同一种业务节点只能添加一次");
         }
 
         Map<String, Integer> indegree = new LinkedHashMap<>();
@@ -70,6 +75,12 @@ public class WorkflowDefinitionService {
             if (!entry.getKey().equals(triggerId) && entry.getValue() == 0) {
                 throw new IllegalArgumentException("工作流存在未连接到触发器的节点");
             }
+            if (!entry.getKey().equals(triggerId) && entry.getValue() != 1) {
+                throw new IllegalArgumentException("工作流仅支持单路径执行，每个节点只能有一个上游");
+            }
+        }
+        if (outgoing.values().stream().anyMatch(targets -> targets.size() > 1)) {
+            throw new IllegalArgumentException("工作流仅支持单路径执行，每个节点只能连接一个下游");
         }
 
         Queue<String> ready = new ArrayDeque<>();
@@ -92,7 +103,25 @@ public class WorkflowDefinitionService {
         if (sorted.size() != nodes.size()) {
             throw new IllegalArgumentException("工作流存在循环依赖");
         }
+        validateBusinessOrder(sorted);
         return sorted;
+    }
+
+    private void validateBusinessOrder(List<Map<String, Object>> sorted) {
+        Set<String> completedTypes = new HashSet<>();
+        for (Map<String, Object> node : sorted) {
+            String type = text(node.get("type")).toUpperCase();
+            if (("FILTER".equals(type) || "COLLECT".equals(type)) && !completedTypes.contains("SEARCH")) {
+                throw new IllegalArgumentException("机会筛选和货源采集必须位于商机搜索之后");
+            }
+            if ("MATERIAL".equals(type) && !completedTypes.contains("COLLECT")) {
+                throw new IllegalArgumentException("素材生成必须位于写入货源之后");
+            }
+            if ("PUBLISH".equals(type) && !completedTypes.contains("MATERIAL")) {
+                throw new IllegalArgumentException("商品发布必须位于生成素材之后");
+            }
+            completedTypes.add(type);
+        }
     }
 
     private List<Map<String, Object>> maps(Object value) {

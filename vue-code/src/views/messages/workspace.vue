@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMessageManager } from './useMessageManager'
 import ContextDialog from './components/ContextDialog.vue'
-import type { ChatMessage } from '@/api/message'
+import { getConversationProfiles, type ChatMessage, type ConversationProfile } from '@/api/message'
 import '@/styles/merchant-workbench.css'
 
 const {
@@ -23,6 +23,21 @@ const {
 const selectedSid = ref('')
 const searchText = ref('')
 const contextVisible = ref(false)
+const profiles = ref<Record<string, ConversationProfile>>({})
+const failedImages = ref(new Set<string>())
+
+const normalizeImageUrl = (value?: string) => {
+  if (!value) return ''
+  if (value.startsWith('//')) return `https:${value}`
+  return value.startsWith('http://') ? `https://${value.slice(7)}` : value
+}
+
+const markImageError = (url?: string) => {
+  if (!url) return
+  failedImages.value = new Set([...failedImages.value, url])
+}
+
+const imageAvailable = (url?: string) => Boolean(url && !failedImages.value.has(url))
 
 const conversations = computed(() => {
   const groups = new Map<string, ChatMessage[]>()
@@ -36,14 +51,16 @@ const conversations = computed(() => {
     const latest = ordered[0]!
     const buyer = ordered.find(message => message.senderUserId !== currentUserId) || latest
     const goods = goodsList.value.find(item => item.item.xyGoodId === latest.xyGoodsId)
+    const profile = profiles.value[sid]
     return {
       sid,
       messages: ordered,
-      buyerName: buyer?.senderUserName || '买家',
+      buyerName: profile?.nick || buyer?.senderUserName || '买家',
       buyerId: buyer?.senderUserId || '',
+      buyerAvatar: normalizeImageUrl(profile?.avatar),
       latest,
       goodsTitle: goods?.item.title || latest.xyGoodsId || '未关联商品',
-      goodsCover: goods?.item.coverPic || ''
+      goodsCover: normalizeImageUrl(goods?.item.coverPic || '')
     }
   }).filter(item => {
     const keyword = searchText.value.trim().toLowerCase()
@@ -57,6 +74,32 @@ watch(conversations, value => {
   if (!value.length) selectedSid.value = ''
   else if (!value.some(item => item.sid === selectedSid.value)) selectedSid.value = value[0]!.sid
 }, { immediate: true })
+
+watch(selectedAccountId, () => {
+  // 账号切换后重新读取会话资料，避免不同账号复用同一会话标识时串用头像。
+  profiles.value = {}
+  failedImages.value = new Set()
+})
+
+watch([selectedAccountId, messageList], async () => {
+  if (!selectedAccountId.value) return
+  const accountId = selectedAccountId.value
+  const sessionIds = [...new Set(messageList.value
+    .filter(message => message.xianyuAccountId === accountId)
+    .map(message => message.sid)
+    .filter(Boolean))]
+    .filter(sid => !profiles.value[sid])
+  for (let index = 0; index < sessionIds.length; index += 20) {
+    const response = await getConversationProfiles({
+      xianyuAccountId: accountId,
+      sessionIds: sessionIds.slice(index, index + 20)
+    })
+    if (selectedAccountId.value !== accountId) return
+    for (const profile of response.data || []) {
+      profiles.value[profile.sid] = profile
+    }
+  }
+}, { deep: false })
 
 const refresh = () => loadMessages(true)
 let timer: ReturnType<typeof setInterval> | undefined
@@ -91,7 +134,8 @@ onBeforeUnmount(() => {
           <label><input v-model="filterCurrentAccount" type="checkbox" @change="loadMessages()"> 只看买家消息</label>
         </div>
         <button v-for="conversation in conversations" :key="conversation.sid" class="chat__conversation" :class="{ 'chat__conversation--active': selected?.sid === conversation.sid }" @click="selectedSid = conversation.sid">
-          <div class="chat__avatar">{{ conversation.buyerName.slice(0, 1) }}</div>
+          <img v-if="imageAvailable(conversation.buyerAvatar)" class="chat__avatar chat__avatar--image" :src="conversation.buyerAvatar" alt="" @error="markImageError(conversation.buyerAvatar)">
+          <div v-else class="chat__avatar">{{ conversation.buyerName.slice(0, 1) }}</div>
           <div>
             <strong>{{ conversation.buyerName }}</strong>
             <span>{{ conversation.goodsTitle }}</span>
@@ -105,7 +149,8 @@ onBeforeUnmount(() => {
       <main class="workbench__card chat__main">
         <template v-if="selected">
           <header class="chat__main-header">
-            <div class="chat__avatar">{{ selected.buyerName.slice(0, 1) }}</div>
+            <img v-if="imageAvailable(selected.buyerAvatar)" class="chat__avatar chat__avatar--image" :src="selected.buyerAvatar" alt="" @error="markImageError(selected.buyerAvatar)">
+            <div v-else class="chat__avatar">{{ selected.buyerName.slice(0, 1) }}</div>
             <div><strong>{{ selected.buyerName }}</strong><span>{{ selected.goodsTitle }}</span></div>
             <button class="workbench__btn workbench__btn--primary" @click="contextVisible = true">进入会话</button>
           </header>
@@ -124,7 +169,8 @@ onBeforeUnmount(() => {
       <aside class="workbench__card chat__context">
         <h2>关联信息</h2>
         <template v-if="selected">
-          <img :src="selected.goodsCover" alt="">
+          <img v-if="imageAvailable(selected.goodsCover)" :src="selected.goodsCover" alt="" @error="markImageError(selected.goodsCover)">
+          <div v-else class="chat__cover-empty">暂无商品图片</div>
           <strong>{{ selected.goodsTitle }}</strong>
           <dl>
             <dt>买家</dt><dd>{{ selected.buyerName }}</dd>
@@ -166,6 +212,7 @@ onBeforeUnmount(() => {
 .chat__conversation span, .chat__conversation p, .chat__conversation time { color: #667085; font-size: 11px; }
 .chat__conversation p { margin: 5px 0 0; }
 .chat__avatar { display: grid; width: 38px; height: 38px; flex: 0 0 38px; place-items: center; border-radius: 50%; color: #155eef; background: #eaf0ff; font-weight: 700; }
+.chat__avatar--image { display: block; object-fit: cover; }
 .chat__main { display: flex; flex-direction: column; }
 .chat__main-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #eaecf0; }
 .chat__main-header div:nth-child(2) { display: flex; min-width: 0; flex: 1; flex-direction: column; }
@@ -180,6 +227,7 @@ onBeforeUnmount(() => {
 .chat__context { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
 .chat__context h2 { margin: 0; font-size: 16px; }
 .chat__context img { width: 100%; aspect-ratio: 4 / 3; border-radius: 7px; object-fit: cover; background: #f2f4f7; }
+.chat__cover-empty { display: grid; width: 100%; aspect-ratio: 4 / 3; place-items: center; border-radius: 7px; color: #98a2b3; background: #f2f4f7; font-size: 12px; }
 .chat__context dl { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 8px; margin: 0; font-size: 12px; }
 .chat__context dt { color: #667085; }
 .chat__context dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

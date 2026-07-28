@@ -225,9 +225,10 @@ public class MerchantOperationsService {
         Map<String, Object> data = new HashMap<>(request);
         data.remove("dryRun");
         boolean dryRun = Boolean.TRUE.equals(request.get("dryRun"));
+        Map<String, Object> preflight = platformPublishService.preflight(request, accountId);
         if (dryRun) {
-            // 预检只验证发布参数，不写入素材和任务，避免重复校验产生冗余数据。
-            return Map.of("valid", true, "dryRun", true, "preview", data);
+            // 预检必须经过平台类目和默认地址接口，避免仅校验本地字段造成虚假通过。
+            return Map.of("valid", true, "dryRun", true, "preview", data, "platform", preflight);
         }
         MerchantResourceReqDTO materialRequest = new MerchantResourceReqDTO();
         materialRequest.setResourceType("MATERIAL");
@@ -244,7 +245,25 @@ public class MerchantOperationsService {
         taskRequest.setResourceId(material.getId());
         taskRequest.setXianyuAccountId(accountId);
         MerchantTask task = createTask(taskRequest);
-        return Map.of("valid", true, "dryRun", false, "material", material, "task", task);
+        executeTask(task);
+        MerchantTask completedTask = taskMapper.selectById(task.getId());
+        if (completedTask == null || completedTask.getStatus() != 2) {
+            String error = completedTask == null ? "发布任务状态丢失" : completedTask.getErrorMessage();
+            return Map.of(
+                    "valid", false,
+                    "dryRun", false,
+                    "material", material,
+                    "task", completedTask == null ? task : completedTask,
+                    "error", error == null || error.isBlank() ? "商品发布失败" : error
+            );
+        }
+        return Map.of(
+                "valid", true,
+                "dryRun", false,
+                "material", material,
+                "task", completedTask,
+                "platform", readJson(completedTask.getResultJson())
+        );
     }
 
     public void deleteResource(Long id) {
@@ -560,7 +579,13 @@ public class MerchantOperationsService {
                             publishRequest.setTaskType("PUBLISH");
                             publishRequest.setResourceId(materialId);
                             publishRequest.setXianyuAccountId(accountId);
-                            createTask(publishRequest);
+                            MerchantTask publishTask = createTask(publishRequest);
+                            executeTask(publishTask);
+                            MerchantTask completedTask = taskMapper.selectById(publishTask.getId());
+                            if (completedTask == null || completedTask.getStatus() != 2) {
+                                throw new IllegalStateException(completedTask == null
+                                        ? "发布任务状态丢失" : completedTask.getErrorMessage());
+                            }
                         }
                     }
                     result.put("count", materialIds.size());

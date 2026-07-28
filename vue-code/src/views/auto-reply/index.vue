@@ -965,7 +965,7 @@ onMounted(() => {
                       :key="idx"
                       class="ar__record-question"
                     >
-                      <span class="ar__record-question-label">Q{{ idx + 1 }}</span>
+                      <span class="ar__record-question-label">Q{{ Number(idx) + 1 }}</span>
                       <span class="ar__record-question-text">{{ msg.msgContent }}</span>
                     </div>
                     <div
@@ -1089,7 +1089,7 @@ onMounted(() => {
                   class="ar__detail-hit-item"
                 >
                   <div class="ar__detail-hit-meta">
-                    <span class="ar__detail-hit-doc">文档 #{{ idx + 1 }}</span>
+                    <span class="ar__detail-hit-doc">文档 #{{ Number(idx) + 1 }}</span>
                     <span v-if="hit.score" class="ar__detail-hit-score">相似度: {{ (hit.score * 100).toFixed(1) }}%</span>
                   </div>
                   <div class="ar__detail-hit-content">{{ hit.content }}</div>

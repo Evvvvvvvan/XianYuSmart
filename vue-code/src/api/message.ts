@@ -31,6 +31,12 @@ export interface MessageListResponse {
   pageSize: number;
 }
 
+export interface ConversationProfile {
+  sid: string;
+  avatar: string;
+  nick: string;
+}
+
 // 获取消息列表
 export function getMessageList(data: {
   xianyuAccountId: number;
@@ -56,6 +62,17 @@ export function getContextMessages(data: {
     url: '/msg/context',
     method: 'POST',
     data: { sid: data.sid, limit: data.limit || 20, offset: data.offset || 0 }
+  });
+}
+
+export function getConversationProfiles(data: {
+  xianyuAccountId: number;
+  sessionIds: string[];
+}) {
+  return request<ConversationProfile[]>({
+    url: '/msg/conversation-profiles',
+    method: 'POST',
+    data
   });
 }
 

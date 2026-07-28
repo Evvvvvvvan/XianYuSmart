@@ -5,6 +5,7 @@ import com.xianyusmart.controller.dto.MsgContextReqDTO;
 import com.xianyusmart.controller.dto.MsgListReqDTO;
 import com.xianyusmart.controller.dto.MsgListRespDTO;
 import com.xianyusmart.service.ChatMessageService;
+import com.xianyusmart.service.PlatformConversationProfileService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -19,6 +20,9 @@ public class MsgController {
 
     @Autowired
     private ChatMessageService chatMessageService;
+
+    @Autowired
+    private PlatformConversationProfileService conversationProfileService;
 
     /**
      * 分页查询消息列表
@@ -53,6 +57,20 @@ public class MsgController {
         } catch (Exception e) {
             log.error("查询上下文消息失败", e);
             return ResultObject.failed("查询上下文消息失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/conversation-profiles")
+    public ResultObject<?> getConversationProfiles(@RequestBody java.util.Map<String, Object> request) {
+        try {
+            Long accountId = request.get("xianyuAccountId") == null
+                    ? null : Long.valueOf(String.valueOf(request.get("xianyuAccountId")));
+            java.util.List<String> sessionIds = request.get("sessionIds") instanceof java.util.List<?> values
+                    ? values.stream().map(String::valueOf).toList() : java.util.List.of();
+            return ResultObject.success(conversationProfileService.query(accountId, sessionIds));
+        } catch (Exception e) {
+            log.error("查询会话买家资料失败", e);
+            return ResultObject.failed("查询会话买家资料失败: " + e.getMessage());
         }
     }
 }

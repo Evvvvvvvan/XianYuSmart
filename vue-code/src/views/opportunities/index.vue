@@ -15,6 +15,8 @@ const results = ref<OpportunityCandidate[]>([])
 const selectedIds = ref<string[]>([])
 const active = ref<OpportunityCandidate>()
 const step = ref(1)
+const maxStep = ref(1)
+const searched = ref(false)
 const draft = reactive({
   name: '',
   description: '',
@@ -39,10 +41,12 @@ const loadAccounts = async () => {
 
 const search = async () => {
   if (!keyword.value.trim()) return toast.error('请输入商品关键词')
+  if (!accountId.value) return toast.error('请选择搜索账号')
   loading.value = true
   try {
     const response = await searchOpportunities({ keyword: keyword.value, xianyuAccountId: accountId.value, limit: 30 })
     results.value = response.data || []
+    searched.value = true
     selectedIds.value = []
     active.value = results.value[0]
   } finally {
@@ -67,20 +71,32 @@ const capture = async () => {
   draft.amount = Number(item.price || 0)
   draft.images = item.images || []
   step.value = 2
+  maxStep.value = 2
 }
 
 const next = () => {
   if (step.value === 2 && (!draft.name.trim() || !draft.description.trim())) return toast.error('标题和详情不能为空')
   if (step.value === 3 && (!draft.amount || !draft.images.length)) return toast.error('请补充价格和至少一张图片')
   step.value = Math.min(4, step.value + 1)
+  maxStep.value = Math.max(maxStep.value, step.value)
+}
+
+const goStep = (target: number) => {
+  if (target <= maxStep.value) step.value = target
 }
 
 const publish = async (dryRun = false) => {
   if (!accountId.value) return toast.error('请选择发布账号')
   loading.value = true
   try {
-    await createPublishPlan({ xianyuAccountId: accountId.value, ...draft, dryRun })
-    toast.success(dryRun ? '校验通过，发布配置可用' : '发布任务已进入队列')
+    const response = await createPublishPlan({ xianyuAccountId: accountId.value, ...draft, dryRun })
+    if (response.data?.valid === false) {
+      return toast.error(String(response.data.error || '商品发布失败'))
+    }
+    const itemId = response.data?.platform?.itemId
+    toast.success(dryRun
+      ? '平台校验通过，发布配置可用'
+      : `平台已确认发布成功${itemId ? `，商品 ID：${itemId}` : ''}`)
   } finally {
     loading.value = false
   }
@@ -96,7 +112,7 @@ onMounted(loadAccounts)
     </header>
 
     <div class="workbench__steps">
-      <button v-for="(label, index) in ['1 捕获', '2 改写', '3 配置', '4 发布']" :key="label" class="workbench__step" :class="{ 'workbench__step--active': step === index + 1 }" @click="step = index + 1">{{ label }}</button>
+      <button v-for="(label, index) in ['1 捕获', '2 改写', '3 配置', '4 发布']" :key="label" class="workbench__step" :class="{ 'workbench__step--active': step === index + 1 }" :disabled="index + 1 > maxStep" @click="goStep(index + 1)">{{ label }}</button>
     </div>
 
     <div v-if="step === 1" class="opportunity__layout workbench__section">
@@ -122,7 +138,7 @@ onMounted(loadAccounts)
             </div>
             <strong>¥ {{ item.price || '--' }}</strong>
           </button>
-          <div v-if="!results.length" class="workbench__empty">输入关键词后开始发现候选商品。</div>
+          <div v-if="!results.length" class="workbench__empty">{{ searched ? '平台未返回可用商品，请更换关键词或检查账号验证状态。' : '输入关键词后开始发现候选商品。' }}</div>
         </div>
       </main>
       <aside class="workbench__card opportunity__preview">
@@ -147,12 +163,12 @@ onMounted(loadAccounts)
         <h2>配置发布参数</h2>
         <div class="workbench__grid workbench__grid--two">
           <label class="workbench__field">价格<input v-model.number="draft.amount" class="workbench__input" type="number" min="0.01" step="0.01"></label>
-          <label class="workbench__field">库存<input v-model.number="draft.stock" class="workbench__input" type="number" min="0"></label>
-          <label class="workbench__field">分类<input v-model="draft.category" class="workbench__input"></label>
+          <label class="workbench__field">库存<input v-model.number="draft.stock" class="workbench__input" type="number" min="1"></label>
+          <label class="workbench__field">素材分类<input v-model="draft.category" class="workbench__input"><small>仅用于站内整理，真实类目由闲鱼发布接口识别。</small></label>
           <label class="workbench__field">交付方式<select v-model="draft.deliveryMethod" class="workbench__select"><option>线上交付</option><option>快递发货</option><option>当面交易</option></select></label>
           <label class="workbench__field">省份<select v-model="draft.province" class="workbench__select" @change="draft.city = cities[0] || ''"><option v-for="province in CHINA_PROVINCES" :key="province">{{ province }}</option></select></label>
           <label class="workbench__field">城市<select v-model="draft.city" class="workbench__select"><option v-for="city in cities" :key="city">{{ city }}</option></select></label>
-          <label class="workbench__field">区县/详细位置<input v-model="draft.district" class="workbench__input" placeholder="可按实际发布位置填写"></label>
+          <label class="workbench__field">区县/详细位置<input v-model="draft.district" class="workbench__input" placeholder="站内素材备注，发布使用账号常用位置"></label>
           <label class="workbench__field">图片地址（每行一张）<textarea :value="draft.images.join('\n')" class="workbench__textarea" @input="draft.images = ($event.target as HTMLTextAreaElement).value.split('\n').map(v => v.trim()).filter(Boolean)"></textarea></label>
         </div>
       </template>
@@ -168,7 +184,7 @@ onMounted(loadAccounts)
         <button v-if="step < 4" class="workbench__btn workbench__btn--primary" @click="next">下一步</button>
         <template v-else>
           <button class="workbench__btn" :disabled="loading" @click="publish(true)">仅校验</button>
-          <button class="workbench__btn workbench__btn--primary" :disabled="loading" @click="publish(false)">提交发布任务</button>
+          <button class="workbench__btn workbench__btn--primary" :disabled="loading" @click="publish(false)">立即发布</button>
         </template>
       </div>
     </div>

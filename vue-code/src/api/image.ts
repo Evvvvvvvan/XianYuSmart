@@ -22,7 +22,7 @@ export function uploadImageFromUrl(accountId: number, imageUrl: string) {
   return request<string>({
     url: '/image/uploadFromUrl',
     method: 'POST',
-    data: { accountId, imageUrl }
+    params: { accountId, imageUrl }
   });
 }
 
