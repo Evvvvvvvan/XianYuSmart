@@ -7,6 +7,7 @@ import com.xianyusmart.mapper.XianyuGoodsAutoReplyRecordMapper;
 import com.xianyusmart.service.ItemService;
 import com.xianyusmart.service.ItemDetailSyncService;
 import com.xianyusmart.service.AutoDeliveryService;
+import com.xianyusmart.service.PlatformPublishService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +32,9 @@ public class ItemController {
 
     @Autowired
     private AutoDeliveryService autoDeliveryService;
+
+    @Autowired
+    private PlatformPublishService platformPublishService;
     
     @Autowired
     private XianyuGoodsAutoReplyRecordMapper autoReplyRecordMapper;
@@ -204,6 +208,19 @@ public class ItemController {
         } catch (Exception e) {
             log.error("同步单个商品失败", e);
             return ResultObject.failed("同步失败: " + e.getMessage());
+        }
+    }
+
+    @PostMapping("/changeListingStatus")
+    public ResultObject<Map<String, Object>> changeListingStatus(@RequestBody Map<String, Object> params) {
+        try {
+            Long accountId = Long.parseLong(params.get("xianyuAccountId").toString());
+            String xyGoodsId = params.get("xyGoodsId").toString();
+            boolean onSale = Boolean.parseBoolean(params.get("onSale").toString());
+            return ResultObject.success(platformPublishService.changeListingStatus(accountId, xyGoodsId, onSale));
+        } catch (Exception e) {
+            log.error("修改商品上下架状态失败", e);
+            return ResultObject.failed("修改商品上下架状态失败: " + e.getMessage());
         }
     }
     

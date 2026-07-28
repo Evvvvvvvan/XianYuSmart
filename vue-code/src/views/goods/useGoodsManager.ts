@@ -6,6 +6,7 @@ import {
   getGoodsDetail,
   updateGoodsAutomationStatus,
   deleteItem,
+  changeListingStatus,
   syncSingleItem,
   updateGoodsInfo,
   getSyncProgress,
@@ -335,6 +336,22 @@ export function useGoodsManager() {
     }
   }
 
+  const toggleListingStatus = async (item: GoodsItemWithConfig) => {
+    if (!selectedAccountId.value) return
+    const onSale = item.item.status !== 0
+    try {
+      await changeListingStatus({
+        xianyuAccountId: selectedAccountId.value,
+        xyGoodsId: item.item.xyGoodId,
+        onSale
+      })
+      showSuccess(onSale ? '商品已上架' : '商品已下架')
+      await syncSingleGoods(item.item.xyGoodId)
+    } catch (error: any) {
+      if (!error.messageShown) showError(error.message || '修改商品上下架状态失败')
+    }
+  }
+
   const syncEditingGoods = async () => {
     if (!editingGoods.value) return
     const xyGoodsId = editingGoods.value.item.xyGoodId
@@ -381,6 +398,7 @@ export function useGoodsManager() {
     getGoodsStatusText,
     formatPrice,
     formatTime,
-    syncSingleGoods
+    syncSingleGoods,
+    toggleListingStatus
   }
 }

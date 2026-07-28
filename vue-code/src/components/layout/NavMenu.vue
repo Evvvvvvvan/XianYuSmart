@@ -28,6 +28,10 @@ const hasSystemMenu = computed(() => isPlatformAdmin.value || [
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
       <span>面板</span>
     </router-link>
+    <router-link v-if="hasPermission('menu:dashboard')" to="/data-panel" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/data-panel')">
+      <span class="nav-menu-symbol">▥</span>
+      <span>数据看板</span>
+    </router-link>
     <router-link v-if="hasPermission('menu:accounts')" to="/accounts" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/accounts')">
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       <span>闲鱼账号</span>
@@ -40,9 +44,29 @@ const hasSystemMenu = computed(() => isPlatformAdmin.value || [
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
       <span>商品管理</span>
     </router-link>
+    <router-link v-if="hasPermission('menu:goods')" to="/product-publish" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/product-publish')">
+      <span class="nav-menu-symbol">＋</span>
+      <span>商品发布</span>
+    </router-link>
     <router-link v-if="hasPermission('menu:operations')" to="/operations" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/operations')">
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg>
       <span>运营中心</span>
+    </router-link>
+    <router-link v-if="hasPermission('menu:operations')" to="/opportunities" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/opportunities')">
+      <span class="nav-menu-symbol">⌕</span>
+      <span>商机发掘</span>
+    </router-link>
+    <router-link v-if="hasPermission('menu:operations')" to="/supplies" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/supplies')">
+      <span class="nav-menu-symbol">▣</span>
+      <span>货源库</span>
+    </router-link>
+    <router-link v-if="hasPermission('menu:operations')" to="/workflows" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/workflows')">
+      <span class="nav-menu-symbol">◇</span>
+      <span>工作流</span>
+    </router-link>
+    <router-link v-if="hasPermission('menu:operations')" to="/automation" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/automation')">
+      <span class="nav-menu-symbol">⚙</span>
+      <span>自动化</span>
     </router-link>
     <router-link v-if="hasPermission('menu:messages')" to="/messages" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/messages')">
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -134,6 +158,15 @@ const hasSystemMenu = computed(() => isPlatformAdmin.value || [
   color: #155eef;
   box-shadow: none;
   font-weight: 600;
+}
+
+.nav-menu-symbol {
+  width: 18px;
+  margin-right: 8px;
+  flex-shrink: 0;
+  color: currentColor;
+  text-align: center;
+  font-size: 17px;
 }
 
 .nav-menu-divider {

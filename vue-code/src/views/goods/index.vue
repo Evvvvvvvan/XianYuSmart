@@ -54,7 +54,8 @@ const {
   getGoodsStatusText,
   formatPrice,
   formatTime,
-  syncSingleGoods
+  syncSingleGoods,
+  toggleListingStatus
 } = useGoodsManager()
 
 const ratePresets = [
@@ -480,6 +481,7 @@ const getPageButtons = () => {
           @view="viewDetail"
           @edit="editGoods"
           @sync="syncSingleGoods"
+          @toggle-listing-status="toggleListingStatus"
           @toggle-auto-polish="toggleAutoPolish"
           @config-auto-rate="openRateSettings"
           @delete="confirmDelete"

@@ -84,10 +84,16 @@ const pageTitleMap: Record<string, string> = {
 
 const pageIconMap: Record<string, any> = {
   '/dashboard': markRaw(IconChart),
+  '/data-panel': markRaw(IconChart),
   '/accounts': markRaw(IconAccount),
   '/connection': markRaw(IconWifi),
   '/goods': markRaw(IconShoppingBag),
+  '/product-publish': markRaw(IconShoppingBag),
   '/operations': markRaw(IconChart),
+  '/opportunities': markRaw(IconChart),
+  '/supplies': markRaw(IconShoppingBag),
+  '/workflows': markRaw(IconRobot),
+  '/automation': markRaw(IconRobot),
   '/orders': markRaw(IconTruck),
   '/pending-orders': markRaw(IconTruck),
   '/messages': markRaw(IconMessage),

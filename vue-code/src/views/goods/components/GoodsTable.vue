@@ -21,6 +21,7 @@ interface Emits {
   (e: 'edit', item: GoodsItemWithConfig): void
   (e: 'toggleAutoPolish', item: GoodsItemWithConfig, value: boolean): void
   (e: 'configAutoRate', item: GoodsItemWithConfig): void
+  (e: 'toggleListingStatus', item: GoodsItemWithConfig): void
   (e: 'delete', xyGoodId: string, title: string): void
 }
 
@@ -146,6 +147,12 @@ const handleImgError = (e: Event) => {
           <span>{{ item.xianyuAutoPolishOn === 1 ? '关擦亮' : '开擦亮' }}</span>
         </button>
         <button
+          class="goods-card__action goods-card__action--config"
+          @click.stop="emit('toggleListingStatus', item)"
+        >
+          <span>{{ item.item.status === 0 ? '下架' : '上架' }}</span>
+        </button>
+        <button
           class="goods-card__action goods-card__action--delete"
           @click.stop="emit('delete', item.item.xyGoodId, item.item.title)"
         >
@@ -257,6 +264,9 @@ const handleImgError = (e: Event) => {
             <button class="table__action table__action--sync" @click="emit('sync', item.item.xyGoodId)">
               <IconSparkle />
               <span>同步</span>
+            </button>
+            <button class="table__action table__action--detail" @click="emit('toggleListingStatus', item)">
+              <span>{{ item.item.status === 0 ? '下架' : '上架' }}</span>
             </button>
             <button class="table__action table__action--delete" @click="emit('delete', item.item.xyGoodId, item.item.title)">
               <IconTrash />

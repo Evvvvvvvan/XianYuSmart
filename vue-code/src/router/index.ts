@@ -6,6 +6,42 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
+      path: '/data-panel',
+      name: 'data-panel',
+      component: () => import('@/views/data-panel/index.vue'),
+      meta: { title: '数据看板', icon: '▥', permission: 'menu:dashboard' }
+    },
+    {
+      path: '/product-publish',
+      name: 'product-publish',
+      component: () => import('@/views/product-publish/index.vue'),
+      meta: { title: '商品发布', icon: '＋', permission: 'menu:goods', writePermission: 'action:goods-write' }
+    },
+    {
+      path: '/opportunities',
+      name: 'opportunities',
+      component: () => import('@/views/opportunities/index.vue'),
+      meta: { title: '商机发掘', icon: '⌕', permission: 'menu:operations', writePermission: 'action:operations-write' }
+    },
+    {
+      path: '/supplies',
+      name: 'supplies',
+      component: () => import('@/views/supplies/index.vue'),
+      meta: { title: '货源库', icon: '▣', permission: 'menu:operations', writePermission: 'action:operations-write' }
+    },
+    {
+      path: '/workflows',
+      name: 'workflows',
+      component: () => import('@/views/workflows/index.vue'),
+      meta: { title: '工作流', icon: '◇', permission: 'menu:operations', writePermission: 'action:operations-write' }
+    },
+    {
+      path: '/automation',
+      name: 'automation',
+      component: () => import('@/views/automation/index.vue'),
+      meta: { title: '自动化', icon: '⚙', permission: 'menu:operations', writePermission: 'action:operations-write' }
+    },
+    {
       path: '/login',
       name: 'login',
       component: () => import('@/views/login/index.vue'),
@@ -60,7 +96,7 @@ const router = createRouter({
     {
       path: '/messages',
       name: 'messages',
-      component: () => import('@/views/messages/index.vue'),
+      component: () => import('@/views/messages/workspace.vue'),
       meta: { title: '消息管理', icon: '💬', permission: 'menu:messages', writePermission: 'action:message-send' }
     },
     {

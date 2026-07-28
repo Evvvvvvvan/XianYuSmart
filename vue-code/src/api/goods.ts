@@ -203,6 +203,18 @@ export function syncSingleItem(data: {
   });
 }
 
+export function changeListingStatus(data: {
+  xianyuAccountId: number;
+  xyGoodsId: string;
+  onSale: boolean;
+}) {
+  return request<{ success: boolean; itemId: string; onSale: boolean }>({
+    url: '/items/changeListingStatus',
+    method: 'POST',
+    data
+  });
+}
+
 // 自动回复配置响应
 export interface AutoReplyConfigResponse {
   ragDelaySeconds: number;

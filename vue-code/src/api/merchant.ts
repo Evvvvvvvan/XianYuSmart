@@ -1,6 +1,17 @@
 import { request } from '@/utils/request'
 
-export type ResourceType = 'ADDRESS' | 'MATERIAL' | 'SUPPLY' | 'PROMOTION_ACCOUNT' | 'SELECTION_RULE' | 'PUBLISH_RULE' | 'DELETE_RULE' | 'ANNOUNCEMENT' | 'FEEDBACK' | 'RISK_EVENT'
+export type ResourceType = 'ADDRESS' | 'MATERIAL' | 'SUPPLY' | 'PROMOTION_ACCOUNT' | 'SELECTION_RULE' | 'PUBLISH_RULE' | 'DELETE_RULE' | 'ANNOUNCEMENT' | 'FEEDBACK' | 'RISK_EVENT' | 'WORKFLOW'
+
+export interface OpportunityCandidate {
+  itemId: string
+  title: string
+  sourceUrl: string
+  images?: string[]
+  price?: string | number
+  opportunityScore: number
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
+  matchReason: string
+}
 
 export interface MerchantResource {
   id: number
@@ -98,4 +109,29 @@ export function getDistributions(params: { status?: number; settlementStatus?: n
 
 export function settleDistribution(id: number) {
   return request<void>({ url: `/merchant/distributions/${id}/settle`, method: 'POST' })
+}
+
+export function searchOpportunities(data: { keyword: string; xianyuAccountId?: number; limit?: number }) {
+  return request<OpportunityCandidate[]>({ url: '/merchant/opportunities/search', method: 'POST', data })
+}
+
+export function importOpportunities(data: { candidates: OpportunityCandidate[]; xianyuAccountId?: number }) {
+  return request<MerchantResource[]>({ url: '/merchant/opportunities/import', method: 'POST', data })
+}
+
+export function createPublishPlan(data: {
+  xianyuAccountId: number
+  name: string
+  description: string
+  amount: number
+  stock: number
+  images: string[]
+  category?: string
+  province?: string
+  city?: string
+  district?: string
+  deliveryMethod?: string
+  dryRun?: boolean
+}) {
+  return request<Record<string, any>>({ url: '/merchant/products/publish', method: 'POST', data })
 }

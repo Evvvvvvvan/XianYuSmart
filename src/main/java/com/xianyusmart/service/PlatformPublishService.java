@@ -35,6 +35,7 @@ import java.util.regex.Pattern;
 public class PlatformPublishService {
 
     private static final Pattern GOODS_ID_PATTERN = Pattern.compile("(?:id=|/item/)(\\d{8,})");
+    private static final Pattern PRICE_PATTERN = Pattern.compile("[¥￥]\\s*(\\d+(?:\\.\\d{1,2})?)");
 
     private final PlaywrightManager playwrightManager;
     private final AccountService accountService;
@@ -163,6 +164,35 @@ public class PlatformPublishService {
         }
     }
 
+    public Map<String, Object> changeListingStatus(Long accountId, String goodsId, boolean onSale) {
+        String cookieText = accountService.getCookieByAccountId(accountId);
+        if (cookieText == null || cookieText.isBlank()) {
+            throw new IllegalStateException("账号 Cookie 不可用");
+        }
+        try (BrowserContext context = playwrightManager.createContext()) {
+            addCookies(context, cookieText);
+            Page page = context.newPage();
+            page.navigate("https://www.goofish.com/item?id=" + goodsId,
+                    new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(60000));
+            page.waitForTimeout(2000);
+            ensureLoggedIn(page);
+            String selector = onSale
+                    ? "button:has-text(\"上架\"),button:has-text(\"重新上架\")"
+                    : "button:has-text(\"下架\")";
+            Locator actionButton = page.locator(selector).first();
+            if (actionButton.count() == 0) {
+                throw new IllegalStateException(onSale ? "商品页面未找到上架操作" : "商品页面未找到下架操作");
+            }
+            actionButton.click();
+            Locator confirmButton = page.locator("button:has-text(\"确定\"),button:has-text(\"确认\")").last();
+            if (confirmButton.count() > 0) {
+                confirmButton.click();
+            }
+            page.waitForTimeout(2000);
+            return Map.of("success", true, "itemId", goodsId, "onSale", onSale);
+        }
+    }
+
     public Map<String, Object> collect(String sourceUrl, Long accountId) {
         validatePlatformUrl(sourceUrl);
         try (BrowserContext context = playwrightManager.createContext()) {
@@ -247,6 +277,10 @@ public class PlatformPublishService {
                 item.put("sourceUrl", itemUrl);
                 String title = anchor.innerText().trim();
                 item.put("title", title.isBlank() ? keyword.trim() + "-" + matcher.group(1) : title);
+                Matcher priceMatcher = PRICE_PATTERN.matcher(title);
+                if (priceMatcher.find()) {
+                    item.put("price", priceMatcher.group(1));
+                }
                 Locator image = anchor.locator("img").first();
                 if (image.count() > 0) {
                     String src = image.getAttribute("src");

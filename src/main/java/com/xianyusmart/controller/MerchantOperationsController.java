@@ -101,6 +101,33 @@ public class MerchantOperationsController {
         }
     }
 
+    @PostMapping("/opportunities/search")
+    public ResultObject<List<Map<String, Object>>> searchOpportunities(@RequestBody Map<String, Object> request) {
+        try {
+            return ResultObject.success(operationsService.searchOpportunities(request));
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    @PostMapping("/opportunities/import")
+    public ResultObject<List<MerchantResourceRespDTO>> importOpportunities(@RequestBody Map<String, Object> request) {
+        try {
+            return ResultObject.success(operationsService.importOpportunities(request));
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    @PostMapping("/products/publish")
+    public ResultObject<Map<String, Object>> createPublishPlan(@RequestBody Map<String, Object> request) {
+        try {
+            return ResultObject.success(operationsService.createPublishPlan(request));
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
     @GetMapping("/tasks")
     public ResultObject<List<MerchantTask>> listTasks(@RequestParam(required = false) String taskType,
                                                        @RequestParam(required = false) Integer status,

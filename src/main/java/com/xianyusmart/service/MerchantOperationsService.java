@@ -50,10 +50,10 @@ public class MerchantOperationsService {
 
     public static final Set<String> RESOURCE_TYPES = Set.of(
             "ADDRESS", "MATERIAL", "SUPPLY", "PROMOTION_ACCOUNT", "SELECTION_RULE",
-            "PUBLISH_RULE", "DELETE_RULE", "ANNOUNCEMENT", "FEEDBACK", "RISK_EVENT"
+            "PUBLISH_RULE", "DELETE_RULE", "ANNOUNCEMENT", "FEEDBACK", "RISK_EVENT", "WORKFLOW"
     );
     public static final Set<String> TASK_TYPES = Set.of(
-            "COLLECT", "SELECT", "PUBLISH", "DELETE", "COMPENSATE", "REFRESH_PROMOTION"
+            "COLLECT", "SELECT", "PUBLISH", "DELETE", "COMPENSATE", "REFRESH_PROMOTION", "WORKFLOW"
     );
 
     private final MerchantResourceMapper resourceMapper;
@@ -65,6 +65,8 @@ public class MerchantOperationsService {
     private final XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper;
     private final ItemService itemService;
     private final PlatformPublishService platformPublishService;
+    private final OpportunityAnalysisService opportunityAnalysisService;
+    private final WorkflowDefinitionService workflowDefinitionService;
     private final OperationLogService operationLogService;
     private final ObjectMapper objectMapper;
 
@@ -77,6 +79,8 @@ public class MerchantOperationsService {
                                      XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper,
                                      ItemService itemService,
                                      PlatformPublishService platformPublishService,
+                                     OpportunityAnalysisService opportunityAnalysisService,
+                                     WorkflowDefinitionService workflowDefinitionService,
                                      OperationLogService operationLogService,
                                      ObjectMapper objectMapper) {
         this.resourceMapper = resourceMapper;
@@ -88,6 +92,8 @@ public class MerchantOperationsService {
         this.autoDeliveryConfigMapper = autoDeliveryConfigMapper;
         this.itemService = itemService;
         this.platformPublishService = platformPublishService;
+        this.opportunityAnalysisService = opportunityAnalysisService;
+        this.workflowDefinitionService = workflowDefinitionService;
         this.operationLogService = operationLogService;
         this.objectMapper = objectMapper;
     }
@@ -125,6 +131,9 @@ public class MerchantOperationsService {
             throw new IllegalArgumentException("资源名称不能超过200个字符");
         }
         validateOwnedAccount(request.getXianyuAccountId());
+        if ("WORKFLOW".equals(request.getResourceType())) {
+            workflowDefinitionService.validateAndSort(request.getData());
+        }
 
         MerchantResource resource = request.getId() == null ? new MerchantResource() : resourceMapper.selectById(request.getId());
         if (resource == null) {
@@ -152,6 +161,90 @@ public class MerchantOperationsService {
             resourceMapper.updateById(resource);
         }
         return toResponse(resourceMapper.selectById(resource.getId()));
+    }
+
+    public List<Map<String, Object>> searchOpportunities(Map<String, Object> request) {
+        String keyword = text(request.get("keyword"));
+        if (keyword.isBlank()) {
+            throw new IllegalArgumentException("请输入商机关键词");
+        }
+        Long accountId = longValue(request.get("xianyuAccountId"));
+        validateOwnedAccount(accountId);
+        int limit = Math.max(1, Math.min(intValue(request.get("limit"), 20), 50));
+        return opportunityAnalysisService.rank(keyword, platformPublishService.search(keyword, accountId, limit));
+    }
+
+    @Transactional
+    public List<MerchantResourceRespDTO> importOpportunities(Map<String, Object> request) {
+        Long accountId = longValue(request.get("xianyuAccountId"));
+        validateOwnedAccount(accountId);
+        if (!(request.get("candidates") instanceof List<?> candidates) || candidates.isEmpty()) {
+            throw new IllegalArgumentException("请选择需要加入货源库的商品");
+        }
+        if (candidates.size() > 50) {
+            throw new IllegalArgumentException("单次最多导入 50 个候选商品");
+        }
+        Long tenantId = requireTenantId();
+        List<MerchantResourceRespDTO> imported = new ArrayList<>();
+        for (Object value : candidates) {
+            if (!(value instanceof Map<?, ?> candidateValue)) {
+                continue;
+            }
+            Map<String, Object> candidate = normalizeMap(candidateValue);
+            String itemId = text(candidate.get("itemId"));
+            MerchantResource existing = itemId.isBlank() ? null
+                    : resourceMapper.selectByTenantTypeAndGoodsId(tenantId, "SUPPLY", itemId);
+            MerchantResource supply = existing == null ? createSupply(candidate, accountId) : existing;
+            imported.add(toResponse(supply));
+        }
+        return imported;
+    }
+
+    @Transactional
+    public Map<String, Object> createPublishPlan(Map<String, Object> request) {
+        Long accountId = longValue(request.get("xianyuAccountId"));
+        validateOwnedAccount(accountId);
+        String name = text(request.get("name"));
+        String description = text(request.get("description"));
+        if (accountId == null || name.isBlank() || description.isBlank()) {
+            throw new IllegalArgumentException("发布账号、标题和商品详情不能为空");
+        }
+        if (!(request.get("images") instanceof List<?> images) || images.isEmpty()) {
+            throw new IllegalArgumentException("至少需要一张 HTTPS 商品图片");
+        }
+        for (Object image : images) {
+            if (!(image instanceof String imageUrl) || !imageUrl.startsWith("https://")) {
+                throw new IllegalArgumentException("商品图片必须使用 HTTPS 地址");
+            }
+        }
+        BigDecimal amount = decimalValue(request.get("amount"), BigDecimal.ZERO);
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("商品价格必须大于 0");
+        }
+
+        Map<String, Object> data = new HashMap<>(request);
+        data.remove("dryRun");
+        boolean dryRun = Boolean.TRUE.equals(request.get("dryRun"));
+        if (dryRun) {
+            // 预检只验证发布参数，不写入素材和任务，避免重复校验产生冗余数据。
+            return Map.of("valid", true, "dryRun", true, "preview", data);
+        }
+        MerchantResourceReqDTO materialRequest = new MerchantResourceReqDTO();
+        materialRequest.setResourceType("MATERIAL");
+        materialRequest.setName(name);
+        materialRequest.setStatus(1);
+        materialRequest.setXianyuAccountId(accountId);
+        materialRequest.setStock(Math.max(0, intValue(request.get("stock"), 1)));
+        materialRequest.setAmount(amount);
+        materialRequest.setData(data);
+        MerchantResourceRespDTO material = saveResource(materialRequest);
+
+        MerchantTaskReqDTO taskRequest = new MerchantTaskReqDTO();
+        taskRequest.setTaskType("PUBLISH");
+        taskRequest.setResourceId(material.getId());
+        taskRequest.setXianyuAccountId(accountId);
+        MerchantTask task = createTask(taskRequest);
+        return Map.of("valid", true, "dryRun", false, "material", material, "task", task);
     }
 
     public void deleteResource(Long id) {
@@ -336,6 +429,7 @@ public class MerchantOperationsService {
                 case "COLLECT" -> executeCollect(task);
                 case "COMPENSATE" -> executeCompensation(task);
                 case "REFRESH_PROMOTION" -> executePromotionRefresh(task);
+                case "WORKFLOW" -> executeWorkflow(task);
                 default -> throw new IllegalArgumentException("不支持的任务类型");
             };
             taskMapper.complete(task.getId(), writeJson(result));
@@ -398,6 +492,90 @@ public class MerchantOperationsService {
             created++;
         }
         return Map.of("collected", collected, "selected", created);
+    }
+
+    private Map<String, Object> executeWorkflow(MerchantTask task) {
+        MerchantResource workflow = requireResource(task.getResourceId());
+        if (!"WORKFLOW".equals(workflow.getResourceType())) {
+            throw new IllegalArgumentException("工作流任务未关联有效定义");
+        }
+        List<Map<String, Object>> nodes = workflowDefinitionService.validateAndSort(readJson(workflow.getDataJson()));
+        Long accountId = task.getXianyuAccountId() == null ? workflow.getXianyuAccountId() : task.getXianyuAccountId();
+        List<Map<String, Object>> candidates = new ArrayList<>();
+        List<Long> supplyIds = new ArrayList<>();
+        List<Long> materialIds = new ArrayList<>();
+        List<Map<String, Object>> nodeResults = new ArrayList<>();
+        for (Map<String, Object> node : nodes) {
+            String type = text(node.get("type")).toUpperCase();
+            Map<String, Object> config = node.get("config") instanceof Map<?, ?> map
+                    ? normalizeMap(map) : Map.of();
+            Map<String, Object> result = new HashMap<>();
+            result.put("nodeId", text(node.get("id")));
+            result.put("type", type);
+            switch (type) {
+                case "TRIGGER" -> result.put("status", "READY");
+                case "SEARCH" -> {
+                    String keyword = text(config.get("keyword"));
+                    int limit = Math.max(1, Math.min(intValue(config.get("limit"), 20), 50));
+                    candidates = opportunityAnalysisService.rank(keyword,
+                            platformPublishService.search(keyword, accountId, limit));
+                    result.put("count", candidates.size());
+                }
+                case "FILTER" -> {
+                    int minScore = Math.max(0, Math.min(intValue(config.get("minScore"), 60), 100));
+                    int limit = Math.max(1, Math.min(intValue(config.get("limit"), 20), 50));
+                    List<Map<String, Object>> currentCandidates = candidates;
+                    candidates = currentCandidates.stream()
+                            .filter(item -> intValue(item.get("opportunityScore"), 0) >= minScore)
+                            .limit(limit)
+                            .toList();
+                    result.put("count", candidates.size());
+                }
+                case "COLLECT" -> {
+                    for (Map<String, Object> candidate : candidates) {
+                        String itemId = text(candidate.get("itemId"));
+                        MerchantResource supply = itemId.isBlank() ? null
+                                : resourceMapper.selectByTenantTypeAndGoodsId(task.getTenantId(), "SUPPLY", itemId);
+                        if (supply == null) {
+                            supply = createSupply(candidate, accountId);
+                        }
+                        supplyIds.add(supply.getId());
+                    }
+                    result.put("count", supplyIds.size());
+                }
+                case "MATERIAL" -> {
+                    for (Long supplyId : supplyIds) {
+                        MerchantResource supply = requireResource(supplyId);
+                        MerchantResource material = createMaterialFromSupply(supply);
+                        ensureDistribution(supply, material);
+                        materialIds.add(material.getId());
+                    }
+                    result.put("count", materialIds.size());
+                }
+                case "PUBLISH" -> {
+                    boolean dryRun = !Boolean.FALSE.equals(config.get("dryRun"));
+                    if (!dryRun) {
+                        for (Long materialId : materialIds) {
+                            MerchantTaskReqDTO publishRequest = new MerchantTaskReqDTO();
+                            publishRequest.setTaskType("PUBLISH");
+                            publishRequest.setResourceId(materialId);
+                            publishRequest.setXianyuAccountId(accountId);
+                            createTask(publishRequest);
+                        }
+                    }
+                    result.put("count", materialIds.size());
+                    result.put("dryRun", dryRun);
+                }
+                default -> throw new IllegalArgumentException("不支持的工作流节点");
+            }
+            nodeResults.add(result);
+        }
+        return Map.of(
+                "candidateCount", candidates.size(),
+                "supplyCount", supplyIds.size(),
+                "materialCount", materialIds.size(),
+                "nodes", nodeResults
+        );
     }
 
     private Map<String, Object> executePublish(MerchantTask task) {
@@ -618,6 +796,22 @@ public class MerchantOperationsService {
         return Map.of("accountId", account.getId(), "status", accountResource.getStatus());
     }
 
+    private MerchantResource createSupply(Map<String, Object> candidate, Long accountId) {
+        MerchantResource supply = new MerchantResource();
+        supply.setTenantId(requireTenantId());
+        supply.setResourceType("SUPPLY");
+        supply.setName(text(candidate.get("title")).isBlank() ? "待完善货源" : text(candidate.get("title")));
+        supply.setStatus(1);
+        supply.setXianyuAccountId(accountId);
+        supply.setXyGoodsId(blankToNull(text(candidate.get("itemId"))));
+        supply.setStock(Math.max(0, intValue(candidate.get("stock"), 1)));
+        Object price = candidate.get("price") == null ? candidate.get("amount") : candidate.get("price");
+        supply.setAmount(decimalValue(price, BigDecimal.ZERO));
+        supply.setDataJson(writeJson(candidate));
+        resourceMapper.insert(supply);
+        return supply;
+    }
+
     private MerchantResource createMaterialFromSupply(MerchantResource supply) {
         MerchantResource existing = resourceMapper.selectByTenantTypeAndName(supply.getTenantId(), "MATERIAL", supply.getName());
         if (existing != null) {
@@ -674,6 +868,7 @@ public class MerchantOperationsService {
             case "MATERIAL", "PUBLISH_RULE" -> "PUBLISH";
             case "DELETE_RULE" -> "DELETE";
             case "PROMOTION_ACCOUNT" -> "REFRESH_PROMOTION";
+            case "WORKFLOW" -> "WORKFLOW";
             default -> throw new IllegalArgumentException("该资源不支持执行任务");
         };
     }
@@ -694,6 +889,12 @@ public class MerchantOperationsService {
         response.setCreatedTime(resource.getCreatedTime());
         response.setUpdatedTime(resource.getUpdatedTime());
         return response;
+    }
+
+    private Map<String, Object> normalizeMap(Map<?, ?> source) {
+        Map<String, Object> result = new HashMap<>();
+        source.forEach((key, value) -> result.put(String.valueOf(key), value));
+        return result;
     }
 
     private List<String> collectImages(XianyuGoodsInfo item) {

@@ -1,0 +1,270 @@
+.workbench {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 18px;
+  color: #101828;
+  background: #f7f9fc;
+}
+
+.workbench * {
+  box-sizing: border-box;
+}
+
+.workbench__header,
+.workbench__toolbar,
+.workbench__row,
+.workbench__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.workbench__header {
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.workbench__header h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.workbench__header p,
+.workbench__muted {
+  margin: 4px 0 0;
+  color: #667085;
+  font-size: 13px;
+}
+
+.workbench__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workbench__grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.workbench__card {
+  padding: 16px;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+}
+
+.workbench__metric strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 26px;
+}
+
+.workbench__metric span {
+  color: #667085;
+  font-size: 13px;
+}
+
+.workbench__section {
+  margin-top: 14px;
+}
+
+.workbench__section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.workbench__input,
+.workbench__select,
+.workbench__textarea {
+  width: 100%;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  color: #101828;
+  background: #fff;
+  font: inherit;
+  outline: none;
+}
+
+.workbench__input,
+.workbench__select {
+  min-height: 38px;
+  padding: 0 11px;
+}
+
+.workbench__textarea {
+  min-height: 94px;
+  padding: 10px 11px;
+  resize: vertical;
+}
+
+.workbench__input:focus,
+.workbench__select:focus,
+.workbench__textarea:focus {
+  border-color: #155eef;
+  box-shadow: 0 0 0 3px rgba(21, 94, 239, .10);
+}
+
+.workbench__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #344054;
+  font-size: 13px;
+}
+
+.workbench__btn {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 7px;
+  color: #344054;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.workbench__btn--primary {
+  border-color: #155eef;
+  color: #fff;
+  background: #155eef;
+}
+
+.workbench__btn--danger {
+  border-color: #fecdca;
+  color: #b42318;
+}
+
+.workbench__btn:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.workbench__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workbench__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.workbench__item img {
+  width: 56px;
+  height: 56px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: #f2f4f7;
+}
+
+.workbench__item h3 {
+  margin: 0 0 5px;
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workbench__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workbench__tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  color: #344054;
+  background: #f2f4f7;
+  font-size: 11px;
+}
+
+.workbench__tag--good {
+  color: #067647;
+  background: #ecfdf3;
+}
+
+.workbench__tag--warn {
+  color: #b54708;
+  background: #fffaeb;
+}
+
+.workbench__empty {
+  padding: 40px 16px;
+  color: #98a2b3;
+  text-align: center;
+}
+
+.workbench__steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.workbench__step {
+  padding: 10px;
+  border-bottom: 2px solid #e4e7ec;
+  color: #667085;
+  text-align: center;
+  font-size: 13px;
+}
+
+.workbench__step--active {
+  border-color: #155eef;
+  color: #155eef;
+  font-weight: 600;
+}
+
+@media (max-width: 1024px) {
+  .workbench__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .workbench {
+    padding: 12px;
+  }
+
+  .workbench__header,
+  .workbench__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workbench__grid,
+  .workbench__grid--two {
+    grid-template-columns: 1fr;
+  }
+
+  .workbench__item {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .workbench__item > .workbench__actions {
+    grid-column: 1 / -1;
+  }
+
+  .workbench__steps {
+    overflow-x: auto;
+    grid-template-columns: repeat(4, minmax(110px, 1fr));
+  }
+}
