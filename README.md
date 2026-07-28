@@ -18,7 +18,28 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 当前版本：[2.0.1](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.1) · [查看更新日志](CHANGELOG.md)
 
-[商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [技术基线](#技术基线) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [配置说明](#配置说明) · [开发构建](#开发构建) · [构建与验证](#构建与验证) · [目录与职责](#目录与职责) · [日常运维](#日常运维) · [使用边界](#使用边界) · [许可证与免责声明](#许可证与免责声明) · [交流与支持](#交流与支持) · [Star History](#star-history)
+[交流与支持](#交流与支持) · [商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [技术基线](#技术基线) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [配置说明](#配置说明) · [开发构建](#开发构建) · [构建与验证](#构建与验证) · [目录与职责](#目录与职责) · [日常运维](#日常运维) · [使用边界](#使用边界) · [许可证与免责声明](#许可证与免责声明) · [Star History](#star-history)
+
+## 交流与支持
+
+真实使用中的问题、经验和建议，会让 XianYuSmart 变得更稳定、更好用。欢迎加入微信群聊交流部署配置、连接排查、自动发货和运营实践；如果项目确实节省了时间或解决了经营中的实际问题，也欢迎自愿赞赏，支持项目持续维护。
+
+<table>
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <strong>加入微信群聊</strong>
+      <p>与开发者和实际使用者交流配置、排错与使用经验，及时了解项目进展。欢迎提出需求、分享实践，也欢迎参与项目共建。</p>
+      <img src="docs/assets/community/wechat-group-qr.jpg" width="360" alt="XianYuSmart 微信群聊二维码">
+      <p><sub>二维码具有时效性，失效后将在仓库更新</sub></p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <strong>赞赏项目</strong>
+      <p>每一份支持都会转化为文档完善、兼容性验证、问题修复和持续维护的动力。金额不论多少，都是对项目继续向前的鼓励。</p>
+      <img src="docs/assets/community/wechat-reward-qr.jpg" width="360" alt="XianYuSmart 项目赞赏码">
+      <p><sub>赞赏完全自愿，不对应商业服务、功能优先权或任何承诺</sub></p>
+    </td>
+  </tr>
+</table>
 
 ## 商家能得到什么
 
@@ -420,27 +441,6 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 
 下载、复制、修改、部署、运行或分发本项目，即表示已阅读并接受 [完整使用限制与免责声明](DISCLAIMER.md)。
 
-## 交流与支持
-
-真实使用中的问题、经验和建议，会让 XianYuSmart 变得更稳定、更好用。欢迎加入微信群聊交流部署配置、连接排查、自动发货和运营实践；如果项目确实节省了时间或解决了经营中的实际问题，也欢迎自愿赞赏，支持项目持续维护。
-
-<table>
-  <tr>
-    <td width="50%" align="center" valign="top">
-      <strong>加入微信群聊</strong>
-      <p>与开发者和实际使用者交流配置、排错与使用经验，及时了解项目进展。欢迎提出需求、分享实践，也欢迎参与项目共建。</p>
-      <img src="docs/assets/community/wechat-group-qr.jpg" width="360" alt="XianYuSmart 微信群聊二维码">
-      <p><sub>二维码具有时效性，失效后将在仓库更新</sub></p>
-    </td>
-    <td width="50%" align="center" valign="top">
-      <strong>赞赏项目</strong>
-      <p>每一份支持都会转化为文档完善、兼容性验证、问题修复和持续维护的动力。金额不论多少，都是对项目继续向前的鼓励。</p>
-      <img src="docs/assets/community/wechat-reward-qr.jpg" width="360" alt="XianYuSmart 项目赞赏码">
-      <p><sub>赞赏完全自愿，不对应商业服务、功能优先权或任何承诺</sub></p>
-    </td>
-  </tr>
-</table>
-
 ## Star History
 
 <a href="https://star-history.com/#Evvvvvvvan/XianYuSmart&Date">
@@ -450,4 +450,4 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
     <img alt="XianYuSmart Star History Chart" src="docs/assets/star-history-light.png" width="100%" />
   </picture>
 </a>
-<sub>由 [`scripts/gen_star_history.py`](scripts/gen_star_history.py) 生成，[GitHub Actions](.github/workflows/star-history.yml) 每日自动更新 · 点击图片查看实时数据</sub>
+<sub>[查看实时 Star History](https://star-history.com/#Evvvvvvvan/XianYuSmart&Date) · [查看图表生成脚本](scripts/gen_star_history.py) · [查看每日更新工作流](.github/workflows/star-history.yml)</sub>
