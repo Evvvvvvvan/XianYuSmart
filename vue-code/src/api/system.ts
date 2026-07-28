@@ -2,6 +2,13 @@ import { request } from '@/utils/request'
 
 export type UserRole = 'ADMIN' | 'USER'
 
+export interface CurrentUser {
+  username: string
+  role: UserRole
+  permissions: string[]
+  lastLoginTime: string
+}
+
 export interface SystemUpdateStatus {
   available: boolean
   requestPending: boolean
@@ -21,7 +28,7 @@ export interface SystemUpdateStatus {
 
 /** 获取当前用户信息 */
 export function getCurrentUser() {
-  return request<{ username: string; role: UserRole; lastLoginTime: string }>({
+  return request<CurrentUser>({
     url: '/system/currentUser',
     method: 'post'
   })

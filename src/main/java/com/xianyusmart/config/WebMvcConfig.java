@@ -1,6 +1,7 @@
 package com.xianyusmart.config;
 
 import com.xianyusmart.interceptor.AuthInterceptor;
+import com.xianyusmart.interceptor.AccessControlInterceptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +25,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Autowired
     private AuthInterceptor authInterceptor;
 
+    @Autowired
+    private AccessControlInterceptor accessControlInterceptor;
+
     @Value("${app.security.allowed-origins}")
     private String allowedOrigins;
 
@@ -44,6 +48,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
+                .addPathPatterns("/api/**", "/ai/**")
+                .excludePathPatterns("/api/login/**", "/api/system/version");
+        registry.addInterceptor(accessControlInterceptor)
                 .addPathPatterns("/api/**", "/ai/**")
                 .excludePathPatterns("/api/login/**", "/api/system/version");
     }

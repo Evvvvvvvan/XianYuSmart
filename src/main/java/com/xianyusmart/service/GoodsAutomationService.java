@@ -380,20 +380,32 @@ public class GoodsAutomationService {
             throw new IllegalStateException("账号 Cookie 无效，请先更新登录状态");
         }
 
-        String exactOrderId = targets.size() == 1 ? targets.iterator().next() : null;
-        XianyuApiCallUtils.ApiCallResult response = apiCallUtils.callApiWithRetry(
-                accountId, "mtop.taobao.idle.merchant.rate.list",
-                buildRateListRequest("0", exactOrderId), cookie, sellerHeaders(), sellerQueryParams());
-        if (!response.isSuccess()) {
-            throw new IllegalStateException(response.getErrorMessage() == null
-                    ? "评价状态同步失败" : response.getErrorMessage());
-        }
-
         Map<String, OrderRateDetailDTO> details = new LinkedHashMap<>();
-        for (Map<String, Object> item : extractItems(response.extractData())) {
-            OrderRateDetailDTO detail = parseRateDetail(item);
-            if (detail.getOrderId() != null && targets.contains(detail.getOrderId())) {
-                details.put(detail.getOrderId(), detail);
+        String exactOrderId = targets.size() == 1 ? targets.iterator().next() : null;
+        int maxPages = exactOrderId == null ? MAX_RATE_SCAN_PAGES : 1;
+        for (int pageNumber = 1; pageNumber <= maxPages; pageNumber++) {
+            Map<String, Object> request = buildRateListRequest("0", exactOrderId);
+            request.put("pageNumber", pageNumber);
+            XianyuApiCallUtils.ApiCallResult response = apiCallUtils.callApiWithRetry(
+                    accountId, "mtop.taobao.idle.merchant.rate.list",
+                    request, cookie, sellerHeaders(), sellerQueryParams());
+            if (!response.isSuccess()) {
+                if (pageNumber == 1) {
+                    throw new IllegalStateException(response.getErrorMessage() == null
+                            ? "评价状态同步失败" : response.getErrorMessage());
+                }
+                break;
+            }
+            List<Map<String, Object>> pageItems = extractItems(response.extractData());
+            for (Map<String, Object> item : pageItems) {
+                OrderRateDetailDTO detail = parseRateDetail(item);
+                if (detail.getOrderId() != null && targets.contains(detail.getOrderId())) {
+                    details.put(detail.getOrderId(), detail);
+                }
+            }
+            // 批量查看时最多扫描五页，并在目标已齐或平台已到末页时提前停止。
+            if (details.size() == targets.size() || pageItems.size() < RATE_DETAIL_PAGE_SIZE) {
+                break;
             }
         }
 

@@ -4,12 +4,17 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xianyusmart.context.UserContext;
 import com.xianyusmart.controller.dto.BuyerProfileQueryReqDTO;
+import com.xianyusmart.controller.dto.BuyerMessageDTO;
+import com.xianyusmart.controller.dto.BuyerProfileDetailReqDTO;
+import com.xianyusmart.controller.dto.BuyerProfileDetailRespDTO;
 import com.xianyusmart.controller.dto.BuyerProfileRespDTO;
 import com.xianyusmart.controller.dto.BuyerProfileSaveReqDTO;
 import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.entity.XianyuBuyerProfile;
 import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.mapper.XianyuBuyerProfileMapper;
+import com.xianyusmart.mapper.XianyuChatMessageMapper;
+import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.buyer.BuyerProfilePolicy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,13 +35,19 @@ public class BuyerProfileService {
     private final XianyuBuyerProfileMapper profileMapper;
     private final XianyuAccountMapper accountMapper;
     private final ObjectMapper objectMapper;
+    private final XianyuGoodsOrderMapper orderMapper;
+    private final XianyuChatMessageMapper messageMapper;
 
     public BuyerProfileService(XianyuBuyerProfileMapper profileMapper,
                                XianyuAccountMapper accountMapper,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               XianyuGoodsOrderMapper orderMapper,
+                               XianyuChatMessageMapper messageMapper) {
         this.profileMapper = profileMapper;
         this.accountMapper = accountMapper;
         this.objectMapper = objectMapper;
+        this.orderMapper = orderMapper;
+        this.messageMapper = messageMapper;
     }
 
     public Map<String, Object> list(BuyerProfileQueryReqDTO request) {
@@ -122,6 +133,39 @@ public class BuyerProfileService {
                 Integer.valueOf(1).equals(profile.getAutomationBlocked()), profile.getBlockedReason());
     }
 
+    public BuyerProfileDetailRespDTO detail(BuyerProfileDetailReqDTO request) {
+        validateOwnedAccount(request.getXianyuAccountId(), true);
+        String buyerUserId = request.getBuyerUserId().trim();
+        BuyerProfileRespDTO profile = profileMapper.selectDetail(request.getXianyuAccountId(), buyerUserId);
+        if (profile == null) {
+            throw new IllegalArgumentException("买家资料不存在");
+        }
+        readTags(profile);
+        List<com.xianyusmart.entity.XianyuGoodsOrder> orders =
+                orderMapper.selectByBuyer(request.getXianyuAccountId(), buyerUserId);
+        Map<String, List<com.xianyusmart.entity.XianyuGoodsOrder>> sessionOrders = new LinkedHashMap<>();
+        orders.forEach(order -> {
+            if (order.getSid() == null || order.getSid().isBlank()
+                    || order.getOrderId() == null || order.getOrderId().isBlank()) {
+                return;
+            }
+            List<com.xianyusmart.entity.XianyuGoodsOrder> sessionOrderList = sessionOrders.computeIfAbsent(order.getSid(),
+                    ignored -> new java.util.ArrayList<>());
+            sessionOrderList.add(order);
+        });
+        List<BuyerMessageDTO> messages = messageMapper
+                .findByBuyerAndSessions(request.getXianyuAccountId(), buyerUserId)
+                .stream()
+                .map(message -> toMessage(message, buyerUserId, sessionOrders))
+                .toList();
+        BuyerProfileDetailRespDTO detail = new BuyerProfileDetailRespDTO();
+        detail.setProfile(profile);
+        detail.setOrders(orders);
+        detail.setMessages(messages);
+        detail.setGoods(profileMapper.selectRelatedGoods(request.getXianyuAccountId(), buyerUserId));
+        return detail;
+    }
+
     private void validateOwnedAccount(Long accountId, boolean required) {
         if (accountId == null) {
             if (required) {
@@ -159,6 +203,83 @@ public class BuyerProfileService {
         } catch (Exception e) {
             profile.setTags(List.of());
         }
+    }
+
+    private BuyerMessageDTO toMessage(com.xianyusmart.entity.XianyuChatMessage message,
+                                      String buyerUserId,
+                                      Map<String, List<com.xianyusmart.entity.XianyuGoodsOrder>> sessionOrders) {
+        BuyerMessageDTO response = new BuyerMessageDTO();
+        response.setId(message.getId());
+        response.setPnmId(message.getPnmId());
+        response.setSid(message.getSId());
+        response.setContentType(message.getContentType());
+        response.setContent(message.getMsgContent());
+        response.setSenderUserName(message.getSenderUserName());
+        response.setSenderUserId(message.getSenderUserId());
+        response.setXyGoodsId(message.getXyGoodsId());
+        response.setMessageTime(message.getMessageTime());
+        response.setCreateTime(message.getCreateTime());
+        response.setDirection(buyerUserId.equals(message.getSenderUserId()) ? "BUYER" : "SELLER");
+        response.setRelatedOrderIds(resolveRelatedOrderIds(message,
+                sessionOrders.getOrDefault(message.getSId(), List.of())));
+        return response;
+    }
+
+    private List<String> resolveRelatedOrderIds(
+            com.xianyusmart.entity.XianyuChatMessage message,
+            List<com.xianyusmart.entity.XianyuGoodsOrder> sessionOrders) {
+        if (sessionOrders.isEmpty()) {
+            return List.of();
+        }
+        List<com.xianyusmart.entity.XianyuGoodsOrder> candidates = sessionOrders;
+        if (message.getPnmId() != null && !message.getPnmId().isBlank()) {
+            List<com.xianyusmart.entity.XianyuGoodsOrder> pnmMatches = sessionOrders.stream()
+                    .filter(order -> message.getPnmId().equals(order.getPnmId()))
+                    .toList();
+            if (!pnmMatches.isEmpty()) {
+                candidates = pnmMatches;
+            }
+        }
+        if (candidates == sessionOrders && message.getXyGoodsId() != null && !message.getXyGoodsId().isBlank()) {
+            List<com.xianyusmart.entity.XianyuGoodsOrder> goodsMatches = sessionOrders.stream()
+                    .filter(order -> message.getXyGoodsId().equals(order.getXyGoodsId()))
+                    .toList();
+            if (!goodsMatches.isEmpty()) {
+                candidates = goodsMatches;
+            }
+        }
+        long messageTimestamp = message.getMessageTime() == null
+                ? (message.getCreateTime() == null ? 0L
+                    : message.getCreateTime().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+                : message.getMessageTime();
+        // 同会话多订单时按消息标识、商品和时间选出最相关订单，避免整段会话重复归到每一单。
+        com.xianyusmart.entity.XianyuGoodsOrder relatedOrder = candidates.stream()
+                .min(java.util.Comparator.comparingLong(order ->
+                        timeDistance(messageTimestamp, orderTimestamp(order))))
+                .orElse(candidates.getFirst());
+        return relatedOrder.getOrderId() == null ? List.of() : List.of(relatedOrder.getOrderId());
+    }
+
+    private long orderTimestamp(com.xianyusmart.entity.XianyuGoodsOrder order) {
+        String value = order.getOrderCreateTime() == null || order.getOrderCreateTime().isBlank()
+                ? order.getCreateTime()
+                : order.getOrderCreateTime();
+        if (value == null || value.isBlank()) {
+            return 0L;
+        }
+        try {
+            return LocalDateTime.parse(value.trim().replace(' ', 'T'))
+                    .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
+    private long timeDistance(long messageTimestamp, long orderTimestamp) {
+        if (messageTimestamp <= 0 || orderTimestamp <= 0) {
+            return Long.MAX_VALUE;
+        }
+        return Math.abs(messageTimestamp - orderTimestamp);
     }
 
     private String trimToNull(String value) {

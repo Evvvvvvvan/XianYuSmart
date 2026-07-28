@@ -2,6 +2,8 @@ package com.xianyusmart.controller;
 
 import com.xianyusmart.common.ResultObject;
 import com.xianyusmart.controller.dto.BuyerProfileQueryReqDTO;
+import com.xianyusmart.controller.dto.BuyerProfileDetailReqDTO;
+import com.xianyusmart.controller.dto.BuyerProfileDetailRespDTO;
 import com.xianyusmart.controller.dto.BuyerProfileRespDTO;
 import com.xianyusmart.controller.dto.BuyerProfileSaveReqDTO;
 import com.xianyusmart.service.BuyerProfileService;
@@ -39,6 +41,16 @@ public class BuyerProfileController {
     public ResultObject<BuyerProfileRespDTO> save(@Valid @RequestBody BuyerProfileSaveReqDTO request) {
         try {
             return ResultObject.success(buyerProfileService.save(request));
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    @PostMapping("/detail")
+    public ResultObject<BuyerProfileDetailRespDTO> detail(
+            @Valid @RequestBody BuyerProfileDetailReqDTO request) {
+        try {
+            return ResultObject.success(buyerProfileService.detail(request));
         } catch (Exception e) {
             return ResultObject.failed(e.getMessage());
         }

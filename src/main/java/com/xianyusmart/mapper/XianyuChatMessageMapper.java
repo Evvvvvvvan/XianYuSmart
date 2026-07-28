@@ -62,6 +62,17 @@ public interface XianyuChatMessageMapper {
             "WHERE sender_user_id = #{senderUserId} " +
             "ORDER BY message_time DESC")
     List<XianyuChatMessage> findBySenderUserId(@Param("senderUserId") String senderUserId);
+
+    /**
+     * 同时查询买家来信和关联订单会话中的卖家发出消息。
+     */
+    @Select("SELECT * FROM xianyu_chat_message message WHERE message.xianyu_account_id = #{accountId} " +
+            "AND (message.sender_user_id = #{buyerUserId} OR message.s_id IN " +
+            "(SELECT orders.sid FROM xianyu_goods_order orders WHERE orders.xianyu_account_id = #{accountId} " +
+            "AND orders.buyer_user_id = #{buyerUserId} AND orders.sid IS NOT NULL)) " +
+            "ORDER BY message.message_time DESC LIMIT 500")
+    List<XianyuChatMessage> findByBuyerAndSessions(@Param("accountId") Long accountId,
+                                                   @Param("buyerUserId") String buyerUserId);
     
     /**
      * 根据账号ID删除消息

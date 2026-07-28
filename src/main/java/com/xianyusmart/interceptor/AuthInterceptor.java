@@ -80,6 +80,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         request.setAttribute("currentUserId", userId);
         request.setAttribute("currentUsername", username);
+        request.setAttribute("currentUser", currentUser);
         
         // 同时设置到UserContext（ThreadLocal），供任意位置获取
         com.xianyusmart.context.UserContext.set(userId, username);

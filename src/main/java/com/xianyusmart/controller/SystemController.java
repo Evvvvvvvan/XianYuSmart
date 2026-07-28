@@ -7,6 +7,7 @@ import com.xianyusmart.controller.dto.VersionInfoRespDTO;
 import com.xianyusmart.entity.SysUser;
 import com.xianyusmart.exception.BusinessException;
 import com.xianyusmart.service.AuthService;
+import com.xianyusmart.service.PlatformPermissionService;
 import com.xianyusmart.service.SystemUpdateService;
 import com.xianyusmart.service.bo.ChangePasswordReqBO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -34,6 +35,9 @@ public class SystemController {
     @Autowired
     private SystemUpdateService systemUpdateService;
 
+    @Autowired
+    private PlatformPermissionService permissionService;
+
     /**
      * 获取当前用户信息
      */
@@ -51,6 +55,7 @@ public class SystemController {
             CurrentUserRespDTO respDTO = new CurrentUserRespDTO();
             respDTO.setUsername(user.getUsername());
             respDTO.setRole(user.getRole());
+            respDTO.setPermissions(permissionService.getPermissionCodes(user.getId()));
             respDTO.setLastLoginTime(user.getLastLoginTime());
             return ResultObject.success(respDTO);
         } catch (Exception e) {

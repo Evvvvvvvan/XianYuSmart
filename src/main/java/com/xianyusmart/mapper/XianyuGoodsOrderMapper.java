@@ -53,6 +53,11 @@ public interface XianyuGoodsOrderMapper {
     
     @Select("SELECT * FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId} ORDER BY create_time DESC")
     List<XianyuGoodsOrder> selectByAccountId(@Param("accountId") Long accountId);
+
+    @Select("SELECT * FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId} " +
+            "AND buyer_user_id = #{buyerUserId} ORDER BY create_time DESC LIMIT 200")
+    List<XianyuGoodsOrder> selectByBuyer(@Param("accountId") Long accountId,
+                                         @Param("buyerUserId") String buyerUserId);
     
     @Delete("DELETE FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId}")
     int deleteByAccountId(@Param("accountId") Long accountId);

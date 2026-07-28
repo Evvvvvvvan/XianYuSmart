@@ -4,6 +4,7 @@ import { RouterView, useRoute } from 'vue-router'
 import NavMenu from './NavMenu.vue'
 import UpdateDialog from './UpdateDialog.vue'
 import { checkUpdate, getCurrentUser } from '@/api/system'
+import { hasPermission } from '@/utils/permission'
 
 // 导入所有页面图标
 import IconChart from '@/components/icons/IconChart.vue'
@@ -77,7 +78,8 @@ const pageTitleMap: Record<string, string> = {
   '/auto-reply': '自动回复',
   '/operation-log': '操作日志',
   '/operations-health': '通知与诊断',
-  '/settings': '系统设置'
+  '/settings': '系统设置',
+  '/admin/users': '账号与权限'
 }
 
 const pageIconMap: Record<string, any> = {
@@ -97,11 +99,15 @@ const pageIconMap: Record<string, any> = {
   '/operation-log': markRaw(IconLog),
   '/operations-health': markRaw(IconChart),
   '/settings': markRaw(IconShield),
+  '/admin/users': markRaw(IconAccount),
   '/qrlogin': markRaw(IconWifi)
 }
 
 const currentPageTitle = computed(() => String(route.meta.title || pageTitleMap[route.path] || 'XianYuSmart'))
 const currentPageIcon = computed(() => pageIconMap[route.path] || (route.path.startsWith('/connection/') ? pageIconMap['/connection'] : null))
+const pageReadOnly = computed(() =>
+  !!route.meta.writePermission && !hasPermission(String(route.meta.writePermission))
+)
 
 // 路由切换时清理旧页面注入的工具栏，防止短暂显示上一页操作。
 watch(() => route.path, () => {
@@ -231,6 +237,7 @@ onUnmounted(() => {
 
       <div class="el-container">
         <main>
+          <div v-if="pageReadOnly" class="readonly-notice">当前账号在此页面为只读权限，修改、发送和执行操作已停用。</div>
           <RouterView />
         </main>
       </div>
@@ -239,6 +246,7 @@ onUnmounted(() => {
     <!-- 平板端: 主内容区 -->
     <div v-if="isTablet" class="el-container">
       <main>
+        <div v-if="pageReadOnly" class="readonly-notice">当前账号在此页面为只读权限，修改、发送和执行操作已停用。</div>
         <RouterView />
       </main>
     </div>
@@ -246,6 +254,7 @@ onUnmounted(() => {
     <!-- 手机端: 主内容区 -->
     <div v-if="isMobile" class="el-container">
       <main>
+        <div v-if="pageReadOnly" class="readonly-notice">当前账号在此页面为只读权限，修改、发送和执行操作已停用。</div>
         <RouterView />
       </main>
     </div>
@@ -402,6 +411,16 @@ main {
 main::-webkit-scrollbar {
   width: 6px;
   height: 6px;
+}
+
+.readonly-notice {
+  margin: 10px 14px 0;
+  padding: 9px 12px;
+  border: 1px solid #fedf89;
+  border-radius: 6px;
+  color: #93370d;
+  background: #fffaeb;
+  font-size: 13px;
 }
 
 

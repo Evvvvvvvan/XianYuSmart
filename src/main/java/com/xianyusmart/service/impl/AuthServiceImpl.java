@@ -8,12 +8,14 @@ import com.xianyusmart.exception.BusinessException;
 import com.xianyusmart.mapper.SysLoginTokenMapper;
 import com.xianyusmart.mapper.SysUserMapper;
 import com.xianyusmart.service.AuthService;
+import com.xianyusmart.service.PlatformPermissionService;
 import com.xianyusmart.service.bo.*;
 import com.xianyusmart.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.Duration;
@@ -53,6 +55,9 @@ public class AuthServiceImpl implements AuthService {
     @Autowired
     private CacheService cacheService;
 
+    @Autowired
+    private PlatformPermissionService permissionService;
+
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
@@ -64,6 +69,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public LoginRespBO register(RegisterReqBO reqBO) {
         // 检查用户名是否重复
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
@@ -83,6 +89,8 @@ public class AuthServiceImpl implements AuthService {
         user.setCreatedTime(LocalDateTime.now().format(FORMATTER));
         user.setUpdatedTime(LocalDateTime.now().format(FORMATTER));
         sysUserMapper.insert(user);
+        // 公开注册账号默认保留完整租户能力，后续可由管理员按需收敛。
+        permissionService.assignDefaultPermissions(user.getId());
 
         log.info("[Auth] 注册成功: username={}", reqBO.getUsername());
 
