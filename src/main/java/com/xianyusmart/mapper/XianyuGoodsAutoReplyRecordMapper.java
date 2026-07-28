@@ -23,7 +23,9 @@ public interface XianyuGoodsAutoReplyRecordMapper {
     /**
      * 更新记录状态和回复内容
      */
-    @Update("UPDATE xianyu_goods_auto_reply_record SET state = #{state}, reply_content = #{replyContent}, lease_owner = NULL, lease_expire_time = NULL WHERE id = #{id}")
+    @Update("UPDATE xianyu_goods_auto_reply_record SET state = #{state}, reply_content = #{replyContent}, " +
+            "lease_owner = NULL, lease_expire_time = NULL, " +
+            "exception_revision = exception_revision + IF(#{state} = -1, 1, 0) WHERE id = #{id}")
     int updateStateAndContent(@Param("id") Long id, @Param("state") Integer state, @Param("replyContent") String replyContent);
     
     /**

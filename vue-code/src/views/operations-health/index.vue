@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import {
+  acknowledgeAllOperationExceptions,
+  acknowledgeOperationException,
   deleteNotificationChannel,
   getHealthOverview,
   getNotificationChannels,
@@ -75,6 +77,7 @@ const exceptions = ref<OperationException[]>([])
 const channels = ref<NotificationChannel[]>([])
 const logs = ref<NotificationLog[]>([])
 const editing = ref(false)
+const acknowledging = ref('')
 const channelForm = ref({
   id: undefined as number | undefined,
   channelName: '',
@@ -167,6 +170,30 @@ const removeChannel = async (channel: NotificationChannel) => {
   } catch {}
 }
 
+const exceptionKey = (item: OperationException) =>
+  `${item.exceptionType}-${item.exceptionId}-${item.exceptionVersion}`
+
+const acknowledgeException = async (item: OperationException) => {
+  const key = exceptionKey(item)
+  acknowledging.value = key
+  try {
+    await acknowledgeOperationException(item)
+    toast.success('异常已标记为已处理')
+    await load()
+  } finally {
+    acknowledging.value = ''
+  }
+}
+
+const acknowledgeAllExceptions = async () => {
+  try {
+    await showConfirm(`确定将当前 ${exceptions.value.length} 条异常全部标记为已处理？`, '批量处理异常')
+    const response = await acknowledgeAllOperationExceptions(exceptions.value)
+    toast.success(`已处理 ${response.data || 0} 条异常`)
+    await load()
+  } catch {}
+}
+
 const eventLabel = (value: string) =>
   eventOptions.find(option => option.value === value)?.label || value
 
@@ -181,6 +208,10 @@ onMounted(load)
         <p>集中查看账号、发货、回复和库存异常，并通过 Webhook 把关键事件发送到已有协作工具。</p>
       </div>
       <button v-if="activeTab === 'channels'" class="primary" @click="openChannel()">新建渠道</button>
+      <div v-else-if="activeTab === 'exceptions'" class="actions">
+        <button @click="load">刷新</button>
+        <button v-if="exceptions.length > 0" class="primary" @click="acknowledgeAllExceptions">全部标记已处理</button>
+      </div>
       <button v-else @click="load">刷新</button>
     </section>
 
@@ -216,12 +247,17 @@ onMounted(load)
 
     <section v-else-if="activeTab === 'exceptions'" class="panel list">
       <div v-if="exceptions.length === 0" class="empty">暂无异常待办。</div>
-      <article v-for="item in exceptions" :key="`${item.exceptionType}-${item.targetId}-${item.occurredAt}`">
+      <article v-for="item in exceptions" :key="exceptionKey(item)">
         <div class="item-main">
           <span class="badge warning">{{ item.exceptionType }}</span>
           <div><strong>{{ item.title }}</strong><p>{{ item.reason }}</p></div>
         </div>
-        <div class="item-meta"><span>{{ item.status }}</span><span>{{ item.occurredAt }}</span></div>
+        <div class="exception-actions">
+          <div class="item-meta"><span>{{ item.status }}</span><span>{{ item.occurredAt }}</span></div>
+          <button :disabled="acknowledging === exceptionKey(item)" @click="acknowledgeException(item)">
+            {{ acknowledging === exceptionKey(item) ? '处理中...' : '标记已处理' }}
+          </button>
+        </div>
       </article>
     </section>
 
@@ -311,6 +347,7 @@ button, input { font: inherit; } button { padding: 8px 14px; border: 1px solid #
 .list { overflow: hidden; } .list article { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 15px 16px; border-bottom: 1px solid #eaecf0; }
 .list article:last-child { border-bottom: 0; } .item-main { min-width: 0; display: flex; align-items: flex-start; gap: 12px; }
 .item-main p { margin-top: 4px; color: #667085; font-size: 13px; overflow-wrap: anywhere; } .item-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: #98a2b3; font-size: 12px; text-align: right; }
+.exception-actions { display: flex; align-items: center; gap: 12px; }
 .event-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; } .event-tags span { padding: 2px 6px; border-radius: 4px; color: #155eef; background: #eef4ff; font-size: 12px; }
 .actions { display: flex; gap: 6px; } .empty { padding: 70px 20px; text-align: center; color: #98a2b3; }
 .overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: rgba(16,24,40,.45); }
@@ -327,5 +364,5 @@ button, input { font: inherit; } button { padding: 8px 14px; border: 1px solid #
 .dialog fieldset { border: 1px solid #eaecf0; border-radius: 8px; } .dialog .check-option { display: inline-flex; align-items: center; gap: 5px; margin-right: 16px; }
 .dialog .check-option input, .dialog .enabled input { width: auto; } .dialog .enabled { display: flex; padding: 10px 0; color: #344054; }
 .dialog footer { justify-content: flex-end; margin-top: 18px; } .close { border: 0; padding: 3px 8px; font-size: 22px; }
-@media (max-width: 720px) { .summary { grid-template-columns: 1fr; } .page-head, .list article { align-items: stretch; flex-direction: column; } .actions { justify-content: flex-end; } .item-meta { align-items: flex-start; text-align: left; } .channel-types { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 720px) { .summary { grid-template-columns: 1fr; } .page-head, .list article { align-items: stretch; flex-direction: column; } .actions { justify-content: flex-end; } .exception-actions { justify-content: space-between; } .item-meta { align-items: flex-start; text-align: left; } .channel-types { grid-template-columns: repeat(2, 1fr); } }
 </style>

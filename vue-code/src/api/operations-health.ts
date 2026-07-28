@@ -17,6 +17,8 @@ export interface HealthOverview {
 
 export interface OperationException {
   exceptionType: string
+  exceptionId: number
+  exceptionVersion: number
   accountId?: number
   targetId?: string
   title: string
@@ -63,6 +65,27 @@ export const getHealthOverview = () => request<HealthOverview>({
 export const getOperationExceptions = () => request<OperationException[]>({
   url: '/diagnostics/exceptions',
   method: 'GET'
+})
+
+export const acknowledgeOperationException = (data: Pick<OperationException, 'exceptionType' | 'exceptionId' | 'exceptionVersion'>) =>
+  request<void>({
+    url: '/diagnostics/exceptions/acknowledge',
+    method: 'POST',
+    data: {
+      exceptionType: data.exceptionType,
+      exceptionId: data.exceptionId,
+      exceptionVersion: data.exceptionVersion
+    }
+  })
+
+export const acknowledgeAllOperationExceptions = (items: OperationException[]) => request<number>({
+  url: '/diagnostics/exceptions/acknowledge-all',
+  method: 'POST',
+  data: items.map(item => ({
+    exceptionType: item.exceptionType,
+    exceptionId: item.exceptionId,
+    exceptionVersion: item.exceptionVersion
+  }))
 })
 
 export const getNotificationChannels = () => request<NotificationChannel[]>({

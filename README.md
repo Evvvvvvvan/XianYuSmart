@@ -16,7 +16,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 它不只是在收到订单后发送一段文本，而是把 **订单发现、幂等入队、库存预占、双通道交付、失败重试和人工复核** 串成可恢复的完整链路。固定内容与卡密两种交付模式严格互斥，账号、商品、消息、订单、库存、任务和 AI 知识库按租户隔离。核心任务链路只依赖 MySQL，不强制引入 Redis 或消息队列，兼顾部署成本与后续扩展。
 
-当前版本：[2.0.0](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.0) · [查看更新日志](CHANGELOG.md)
+当前版本：[2.0.1](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.1) · [查看更新日志](CHANGELOG.md)
 
 [商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [技术基线](#技术基线) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [配置说明](#配置说明) · [开发构建](#开发构建) · [构建与验证](#构建与验证) · [目录与职责](#目录与职责) · [日常运维](#日常运维) · [使用边界](#使用边界) · [许可证与免责声明](#许可证与免责声明) · [交流与支持](#交流与支持) · [Star History](#star-history)
 
@@ -51,7 +51,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 | 轻量运行边界 | 有界线程池、有限任务队列、批量领取和数据库连接池上限 | 不依赖重型中间件也能控制资源占用 |
 | 策略化扩展 | 固定内容/卡密交付策略与关键词/AI 回复策略独立解析 | 新增交付或回复方式时无需改写主流程 |
 | 外部供货幂等 | 订单级请求令牌、响应数量校验和不确定结果隔离 | 对接外部卡密系统时避免重复采购与错误交付 |
-| 主动通知与诊断 | 公网 HTTPS Webhook、HMAC-SHA256 签名、SSRF 防护和统一异常视图 | 关键事件可接入已有协作工具，异常定位不再跨页面查找 |
+| 主动通知与诊断 | 多渠道通知、签名校验、SSRF 防护、统一异常视图与处理状态 | 关键事件可及时触达，已处理的历史异常不会持续干扰 |
 
 这套实现适合研究 **可靠任务调度、事件驱动自动化、多租户数据隔离、虚拟库存一致性和 AI 客服编排**。仓库提供的是从前端工作台、后端状态机、数据库迁移到容器部署的完整闭环，而不是只能运行单一路径的代码片段。
 
@@ -101,7 +101,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 | 自动回复 | 关键词、商品专属回复、AI 回复和人工接管设置 |
 | 买家管理 | 查看买家互动、订单和成交数据，维护标签、备注与自动化暂停状态 |
 | 订单与评价 | 查看履约状态、手动评价、双方评价和失败重试，不维护自动评价规则 |
-| 通知与诊断 | 检查账号、发货、回复和库存异常，配置 Webhook 通知与查看发送记录 |
+| 通知与诊断 | 检查账号、发货、回复和库存异常，单条或批量标记已处理，配置通知渠道与查看发送记录 |
 | 操作日志与系统设置 | 查询业务操作、异常原因和租户级系统参数 |
 
 推荐配置顺序：
@@ -183,7 +183,7 @@ flowchart LR
 每个正式 Release 会自动发布 `linux/amd64` 镜像到 GitHub Container Registry。固定版本适合生产部署，`latest` 适合体验最新正式版本。
 
 ```bash
-docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.0.0
+docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.0.1
 docker pull ghcr.io/evvvvvvvan/xianyusmart:latest
 ```
 
@@ -194,7 +194,7 @@ Linux：
 ```bash
 cp .env.example .env
 # 修改 .env 中的数据库密码和 JWT 强密钥
-export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.0.0
+export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.0.1
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -204,7 +204,7 @@ Windows PowerShell：
 ```powershell
 Copy-Item .env.example .env
 notepad .env
-$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.0.0'
+$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.0.1'
 docker compose pull app
 docker compose up -d --no-build
 ```

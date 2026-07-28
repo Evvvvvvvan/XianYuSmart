@@ -130,13 +130,19 @@ public interface XianyuGoodsOrderMapper {
     long countByAccountId(@Param("accountId") Long accountId, @Param("xyGoodsId") String xyGoodsId,
                           @Param("keyword") String keyword, @Param("deliveryStatuses") List<String> deliveryStatuses);
     
-    @Update("UPDATE xianyu_goods_order SET state = #{state}, delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END WHERE id = #{id}")
+    @Update("UPDATE xianyu_goods_order SET state = #{state}, " +
+            "delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END, " +
+            "exception_revision = exception_revision + IF(#{state} = -1, 1, 0) WHERE id = #{id}")
     int updateState(@Param("id") Long id, @Param("state") Integer state);
     
-    @Update("UPDATE xianyu_goods_order SET state = #{state}, content = #{content}, delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END WHERE id = #{id}")
+    @Update("UPDATE xianyu_goods_order SET state = #{state}, content = #{content}, " +
+            "delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END, " +
+            "exception_revision = exception_revision + IF(#{state} = -1, 1, 0) WHERE id = #{id}")
     int updateStateAndContent(@Param("id") Long id, @Param("state") Integer state, @Param("content") String content);
 
-    @Update("UPDATE xianyu_goods_order SET state = #{state}, content = #{content}, fail_reason = #{failReason}, delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END WHERE id = #{id}")
+    @Update("UPDATE xianyu_goods_order SET state = #{state}, content = #{content}, fail_reason = #{failReason}, " +
+            "delivery_status = CASE WHEN #{state} = 1 THEN 'COMPLETED' WHEN #{state} = -1 THEN 'FAILED' ELSE delivery_status END, " +
+            "exception_revision = exception_revision + IF(#{state} = -1, 1, 0) WHERE id = #{id}")
     int updateStateContentAndFailReason(@Param("id") Long id, @Param("state") Integer state, @Param("content") String content, @Param("failReason") String failReason);
     
     @Select("SELECT * FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId} AND xy_goods_id = #{xyGoodsId} AND order_id = #{orderId} LIMIT 1")
@@ -166,14 +172,16 @@ public interface XianyuGoodsOrderMapper {
     int completeTask(@Param("id") Long id);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = #{status}, next_retry_time = #{nextRetryTime}, " +
-            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_FAILED', last_error_message = #{errorMessage} " +
+            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_FAILED', last_error_message = #{errorMessage}, " +
+            "exception_revision = exception_revision + IF(#{status} IN ('FAILED', 'REVIEW_REQUIRED'), 1, 0) " +
             "WHERE id = #{id} AND delivery_status NOT IN ('REVIEW_REQUIRED', 'COMPLETED')")
     int retryOrFailTask(@Param("id") Long id, @Param("status") String status,
                         @Param("nextRetryTime") java.time.LocalDateTime nextRetryTime,
                         @Param("errorMessage") String errorMessage);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'REVIEW_REQUIRED', next_retry_time = NULL, " +
-            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_UNCERTAIN', last_error_message = #{errorMessage} WHERE id = #{id}")
+            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_UNCERTAIN', last_error_message = #{errorMessage}, " +
+            "exception_revision = exception_revision + 1 WHERE id = #{id}")
     int markTaskReviewRequired(@Param("id") Long id, @Param("errorMessage") String errorMessage);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'PENDING', next_retry_time = NOW(3), " +
@@ -238,7 +246,8 @@ public interface XianyuGoodsOrderMapper {
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'REVIEW_REQUIRED', " +
             "last_error_code = 'DELIVERY_HELD_TIMEOUT', last_error_message = '卡密已暂存但履约结果未确认', " +
-            "delivery_message_next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL " +
+            "delivery_message_next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL, " +
+            "exception_revision = exception_revision + 1 " +
             "WHERE delivery_message_state = 3 AND delivery_message_next_retry_time <= NOW(3) " +
             "AND NOT EXISTS (SELECT 1 FROM xianyu_kami_usage_record r JOIN xianyu_kami_item i " +
             "ON i.id = r.kami_item_id WHERE r.xianyu_account_id = xianyu_goods_order.xianyu_account_id " +
