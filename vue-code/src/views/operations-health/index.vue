@@ -10,6 +10,7 @@ import {
   testNotificationChannel,
   type HealthOverview,
   type NotificationChannel,
+  type NotificationChannelType,
   type NotificationLog,
   type OperationException
 } from '@/api/operations-health'
@@ -30,6 +31,43 @@ const eventOptions = [
   { value: 'CREDENTIAL_EXPIRED', label: '凭证失效' },
   { value: 'KAMI_STOCK_LOW', label: '卡密低库存' }
 ]
+const channelTypes: Array<{
+  value: NotificationChannelType
+  label: string
+  description: string
+  fields: Array<{ key: string; label: string; placeholder: string; secret?: boolean }>
+  defaults?: Record<string, string>
+}> = [
+  { value: 'WECHAT_WORK', label: '企业微信', description: '群机器人通知', fields: [
+    { key: 'webhookUrl', label: '机器人 Webhook', placeholder: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...' }
+  ] },
+  { value: 'DINGTALK', label: '钉钉', description: '群机器人通知，支持加签', fields: [
+    { key: 'webhookUrl', label: '机器人 Webhook', placeholder: 'https://oapi.dingtalk.com/robot/send?access_token=...' },
+    { key: 'secret', label: '加签密钥（可选）', placeholder: 'SEC...', secret: true }
+  ] },
+  { value: 'FEISHU', label: '飞书', description: '群机器人通知，支持签名校验', fields: [
+    { key: 'webhookUrl', label: '机器人 Webhook', placeholder: 'https://open.feishu.cn/open-apis/bot/v2/hook/...' },
+    { key: 'secret', label: '签名密钥（可选）', placeholder: '留空则不启用签名', secret: true }
+  ] },
+  { value: 'BARK', label: 'Bark', description: 'iPhone 实时推送', fields: [
+    { key: 'serverUrl', label: '服务地址', placeholder: 'https://api.day.app' },
+    { key: 'deviceKey', label: 'Device Key', placeholder: 'Bark 设备密钥', secret: true },
+    { key: 'group', label: '推送分组（可选）', placeholder: 'XianYuSmart' }
+  ], defaults: { serverUrl: 'https://api.day.app' } },
+  { value: 'PUSHPLUS', label: 'PushPlus', description: '微信消息推送', fields: [
+    { key: 'token', label: 'Token', placeholder: 'PushPlus Token', secret: true },
+    { key: 'topic', label: '群组编码（可选）', placeholder: 'topic' }
+  ] },
+  { value: 'TELEGRAM', label: 'Telegram', description: '机器人私聊或群组通知', fields: [
+    { key: 'botToken', label: 'Bot Token', placeholder: '123456:ABC...', secret: true },
+    { key: 'chatId', label: 'Chat ID', placeholder: '-100xxxxxxxxxx' }
+  ] },
+  { value: 'WEBHOOK', label: '通用 Webhook', description: '向自建系统发送标准 JSON', fields: [
+    { key: 'webhookUrl', label: 'Webhook 地址', placeholder: 'https://example.com/webhook' },
+    { key: 'secret', label: '签名密钥（可选）', placeholder: '用于 X-XianYuSmart-Signature', secret: true }
+  ] }
+]
+const defaultMessageTemplate = '【{eventName}】{title}\n{content}\n账号：{accountId}'
 const activeTab = ref('health')
 const loading = ref(false)
 const overview = ref<HealthOverview>()
@@ -40,11 +78,18 @@ const editing = ref(false)
 const channelForm = ref({
   id: undefined as number | undefined,
   channelName: '',
-  webhookUrl: '',
-  signingSecret: '',
+  channelType: 'WECHAT_WORK' as NotificationChannelType,
+  config: {} as Record<string, string>,
+  messageTemplate: defaultMessageTemplate,
   eventTypes: [] as string[],
   enabled: true
 })
+const activeChannelType = () =>
+  channelTypes.find(item => item.value === channelForm.value.channelType) || channelTypes[0]!
+const selectChannelType = (channelType: NotificationChannelType) => {
+  channelForm.value.channelType = channelType
+  channelForm.value.config = { ...(channelTypes.find(item => item.value === channelType)?.defaults || {}) }
+}
 
 const load = async () => {
   loading.value = true
@@ -67,15 +112,17 @@ const openChannel = (channel?: NotificationChannel) => {
   channelForm.value = channel ? {
     id: channel.id,
     channelName: channel.channelName,
-    webhookUrl: channel.webhookUrl,
-    signingSecret: '',
+    channelType: channel.channelType || 'WEBHOOK',
+    config: { ...(channel.config || {}) },
+    messageTemplate: channel.messageTemplate || defaultMessageTemplate,
     eventTypes: [...channel.eventTypes],
     enabled: channel.enabled
   } : {
     id: undefined,
     channelName: '',
-    webhookUrl: '',
-    signingSecret: '',
+    channelType: 'WECHAT_WORK',
+    config: {},
+    messageTemplate: defaultMessageTemplate,
     eventTypes: ['DELIVERY_EXCEPTION', 'ACCOUNT_OFFLINE', 'CREDENTIAL_EXPIRED', 'KAMI_STOCK_LOW'],
     enabled: true
   }
@@ -83,8 +130,16 @@ const openChannel = (channel?: NotificationChannel) => {
 }
 
 const saveChannel = async () => {
-  if (!channelForm.value.channelName.trim() || !channelForm.value.webhookUrl.trim()) {
-    toast.warning('请填写渠道名称和 Webhook 地址')
+  if (!channelForm.value.channelName.trim()) {
+    toast.warning('请填写渠道名称')
+    return
+  }
+  const missingField = activeChannelType().fields.find(field =>
+    !field.label.includes('可选') && !channelForm.value.config[field.key]?.trim()
+    && !(channelForm.value.id && field.secret)
+  )
+  if (missingField) {
+    toast.warning(`请填写${missingField.label}`)
     return
   }
   if (channelForm.value.eventTypes.length === 0) {
@@ -177,7 +232,7 @@ onMounted(load)
           <span :class="channel.enabled ? 'badge success' : 'badge'">{{ channel.enabled ? '已启用' : '已停用' }}</span>
           <div>
             <strong>{{ channel.channelName }}</strong>
-            <p>{{ channel.webhookUrl }}</p>
+            <p>{{ channelTypes.find(item => item.value === channel.channelType)?.label || '通用 Webhook' }} · {{ channelTypes.find(item => item.value === channel.channelType)?.description }}</p>
             <div class="event-tags"><span v-for="event in channel.eventTypes" :key="event">{{ eventLabel(event) }}</span></div>
             <small v-if="channel.lastErrorMessage" class="error">{{ channel.lastErrorMessage }}</small>
           </div>
@@ -206,8 +261,22 @@ onMounted(load)
         <section class="dialog">
           <header><h3>{{ channelForm.id ? '编辑通知渠道' : '新建通知渠道' }}</h3><button class="close" @click="editing = false">×</button></header>
           <label>渠道名称<input v-model="channelForm.channelName" maxlength="100" placeholder="例如：运维群机器人" /></label>
-          <label>Webhook 地址<input v-model="channelForm.webhookUrl" placeholder="仅支持公网 HTTPS 地址" /></label>
-          <label>签名密钥<input v-model="channelForm.signingSecret" type="password" :placeholder="channelForm.id ? '留空则保持原密钥' : '可选，用于校验消息签名'" /></label>
+          <div class="channel-types">
+            <button v-for="item in channelTypes" :key="item.value" type="button"
+              :class="{ active: channelForm.channelType === item.value }"
+              @click="selectChannelType(item.value)">
+              <strong>{{ item.label }}</strong><small>{{ item.description }}</small>
+            </button>
+          </div>
+          <label v-for="field in activeChannelType().fields" :key="field.key">
+            {{ field.label }}
+            <input v-model="channelForm.config[field.key]" :type="field.secret ? 'password' : 'text'"
+              :placeholder="channelForm.id && field.secret ? '留空则保持原值' : field.placeholder" />
+          </label>
+          <label>通知内容模板
+            <textarea v-model="channelForm.messageTemplate" maxlength="1000" rows="5"></textarea>
+            <small>可用变量：{eventName} 事件、{title} 标题、{content} 内容、{accountId} 账号</small>
+          </label>
           <fieldset>
             <legend>接收事件</legend>
             <label v-for="option in eventOptions" :key="option.value" class="check-option">
@@ -245,12 +314,18 @@ button, input { font: inherit; } button { padding: 8px 14px; border: 1px solid #
 .event-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; } .event-tags span { padding: 2px 6px; border-radius: 4px; color: #155eef; background: #eef4ff; font-size: 12px; }
 .actions { display: flex; gap: 6px; } .empty { padding: 70px 20px; text-align: center; color: #98a2b3; }
 .overlay { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 20px; background: rgba(16,24,40,.45); }
-.dialog { width: min(560px, 100%); padding: 20px; border-radius: 12px; background: #fff; box-shadow: 0 20px 50px rgba(16,24,40,.2); }
+.dialog { width: min(680px, 100%); max-height: calc(100vh - 40px); overflow: auto; padding: 20px; border-radius: 12px; background: #fff; box-shadow: 0 20px 50px rgba(16,24,40,.2); }
 .dialog header, .dialog footer, .enabled { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dialog header { margin-bottom: 18px; } .dialog label { display: grid; gap: 6px; margin: 13px 0; color: #667085; font-size: 13px; }
-.dialog input { width: 100%; padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 6px; box-sizing: border-box; }
+.dialog input, .dialog textarea { width: 100%; padding: 9px 10px; border: 1px solid #d0d5dd; border-radius: 6px; box-sizing: border-box; font: inherit; }
+.dialog textarea { resize: vertical; line-height: 1.55; }
+.dialog label small { color: #98a2b3; }
+.channel-types { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.channel-types button { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left; }
+.channel-types button.active { border-color: #155eef; color: #155eef; background: #eef4ff; }
+.channel-types small { color: #98a2b3; font-size: 11px; }
 .dialog fieldset { border: 1px solid #eaecf0; border-radius: 8px; } .dialog .check-option { display: inline-flex; align-items: center; gap: 5px; margin-right: 16px; }
 .dialog .check-option input, .dialog .enabled input { width: auto; } .dialog .enabled { display: flex; padding: 10px 0; color: #344054; }
 .dialog footer { justify-content: flex-end; margin-top: 18px; } .close { border: 0; padding: 3px 8px; font-size: 22px; }
-@media (max-width: 720px) { .summary { grid-template-columns: 1fr; } .page-head, .list article { align-items: stretch; flex-direction: column; } .actions { justify-content: flex-end; } .item-meta { align-items: flex-start; text-align: left; } }
+@media (max-width: 720px) { .summary { grid-template-columns: 1fr; } .page-head, .list article { align-items: stretch; flex-direction: column; } .actions { justify-content: flex-end; } .item-meta { align-items: flex-start; text-align: left; } .channel-types { grid-template-columns: repeat(2, 1fr); } }
 </style>

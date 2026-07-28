@@ -3,7 +3,7 @@ import { ref, shallowRef, onMounted, onUnmounted, computed, provide, markRaw, wa
 import { RouterView, useRoute } from 'vue-router'
 import NavMenu from './NavMenu.vue'
 import UpdateDialog from './UpdateDialog.vue'
-import { getVersion, checkUpdate } from '@/api/system'
+import { checkUpdate } from '@/api/system'
 
 // 导入所有页面图标
 import IconChart from '@/components/icons/IconChart.vue'
@@ -28,8 +28,7 @@ const updateDialog = ref<InstanceType<typeof UpdateDialog> | null>(null)
 const loadVersion = async () => {
   try {
     const updateRes = await checkUpdate()
-    const latest = updateRes.data?.latestVersion || ''
-    hasNewVersion.value = latest > currentVersion.value
+    hasNewVersion.value = updateRes.data?.hasUpdate === true
   } catch {
     // ignore
   }
@@ -152,6 +151,9 @@ onUnmounted(() => {
 
 <template>
   <div class="app-layout">
+    <button v-if="hasNewVersion" class="update-notice" @click="openUpdateDialog">
+      <span></span>发现新版本，立即更新
+    </button>
     <!-- 手机端: 顶部导航栏 -->
     <div v-if="isMobile" class="mobile-header">
       <button class="menu-toggle-btn" @click="toggleDrawer">
@@ -254,6 +256,30 @@ onUnmounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.update-notice {
+  position: fixed;
+  top: 10px;
+  right: 16px;
+  z-index: 1100;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  border: 1px solid rgba(21, 94, 239, .2);
+  border-radius: 7px;
+  color: #155eef;
+  background: #fff;
+  box-shadow: 0 5px 16px rgba(16, 24, 40, .1);
+  cursor: pointer;
+}
+
+.update-notice span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #155eef;
 }
 
 .layout-container {

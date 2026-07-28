@@ -47,6 +47,7 @@ const {
   copySId,
   handleConfirmShipment,
   handleRetryDelivery,
+  handleResendDelivery,
   handleGoodsScroll,
   selectGoods,
   clearGoodsFilter,
@@ -412,6 +413,7 @@ const executeConfirmShipment = async () => {
           @copy-sid="copySId"
           @confirm-shipment="openConfirmDialog"
           @retry-delivery="handleRetryDelivery"
+          @resend-delivery="handleResendDelivery"
           @rate="openRateDetail"
         />
       </div>

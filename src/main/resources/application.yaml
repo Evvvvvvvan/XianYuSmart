@@ -4,7 +4,8 @@ server:
 app:
   version: 2.0.0
   update:
-    release-api: ${UPDATE_RELEASE_API:}
+    release-api: ${UPDATE_RELEASE_API:https://api.github.com/repos/Evvvvvvvan/XianYuSmart/releases/latest}
+    request-dir: ${UPDATE_REQUEST_DIR:/app/update}
   executor:
     core-size: ${EXECUTOR_CORE_SIZE:4}
     max-size: ${EXECUTOR_MAX_SIZE:8}

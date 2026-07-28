@@ -15,6 +15,7 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
       TRUST_PROXY: ${TRUST_PROXY:-true}
       UPDATE_RELEASE_API: ${UPDATE_RELEASE_API:-}
+      UPDATE_REQUEST_DIR: /app/update
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
       DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-2}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=55 -XX:InitialRAMPercentage=20 -XX:+ExitOnOutOfMemoryError}
@@ -27,6 +28,7 @@ services:
     volumes:
       - app-data:/app/data
       - app-logs:/app/logs
+      - ${UPDATE_HOST_DIR:-/opt/xianyusmart/runtime/update}:/app/update
     mem_limit: 768m
     cpus: 1.5
     pids_limit: 256

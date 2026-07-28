@@ -1,6 +1,6 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { queryDeliveryRecordList, queryOrderRateDetails, confirmShipment, requeueDelivery } from '@/api/order'
+import { queryDeliveryRecordList, queryOrderRateDetails, confirmShipment, requeueDelivery, resendDelivery } from '@/api/order'
 import { getAccountList } from '@/api/account'
 import { getGoodsList, type GoodsItemWithConfig } from '@/api/goods'
 import type { DeliveryRecordVO, DeliveryRecordQueryReq } from '@/api/order'
@@ -12,6 +12,7 @@ import { deliveryStatusOptions, parseDeliveryStatuses } from './order-status'
 export interface DeliveryRecordItem extends DeliveryRecordVO {
   confirming?: boolean
   retrying?: boolean
+  resending?: boolean
 }
 
 export function useOrderManager() {
@@ -202,7 +203,8 @@ export function useOrderManager() {
       orderList.value = (response.data?.records || []).map(item => ({
         ...item,
         confirming: false,
-        retrying: false
+        retrying: false,
+        resending: false
       }))
       total.value = response.data?.total || 0
       void loadRateDetails(orderList.value)
@@ -299,6 +301,27 @@ export function useOrderManager() {
     }
   }
 
+  const handleResendDelivery = async (row: DeliveryRecordItem) => {
+    if (!row.xianyuAccountId || !row.orderId) {
+      showError('订单信息不完整')
+      return
+    }
+    try {
+      await showConfirm(`确认向买家重新发送订单「${row.orderId}」的已保存发货内容？`, '补发确认')
+    } catch {
+      return
+    }
+    row.resending = true
+    try {
+      await resendDelivery({ xianyuAccountId: row.xianyuAccountId, orderId: row.orderId })
+      showSuccess('发货内容已重新发送')
+    } catch (error: any) {
+      showError(error.message || '补发失败')
+    } finally {
+      row.resending = false
+    }
+  }
+
   return {
     loading,
     orderList,
@@ -329,6 +352,7 @@ export function useOrderManager() {
     copySId,
     handleConfirmShipment,
     handleRetryDelivery,
+    handleResendDelivery,
     handleGoodsScroll,
     selectGoods,
     clearGoodsFilter,

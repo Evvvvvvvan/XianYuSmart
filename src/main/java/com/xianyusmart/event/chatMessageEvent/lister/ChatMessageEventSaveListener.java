@@ -7,17 +7,16 @@ import com.xianyusmart.mapper.XianyuChatMessageMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 /**
  * 会保存所有聊天消息
  * 
- * <p>监听 {@link ChatMessageReceivedEvent} 事件，负责将消息异步保存到数据库</p>
+ * <p>监听 {@link ChatMessageReceivedEvent} 事件，负责将消息保存到数据库</p>
  * 
  * <p>特点：</p>
  * <ul>
- *   <li>使用@Async异步执行，不阻塞WebSocket消息接收</li>
+ *   <li>消息先完成落库，再推进WebSocket同步游标</li>
  *   <li>自动去重，避免重复保存</li>
  *   <li>独立模块，与其他监听器互不影响</li>
  * </ul>
@@ -36,7 +35,6 @@ public class ChatMessageEventSaveListener {
      * 
      * @param event 聊天消息接收事件
      */
-    @Async
     @EventListener
     public void handleChatMessageReceived(ChatMessageReceivedEvent event) {
         ChatMessageData messageData = event.getMessageData();

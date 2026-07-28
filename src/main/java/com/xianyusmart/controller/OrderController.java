@@ -44,6 +44,9 @@ public class OrderController {
     @Autowired
     private com.xianyusmart.service.PendingOrderPollService pendingOrderPollService;
 
+    @Autowired
+    private com.xianyusmart.service.BuyerMessageService buyerMessageService;
+
     /**
      * 查询订单列表（第三方调用）
      */
@@ -185,6 +188,28 @@ public class OrderController {
             log.error("失败订单重新排队异常: id={}, xianyuAccountId={}",
                     reqDTO.getId(), reqDTO.getXianyuAccountId(), e);
             return ResultObject.failed("重新排队失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 将订单已保存的实际发货内容重新发送给买家
+     */
+    @PostMapping("/resendDelivery")
+    public ResultObject<String> resendDelivery(@RequestBody ConfirmShipmentReqDTO reqDTO) {
+        try {
+            if (reqDTO.getXianyuAccountId() == null
+                    || reqDTO.getOrderId() == null || reqDTO.getOrderId().isBlank()) {
+                return ResultObject.failed("账号ID和订单ID不能为空");
+            }
+            if (!buyerMessageService.resendDeliveryMessage(
+                    reqDTO.getXianyuAccountId(), reqDTO.getOrderId())) {
+                return ResultObject.failed("补发失败，请检查WebSocket连接");
+            }
+            return ResultObject.success("发货内容已重新发送");
+        } catch (Exception e) {
+            log.warn("订单补发失败: accountId={}, orderId={}, error={}",
+                    reqDTO.getXianyuAccountId(), reqDTO.getOrderId(), e.getMessage());
+            return ResultObject.failed(e.getMessage());
         }
     }
 

@@ -45,6 +45,15 @@ public class XianyuAccount {
      * 账号状态 1:正常 -1:需要手机号验证
      */
     private Integer status;
+
+    /**
+     * 消息同步游标，用于断线后从最后确认位置继续接收。
+     */
+    private Long websocketSyncPts;
+
+    private Long websocketSyncSeq;
+
+    private Long websocketSyncTimestamp;
     
     /**
      * 创建时间（SQLite存储为TEXT）

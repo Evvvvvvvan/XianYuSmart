@@ -23,6 +23,7 @@ interface Emits {
   (e: 'copySid', sid: string): void
   (e: 'confirmShipment', item: DeliveryRecordItem): void
   (e: 'retryDelivery', item: DeliveryRecordItem): void
+  (e: 'resendDelivery', item: DeliveryRecordItem): void
   (e: 'rate', item: DeliveryRecordItem): void
   (e: 'viewDetail', item: DeliveryRecordItem): void
 }
@@ -214,6 +215,15 @@ const getConfirmBg = (state: number) => {
           <span>{{ order.retrying ? '处理中' : '重新排队' }}</span>
         </button>
         <button
+          v-if="order.state === 1 && order.orderId && order.content"
+          class="order-card__action order-card__action--retry"
+          :disabled="order.resending"
+          @click="emit('resendDelivery', order)"
+        >
+          <IconTruck />
+          <span>{{ order.resending ? '发送中' : '补发内容' }}</span>
+        </button>
+        <button
           v-if="order.orderId"
           class="order-card__action order-card__action--detail"
           @click="handleClickDetail(order)"
@@ -325,6 +335,15 @@ const getConfirmBg = (state: number) => {
             >
               <IconTruck />
               <span>{{ order.retrying ? '处理中' : '重新排队' }}</span>
+            </button>
+            <button
+              v-if="order.state === 1 && order.orderId && order.content"
+              class="table__action table__action--retry"
+              :disabled="order.resending"
+              @click="emit('resendDelivery', order)"
+            >
+              <IconTruck />
+              <span>{{ order.resending ? '发送中' : '补发内容' }}</span>
             </button>
             <button
               v-if="order.orderId"

@@ -28,14 +28,20 @@ export interface OperationException {
 export interface NotificationChannel {
   id: number
   channelName: string
+  channelType: NotificationChannelType
   webhookUrl: string
   secretConfigured: boolean
+  config: Record<string, string>
+  messageTemplate?: string
   eventTypes: string[]
   enabled: boolean
   lastSuccessTime?: string
   lastErrorMessage?: string
   updateTime?: string
 }
+
+export type NotificationChannelType =
+  'WEBHOOK' | 'WECHAT_WORK' | 'DINGTALK' | 'FEISHU' | 'BARK' | 'PUSHPLUS' | 'TELEGRAM'
 
 export interface NotificationLog {
   id: number
@@ -67,8 +73,9 @@ export const getNotificationChannels = () => request<NotificationChannel[]>({
 export const saveNotificationChannel = (data: {
   id?: number
   channelName: string
-  webhookUrl: string
-  signingSecret?: string
+  channelType: NotificationChannelType
+  config: Record<string, string>
+  messageTemplate: string
   eventTypes: string[]
   enabled: boolean
 }) => request<NotificationChannel>({

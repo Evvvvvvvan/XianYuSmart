@@ -12,6 +12,11 @@ public interface WebSocketService {
      * @return 是否成功
      */
     boolean startWebSocket(Long accountId);
+
+    /**
+     * 仅在账号未被手动停止时恢复连接
+     */
+    boolean ensureConnected(Long accountId);
     
     /**
      * 使用手动提供的accessToken启动WebSocket连接

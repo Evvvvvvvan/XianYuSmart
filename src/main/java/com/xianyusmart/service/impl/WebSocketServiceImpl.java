@@ -2,7 +2,10 @@ package com.xianyusmart.service.impl;
 
 import com.xianyusmart.config.WebSocketConfig;
 import com.xianyusmart.constants.OperationConstants;
+import com.xianyusmart.context.TenantContext;
+import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.service.AccountService;
+import com.xianyusmart.service.OfflineRecoveryService;
 import com.xianyusmart.service.OperationLogService;
 
 import com.xianyusmart.service.WebSocketService;
@@ -10,6 +13,7 @@ import com.xianyusmart.service.WebSocketTokenService;
 import com.xianyusmart.utils.XianyuSignUtils;
 import com.xianyusmart.websocket.WebSocketInitializer;
 import com.xianyusmart.websocket.WebSocketMessageHandler;
+import com.xianyusmart.websocket.WebSocketSyncCursor;
 import com.xianyusmart.websocket.XianyuWebSocketClient;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +25,7 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -66,9 +71,17 @@ public class WebSocketServiceImpl implements WebSocketService {
     @Autowired
     private com.xianyusmart.mapper.XianyuAccountMapper xianyuAccountMapper;
 
+    @Autowired
+    private OfflineRecoveryService offlineRecoveryService;
 
     // 存储WebSocket客户端
     private final Map<Long, XianyuWebSocketClient> webSocketClients = new ConcurrentHashMap<>();
+
+    // 同一账号的手动连接、定时自愈和内部重连必须串行，避免建立重复会话。
+    private final Map<Long, Object> connectionLocks = new ConcurrentHashMap<>();
+
+    // 手动停止的账号不参与后台自愈，重新点击连接后自动移除。
+    private final Set<Long> manuallyStoppedAccounts = ConcurrentHashMap.newKeySet();
     
     // 心跳定时器
     @Autowired
@@ -123,6 +136,25 @@ public class WebSocketServiceImpl implements WebSocketService {
 
     @Override
     public boolean startWebSocket(Long accountId) {
+        manuallyStoppedAccounts.remove(accountId);
+        return startWebSocketInternal(accountId);
+    }
+
+    @Override
+    public boolean ensureConnected(Long accountId) {
+        if (manuallyStoppedAccounts.contains(accountId)) {
+            return false;
+        }
+        return startWebSocketInternal(accountId);
+    }
+
+    private boolean startWebSocketInternal(Long accountId) {
+        synchronized (connectionLocks.computeIfAbsent(accountId, key -> new Object())) {
+            return startWebSocketLocked(accountId);
+        }
+    }
+
+    private boolean startWebSocketLocked(Long accountId) {
         try {
             log.info("启动WebSocket连接: accountId={}", accountId);
 
@@ -134,7 +166,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                     return true;
                 } else {
                     // 关闭旧连接
-                    stopWebSocket(accountId);
+                    stopWebSocketInternal(accountId, false);
                 }
             }
 
@@ -186,6 +218,7 @@ public class WebSocketServiceImpl implements WebSocketService {
 
     @Override
     public boolean startWebSocketWithToken(Long accountId, String accessToken) {
+        manuallyStoppedAccounts.remove(accountId);
         try {
             log.info("========== 使用手动Token启动WebSocket连接 ==========");
             log.info("【账号{}】accountId={}", accountId, accountId);
@@ -202,7 +235,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                 } else {
                     // 关闭旧连接
                     log.info("【账号{}】关闭旧连接", accountId);
-                    stopWebSocket(accountId);
+                    stopWebSocketInternal(accountId, false);
                 }
             }
 
@@ -268,8 +301,11 @@ public class WebSocketServiceImpl implements WebSocketService {
 
             // 创建WebSocket客户端（参考Python的_create_websocket_connection）
             URI serverUri = new URI(WEBSOCKET_URL);
+            XianyuAccount account = xianyuAccountMapper.selectById(accountId);
+            Long tenantId = account == null ? TenantContext.get() : account.getTenantId();
             XianyuWebSocketClient client = new XianyuWebSocketClient(
-                    serverUri, headers, String.valueOf(accountId), displayNameUtils, websocketMessageExecutor);
+                    serverUri, headers, String.valueOf(accountId), tenantId,
+                    displayNameUtils, websocketMessageExecutor);
             
             // 设置当前用户ID（从Cookie的unb字段获取）
             client.setMyUserId(unb);
@@ -294,7 +330,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                     connectionRestartFlags.put(accountId, true);
                     
                     // 停止当前连接
-                    stopWebSocket(accountId);
+                    stopWebSocketInternal(accountId, false);
                     
                     // 清除旧Token
                     tokenService.clearToken(accountId);
@@ -332,9 +368,12 @@ public class WebSocketServiceImpl implements WebSocketService {
                 scheduleReconnect(accountId, delay, isManualRestart);
             });
 
+            client.setOnSyncCursorAdvanced(cursor -> xianyuAccountMapper.advanceWebSocketSyncCursor(
+                    accountId, cursor.pts(), cursor.seq(), cursor.timestamp()));
+
             // 连接WebSocket（参考Python的connect方法）
             log.info("正在连接WebSocket: {}", WEBSOCKET_URL);
-            log.info("请求头: {}", headers);
+            log.info("WebSocket请求头已构建: accountId={}", accountId);
             
             boolean connected = client.connectBlocking(10, TimeUnit.SECONDS);
             
@@ -343,10 +382,22 @@ public class WebSocketServiceImpl implements WebSocketService {
                 
                 // 执行WebSocket初始化流程（参考Python的init方法）
                 log.info("开始WebSocket初始化流程: accountId={}", accountId);
-                initializer.initialize(client, accessToken, deviceId, String.valueOf(accountId));
+                WebSocketSyncCursor storedCursor = account == null || account.getWebsocketSyncPts() == null
+                        ? null
+                        : new WebSocketSyncCursor(
+                                account.getWebsocketSyncPts(),
+                                account.getWebsocketSyncSeq() == null ? 0 : account.getWebsocketSyncSeq(),
+                                account.getWebsocketSyncTimestamp() == null
+                                        ? account.getWebsocketSyncPts() / 1000
+                                        : account.getWebsocketSyncTimestamp());
+                WebSocketSyncCursor initializedCursor = initializer.initialize(
+                        client, accessToken, deviceId, String.valueOf(accountId), storedCursor);
+                xianyuAccountMapper.advanceWebSocketSyncCursor(
+                        accountId, initializedCursor.pts(), initializedCursor.seq(), initializedCursor.timestamp());
                 
                 // 启动心跳任务
                 startHeartbeat(accountId, client);
+                offlineRecoveryService.recover(accountId);
                 
                 log.info("WebSocket连接成功: accountId={}", accountId);
                 log.info("连接状态: isOpen={}, isClosed={}", 
@@ -399,8 +450,15 @@ public class WebSocketServiceImpl implements WebSocketService {
 
     @Override
     public boolean stopWebSocket(Long accountId) {
+        return stopWebSocketInternal(accountId, true);
+    }
+
+    private boolean stopWebSocketInternal(Long accountId, boolean manualStop) {
         try {
             log.info("停止WebSocket连接: accountId={}", accountId);
+            if (manualStop) {
+                manuallyStoppedAccounts.add(accountId);
+            }
 
             // 停止心跳任务
             stopHeartbeat(accountId);
@@ -443,7 +501,7 @@ public class WebSocketServiceImpl implements WebSocketService {
 
             // 清除旧凭证状态，确保新Cookie立即参与Token获取和连接建立
             tokenService.clearCaptchaWait(accountId);
-            stopWebSocket(accountId);
+            stopWebSocketInternal(accountId, false);
             tokenService.clearToken(accountId);
 
             boolean success = startWebSocket(accountId);
@@ -474,7 +532,7 @@ public class WebSocketServiceImpl implements WebSocketService {
         log.info("停止所有WebSocket连接");
         
         for (Long accountId : webSocketClients.keySet()) {
-            stopWebSocket(accountId);
+            stopWebSocketInternal(accountId, false);
         }
         
     }
@@ -575,7 +633,7 @@ public class WebSocketServiceImpl implements WebSocketService {
         
         // Token刷新任务（每分钟检查一次，参考Python）
         ScheduledFuture<?> tokenRefreshTask = webSocketScheduler.scheduleAtFixedRate(
-            () -> {
+            () -> runWithAccountTenant(accountId, () -> {
                 try {
                     Long lastRefreshTime = lastTokenRefreshTimes.get(accountId);
                     if (lastRefreshTime == null) {
@@ -606,7 +664,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                 } catch (Exception e) {
                     log.error("【账号{}】Token刷新检查失败", accountId, e);
                 }
-            },
+            }),
             60, 60, TimeUnit.SECONDS  // 参考Python: 每分钟检查一次
         );
         
@@ -649,7 +707,7 @@ public class WebSocketServiceImpl implements WebSocketService {
             }
             
             // 停止当前连接
-            stopWebSocket(accountId);
+            stopWebSocketInternal(accountId, false);
             
             // 清除旧Token
             tokenService.clearToken(accountId);
@@ -691,11 +749,11 @@ public class WebSocketServiceImpl implements WebSocketService {
             if (existingTask != null && !existingTask.isDone()) {
                 return existingTask;
             }
-            return webSocketScheduler.schedule(() -> {
+            return webSocketScheduler.schedule(() -> runWithAccountTenant(id, () -> {
                 tokenRetryTasks.remove(id);
                 log.info("【账号{}】Token刷新重试间隔已到，开始重试...", id);
                 refreshTokenAndReconnect(id);
-            }, config.getTokenRetryInterval(), TimeUnit.SECONDS);
+            }), config.getTokenRetryInterval(), TimeUnit.SECONDS);
         });
     }
     
@@ -745,12 +803,13 @@ public class WebSocketServiceImpl implements WebSocketService {
         
         log.info("【账号{}】计划{}秒后执行重连（第{}次尝试）...", accountId, actualDelay, currentAttempt);
         
-        ScheduledFuture<?> reconnectTask = webSocketScheduler.schedule(() -> {
+        ScheduledFuture<?> reconnectTask = webSocketScheduler.schedule(
+                () -> runWithAccountTenant(accountId, () -> {
             try {
                 reconnectTasks.remove(accountId);
                 
                 // 停止当前连接和心跳
-                stopWebSocket(accountId);
+                stopWebSocketInternal(accountId, false);
                 
                 // 参考Python: 重连前先刷新Cookie（hasLogin保活）
                 try {
@@ -812,9 +871,27 @@ public class WebSocketServiceImpl implements WebSocketService {
                 log.error("【账号{}】重连异常，将继续尝试...", accountId, e);
                 scheduleReconnect(accountId, config.getReconnectDelay(), false);
             }
-        }, actualDelay, TimeUnit.SECONDS);
+        }), actualDelay, TimeUnit.SECONDS);
         
         reconnectTasks.put(accountId, reconnectTask);
+    }
+
+    private void runWithAccountTenant(Long accountId, Runnable action) {
+        Long previousTenantId = TenantContext.get();
+        try {
+            XianyuAccount account = xianyuAccountMapper.selectById(accountId);
+            Long tenantId = account == null ? previousTenantId : account.getTenantId();
+            if (tenantId != null) {
+                TenantContext.set(tenantId);
+            }
+            action.run();
+        } finally {
+            if (previousTenantId == null) {
+                TenantContext.clear();
+            } else {
+                TenantContext.set(previousTenantId);
+            }
+        }
     }
     
     /**

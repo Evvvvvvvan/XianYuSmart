@@ -1,6 +1,7 @@
 package com.xianyusmart.websocket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.utils.AccountDisplayNameUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.java_websocket.client.WebSocketClient;
@@ -14,6 +15,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * 闲鱼WebSocket客户端
@@ -25,6 +27,7 @@ public class XianyuWebSocketClient extends WebSocketClient {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final String accountId;
+    private final Long tenantId;
     private final AccountDisplayNameUtils displayNameUtils;
     private boolean isConnected = false;
     
@@ -59,14 +62,18 @@ public class XianyuWebSocketClient extends WebSocketClient {
     
     // 连接关闭回调（参考Python的finally重连逻辑）
     private Runnable onConnectionClosed;
+
+    // 同步游标推进回调
+    private Consumer<WebSocketSyncCursor> onSyncCursorAdvanced;
     
     // 是否为主动关闭（防止主动关闭时触发重连）
     private volatile boolean intentionalClose = false;
 
-    public XianyuWebSocketClient(URI serverUri, Map<String, String> headers, String accountId,
+    public XianyuWebSocketClient(URI serverUri, Map<String, String> headers, String accountId, Long tenantId,
                                  AccountDisplayNameUtils displayNameUtils, ExecutorService messageExecutor) {
         super(serverUri, headers);
         this.accountId = accountId;
+        this.tenantId = tenantId;
         this.displayNameUtils = displayNameUtils;
         this.messageExecutor = messageExecutor;
     }
@@ -127,6 +134,10 @@ public class XianyuWebSocketClient extends WebSocketClient {
     public void setOnConnectionClosed(Runnable callback) {
         this.onConnectionClosed = callback;
     }
+
+    public void setOnSyncCursorAdvanced(Consumer<WebSocketSyncCursor> callback) {
+        this.onSyncCursorAdvanced = callback;
+    }
     
     /**
      * 标记为主动关闭（防止关闭时触发重连回调）
@@ -151,7 +162,16 @@ public class XianyuWebSocketClient extends WebSocketClient {
     @Override
     public void onMessage(String message) {
         // 使用信号量控制并发处理（参考Python的_handle_message_with_semaphore）
-        messageExecutor.submit(() -> handleMessageWithSemaphore(message));
+        messageExecutor.submit(() -> {
+            try {
+                if (tenantId != null) {
+                    TenantContext.set(tenantId);
+                }
+                handleMessageWithSemaphore(message);
+            } finally {
+                TenantContext.clear();
+            }
+        });
     }
     
     /**
@@ -324,6 +344,7 @@ public class XianyuWebSocketClient extends WebSocketClient {
                 if (messageHandler != null) {
                     messageHandler.handleMessage(accountId, messageData);
                 }
+                advanceSyncCursor(messageData);
 
             } catch (Exception e) {
                 log.warn("【账号{}】消息解析失败: {}", accountId, e.getMessage());
@@ -334,6 +355,26 @@ public class XianyuWebSocketClient extends WebSocketClient {
             if (messageHandler != null) {
                 messageHandler.handleError(accountId, e);
             }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void advanceSyncCursor(Map<String, Object> messageData) {
+        if (onSyncCursorAdvanced == null || messageData == null) {
+            return;
+        }
+        Object bodyObject = messageData.get("body");
+        if (!(bodyObject instanceof Map<?, ?> body)) {
+            return;
+        }
+        Object packageObject = body.get("syncPushPackage");
+        if (!(packageObject instanceof Map<?, ?>)) {
+            return;
+        }
+        WebSocketSyncCursor cursor = WebSocketSyncCursor.fromSyncPackage(
+                (Map<String, Object>) packageObject, null);
+        if (cursor != null) {
+            onSyncCursorAdvanced.accept(cursor);
         }
     }
     

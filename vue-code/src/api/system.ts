@@ -39,3 +39,11 @@ export function checkUpdate() {
     method: 'get'
   })
 }
+
+/** 请求服务器自动更新到最新正式版本 */
+export function requestSystemUpdate() {
+  return request<{ version: string; status: string }>({
+    url: '/system/update',
+    method: 'post'
+  })
+}

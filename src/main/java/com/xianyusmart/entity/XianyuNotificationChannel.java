@@ -23,10 +23,17 @@ public class XianyuNotificationChannel {
 
     private String channelName;
 
+    private String channelType;
+
     private String webhookUrl;
 
     @JsonIgnore
     private String signingSecret;
+
+    @JsonIgnore
+    private String configJson;
+
+    private String messageTemplate;
 
     private String eventTypes;
 

@@ -91,6 +91,14 @@ export function requeueDelivery(data: { id: number; xianyuAccountId: number }) {
   })
 }
 
+export function resendDelivery(data: { xianyuAccountId: number; orderId: string }) {
+  return request<string>({
+    url: '/order/resendDelivery',
+    method: 'POST',
+    data
+  })
+}
+
 export function rateOrder(data: { xianyuAccountId: number; orderId: string; content: string }) {
   return request<string>({
     url: '/order/rate',

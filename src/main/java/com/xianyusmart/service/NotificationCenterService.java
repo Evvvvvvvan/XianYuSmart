@@ -1,6 +1,8 @@
 package com.xianyusmart.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.context.UserContext;
 import com.xianyusmart.controller.dto.NotificationChannelReqDTO;
@@ -12,6 +14,7 @@ import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.mapper.XianyuNotificationChannelMapper;
 import com.xianyusmart.mapper.XianyuNotificationLogMapper;
 import com.xianyusmart.service.notification.PinnedHttpsClient;
+import com.xianyusmart.service.notification.NotificationTemplateRenderer;
 import com.xianyusmart.service.notification.WebhookSecurity;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -20,6 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -27,6 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * Webhook 通知配置与分发服务
@@ -36,6 +44,9 @@ import java.util.UUID;
 public class NotificationCenterService {
 
     private static final int MAX_CHANNELS_PER_TENANT = 10;
+    private static final Set<String> CHANNEL_TYPES = Set.of(
+            "WEBHOOK", "WECHAT_WORK", "DINGTALK", "FEISHU", "BARK", "PUSHPLUS", "TELEGRAM"
+    );
 
     public static final Set<String> EVENT_TYPES = Set.of(
             "ORDER_CREATED", "DELIVERY_SUCCESS", "DELIVERY_EXCEPTION",
@@ -70,7 +81,7 @@ public class NotificationCenterService {
         if (channelName.length() > 100) {
             throw new IllegalArgumentException("渠道名称不能超过100个字符");
         }
-        String webhookUrl = WebhookSecurity.requireSafeUrl(request.getWebhookUrl());
+        String channelType = normalizeChannelType(request.getChannelType());
         List<String> eventTypes = normalizeEventTypes(request.getEventTypes());
         XianyuNotificationChannel channel = request.getId() == null
                 ? new XianyuNotificationChannel()
@@ -84,14 +95,14 @@ public class NotificationCenterService {
             }
             channel.setTenantId(requireTenantId());
         }
+        Map<String, String> config = normalizeChannelConfig(channelType, request, channel);
+        String webhookUrl = resolveWebhookUrl(channelType, config);
+        WebhookSecurity.requireSafeUrl(webhookUrl);
         channel.setChannelName(channelName);
+        channel.setChannelType(channelType);
         channel.setWebhookUrl(webhookUrl);
-        if (request.getSigningSecret() != null && !request.getSigningSecret().isBlank()) {
-            if (request.getSigningSecret().length() > 200) {
-                throw new IllegalArgumentException("签名密钥不能超过200个字符");
-            }
-            channel.setSigningSecret(request.getSigningSecret());
-        }
+        channel.setConfigJson(writeConfig(config));
+        channel.setMessageTemplate(normalizeMessageTemplate(request.getMessageTemplate()));
         channel.setEventTypes(String.join(",", eventTypes));
         channel.setEnabled(Boolean.FALSE.equals(request.getEnabled()) ? 0 : 1);
         if (channel.getId() == null) {
@@ -176,28 +187,15 @@ public class NotificationCenterService {
         sendLog.setXianyuAccountId(accountId);
         sendLog.setTitle(limit(title, 200));
         try {
-            Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("eventId", UUID.randomUUID().toString());
-            payload.put("eventType", eventType);
-            payload.put("occurredAt", Instant.now().toString());
-            payload.put("accountId", accountId);
-            payload.put("title", title);
-            payload.put("content", content);
-            payload.put("data", data);
-            String body = objectMapper.writeValueAsString(payload);
-            Map<String, String> headers = new LinkedHashMap<>();
-            headers.put("Content-Type", "application/json");
-            headers.put("User-Agent", "XianYuSmart-Webhook/2");
-            String signature = WebhookSecurity.sign(channel.getSigningSecret(), body);
-            if (!signature.isEmpty()) {
-                headers.put("X-XianYuSmart-Signature", signature);
-            }
+            NotificationRequest request = buildRequest(
+                    channel, eventType, accountId, title, content, data);
             PinnedHttpsClient.Response response = httpsClient.post(
-                    channel.getWebhookUrl(), headers, body, Duration.ofSeconds(10));
+                    request.url(), request.headers(), request.body(), Duration.ofSeconds(10));
             sendLog.setHttpStatus(response.statusCode());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("Webhook 返回 HTTP " + response.statusCode());
+                throw new IllegalStateException("通知渠道返回 HTTP " + response.statusCode());
             }
+            requireProviderSuccess(channel.getChannelType(), response.body());
             sendLog.setSendStatus(1);
             channelMapper.markSuccess(channel.getId());
             logMapper.insert(sendLog);
@@ -216,14 +214,280 @@ public class NotificationCenterService {
         NotificationChannelRespDTO response = new NotificationChannelRespDTO();
         response.setId(channel.getId());
         response.setChannelName(channel.getChannelName());
+        response.setChannelType(normalizeChannelType(channel.getChannelType()));
         response.setWebhookUrl(channel.getWebhookUrl());
-        response.setSecretConfigured(channel.getSigningSecret() != null && !channel.getSigningSecret().isBlank());
+        Map<String, String> config = readConfig(channel);
+        response.setSecretConfigured(hasSecret(config));
+        response.setConfig(maskSecrets(config));
+        response.setMessageTemplate(channel.getMessageTemplate());
         response.setEventTypes(new ArrayList<>(splitEvents(channel.getEventTypes())));
         response.setEnabled(Integer.valueOf(1).equals(channel.getEnabled()));
         response.setLastSuccessTime(channel.getLastSuccessTime());
         response.setLastErrorMessage(channel.getLastErrorMessage());
         response.setUpdateTime(channel.getUpdateTime());
         return response;
+    }
+
+    private String normalizeChannelType(String value) {
+        String normalized = value == null || value.isBlank() ? "WEBHOOK" : value.trim().toUpperCase();
+        if (!CHANNEL_TYPES.contains(normalized)) {
+            throw new IllegalArgumentException("通知渠道类型无效");
+        }
+        return normalized;
+    }
+
+    private Map<String, String> normalizeChannelConfig(String channelType,
+                                                       NotificationChannelReqDTO request,
+                                                       XianyuNotificationChannel channel) {
+        Map<String, String> config = new LinkedHashMap<>(readConfig(channel));
+        if (request.getConfig() != null) {
+            for (Map.Entry<String, String> entry : request.getConfig().entrySet()) {
+                String value = entry.getValue() == null ? "" : entry.getValue().trim();
+                if (!value.isEmpty()) {
+                    if (value.length() > 1000) {
+                        throw new IllegalArgumentException("渠道配置内容过长");
+                    }
+                    config.put(entry.getKey(), value);
+                } else if (!isSecretKey(entry.getKey())) {
+                    config.remove(entry.getKey());
+                }
+            }
+        }
+        if (request.getWebhookUrl() != null && !request.getWebhookUrl().isBlank()) {
+            config.put("webhookUrl", request.getWebhookUrl().trim());
+        }
+        if (request.getSigningSecret() != null && !request.getSigningSecret().isBlank()) {
+            config.put("secret", request.getSigningSecret().trim());
+        }
+        if ("BARK".equals(channelType)) {
+            config.putIfAbsent("serverUrl", "https://api.day.app");
+        }
+        requireConfig(channelType, config);
+        return config;
+    }
+
+    private void requireConfig(String channelType, Map<String, String> config) {
+        switch (channelType) {
+            case "WEBHOOK", "WECHAT_WORK", "DINGTALK", "FEISHU" ->
+                    requireValue(config, "webhookUrl", "Webhook 地址");
+            case "BARK" -> {
+                requireValue(config, "serverUrl", "Bark 服务地址");
+                requireValue(config, "deviceKey", "Bark Device Key");
+            }
+            case "PUSHPLUS" -> requireValue(config, "token", "PushPlus Token");
+            case "TELEGRAM" -> {
+                requireValue(config, "botToken", "Telegram Bot Token");
+                requireValue(config, "chatId", "Telegram Chat ID");
+            }
+            default -> throw new IllegalArgumentException("通知渠道类型无效");
+        }
+    }
+
+    private void requireValue(Map<String, String> config, String key, String label) {
+        if (config.get(key) == null || config.get(key).isBlank()) {
+            throw new IllegalArgumentException(label + "不能为空");
+        }
+    }
+
+    private String resolveWebhookUrl(String channelType, Map<String, String> config) {
+        return switch (channelType) {
+            case "BARK" -> trimSlash(config.get("serverUrl")) + "/push";
+            case "PUSHPLUS" -> "https://www.pushplus.plus/send";
+            case "TELEGRAM" -> "https://api.telegram.org/bot" + config.get("botToken") + "/sendMessage";
+            default -> config.get("webhookUrl");
+        };
+    }
+
+    private NotificationRequest buildRequest(XianyuNotificationChannel channel, String eventType,
+                                             Long accountId, String title, String content,
+                                             Map<String, Object> data) throws Exception {
+        String channelType = normalizeChannelType(channel.getChannelType());
+        Map<String, String> config = readConfig(channel);
+        String message = NotificationTemplateRenderer.render(
+                channel.getMessageTemplate(), eventName(eventType), title, content, accountId);
+        String url = resolveWebhookUrl(channelType, config);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Content-Type", "application/json");
+        headers.put("User-Agent", "XianYuSmart-Notification/2");
+
+        switch (channelType) {
+            case "DINGTALK" -> {
+                url = appendDingTalkSignature(url, config.get("secret"));
+                payload.put("msgtype", "text");
+                payload.put("text", Map.of("content", message));
+            }
+            case "FEISHU" -> {
+                String timestamp = String.valueOf(Instant.now().getEpochSecond());
+                if (config.get("secret") != null && !config.get("secret").isBlank()) {
+                    payload.put("timestamp", timestamp);
+                    payload.put("sign", feishuSign(timestamp, config.get("secret")));
+                }
+                payload.put("msg_type", "text");
+                payload.put("content", Map.of("text", message));
+            }
+            case "WECHAT_WORK" -> {
+                payload.put("msgtype", "text");
+                payload.put("text", Map.of("content", message));
+            }
+            case "BARK" -> {
+                payload.put("device_key", config.get("deviceKey"));
+                payload.put("title", title);
+                payload.put("body", message);
+                if (hasText(config.get("group"))) {
+                    payload.put("group", config.get("group"));
+                }
+            }
+            case "PUSHPLUS" -> {
+                payload.put("token", config.get("token"));
+                payload.put("title", title);
+                payload.put("content", message);
+                payload.put("template", "txt");
+                if (hasText(config.get("topic"))) {
+                    payload.put("topic", config.get("topic"));
+                }
+            }
+            case "TELEGRAM" -> {
+                payload.put("chat_id", config.get("chatId"));
+                payload.put("text", message);
+                payload.put("disable_web_page_preview", true);
+            }
+            default -> {
+                payload.put("eventId", UUID.randomUUID().toString());
+                payload.put("eventType", eventType);
+                payload.put("occurredAt", Instant.now().toString());
+                payload.put("accountId", accountId);
+                payload.put("title", title);
+                payload.put("content", content);
+                payload.put("data", data);
+            }
+        }
+        String body = objectMapper.writeValueAsString(payload);
+        if ("WEBHOOK".equals(channelType)) {
+            String signature = WebhookSecurity.sign(config.get("secret"), body);
+            if (!signature.isEmpty()) {
+                headers.put("X-XianYuSmart-Signature", signature);
+            }
+        }
+        return new NotificationRequest(url, headers, body);
+    }
+
+    private void requireProviderSuccess(String channelType, String responseBody) throws Exception {
+        String type = normalizeChannelType(channelType);
+        if ("WEBHOOK".equals(type) || responseBody == null || responseBody.isBlank()) {
+            return;
+        }
+        JsonNode root = objectMapper.readTree(responseBody);
+        boolean success = switch (type) {
+            case "DINGTALK", "WECHAT_WORK" -> root.path("errcode").asInt(-1) == 0;
+            case "FEISHU" -> root.path("code").asInt(-1) == 0;
+            case "BARK" -> root.path("code").asInt(-1) == 200;
+            case "PUSHPLUS" -> root.path("code").asInt(-1) == 200;
+            case "TELEGRAM" -> root.path("ok").asBoolean(false);
+            default -> true;
+        };
+        if (!success) {
+            throw new IllegalStateException("渠道返回失败: " + limit(responseBody, 200));
+        }
+    }
+
+    private String appendDingTalkSignature(String url, String secret) throws Exception {
+        if (!hasText(secret)) {
+            return url;
+        }
+        long timestamp = System.currentTimeMillis();
+        String sign = hmacBase64(timestamp + "\n" + secret, secret);
+        return url + (url.contains("?") ? "&" : "?") + "timestamp=" + timestamp
+                + "&sign=" + URLEncoder.encode(sign, StandardCharsets.UTF_8);
+    }
+
+    private String feishuSign(String timestamp, String secret) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec((timestamp + "\n" + secret).getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return Base64.getEncoder().encodeToString(mac.doFinal(new byte[0]));
+    }
+
+    private String hmacBase64(String content, String secret) throws Exception {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return Base64.getEncoder().encodeToString(mac.doFinal(content.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private Map<String, String> readConfig(XianyuNotificationChannel channel) {
+        if (channel == null) {
+            return Map.of();
+        }
+        if (channel.getConfigJson() != null && !channel.getConfigJson().isBlank()) {
+            try {
+                return objectMapper.readValue(channel.getConfigJson(), new TypeReference<>() {});
+            } catch (Exception e) {
+                log.warn("通知渠道配置解析失败: channelId={}", channel.getId());
+            }
+        }
+        Map<String, String> legacy = new LinkedHashMap<>();
+        if (hasText(channel.getWebhookUrl())) {
+            legacy.put("webhookUrl", channel.getWebhookUrl());
+        }
+        if (hasText(channel.getSigningSecret())) {
+            legacy.put("secret", channel.getSigningSecret());
+        }
+        return legacy;
+    }
+
+    private String writeConfig(Map<String, String> config) {
+        try {
+            return objectMapper.writeValueAsString(config);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("通知渠道配置格式无效");
+        }
+    }
+
+    private Map<String, String> maskSecrets(Map<String, String> config) {
+        Map<String, String> result = new LinkedHashMap<>(config);
+        result.replaceAll((key, value) -> isSecretKey(key) ? "" : value);
+        return result;
+    }
+
+    private boolean hasSecret(Map<String, String> config) {
+        return config.entrySet().stream().anyMatch(entry ->
+                isSecretKey(entry.getKey()) && hasText(entry.getValue()));
+    }
+
+    private boolean isSecretKey(String key) {
+        return Set.of("secret", "token", "botToken", "deviceKey").contains(key);
+    }
+
+    private String normalizeMessageTemplate(String template) {
+        String normalized = template == null || template.isBlank()
+                ? NotificationTemplateRenderer.DEFAULT_TEMPLATE : template.trim();
+        if (normalized.length() > 1000) {
+            throw new IllegalArgumentException("通知模板不能超过1000个字符");
+        }
+        return normalized;
+    }
+
+    private String eventName(String eventType) {
+        return switch (eventType) {
+            case "ORDER_CREATED" -> "发现订单";
+            case "DELIVERY_SUCCESS" -> "发货成功";
+            case "DELIVERY_EXCEPTION" -> "发货异常";
+            case "ACCOUNT_OFFLINE" -> "账号离线";
+            case "CREDENTIAL_EXPIRED" -> "凭证失效";
+            case "KAMI_STOCK_LOW" -> "卡密低库存";
+            case "TEST" -> "测试通知";
+            default -> eventType;
+        };
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private String trimSlash(String value) {
+        return value != null && value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+    }
+
+    private record NotificationRequest(String url, Map<String, String> headers, String body) {
     }
 
     private List<String> normalizeEventTypes(List<String> values) {

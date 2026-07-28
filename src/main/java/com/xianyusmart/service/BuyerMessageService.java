@@ -219,6 +219,23 @@ public class BuyerMessageService {
         return sendMessage(order, message);
     }
 
+    public boolean resendDeliveryMessage(Long accountId, String orderId) {
+        XianyuGoodsOrder order = orderMapper.selectByAccountIdAndOrderId(accountId, orderId);
+        if (order == null) {
+            throw new IllegalArgumentException("订单记录不存在");
+        }
+        String message = hasText(order.getDeliveryMessageContent())
+                ? order.getDeliveryMessageContent() : order.getContent();
+        if (!hasText(message)) {
+            throw new IllegalArgumentException("订单没有可补发的内容");
+        }
+        // 补发复用已履约内容，不重新分配卡密或重复写入发货凭证。
+        if (!webSocketService.isConnected(accountId) && !webSocketService.ensureConnected(accountId)) {
+            return false;
+        }
+        return sendMessage(order, message);
+    }
+
     private boolean sendPreparedDeliveryMessage(XianyuGoodsOrder order) {
         String message = order.getDeliveryMessageContent();
         if (message == null || message.isBlank()) {
@@ -270,5 +287,9 @@ public class BuyerMessageService {
 
     private String safeValue(String value) {
         return value == null ? "" : value;
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

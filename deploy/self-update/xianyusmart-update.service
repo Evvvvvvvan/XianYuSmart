@@ -1,0 +1,9 @@
+[Unit]
+Description=XianYuSmart verified application updater
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=XIANYUSMART_ROOT=/opt/xianyusmart
+ExecStart=/opt/xianyusmart/runtime/xianyusmart-update-agent.sh

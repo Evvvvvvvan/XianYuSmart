@@ -1,7 +1,5 @@
 package com.xianyusmart.controller;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xianyusmart.common.ResultObject;
 import com.xianyusmart.controller.dto.ChangePasswordReqDTO;
 import com.xianyusmart.controller.dto.CurrentUserRespDTO;
@@ -9,6 +7,7 @@ import com.xianyusmart.controller.dto.VersionInfoRespDTO;
 import com.xianyusmart.entity.SysUser;
 import com.xianyusmart.exception.BusinessException;
 import com.xianyusmart.service.AuthService;
+import com.xianyusmart.service.SystemUpdateService;
 import com.xianyusmart.service.bo.ChangePasswordReqBO;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
@@ -16,11 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 
 /**
  * 系统设置控制器
@@ -34,11 +28,11 @@ public class SystemController {
     @Value("${app.version:2.0.0}")
     private String currentVersion;
 
-    @Value("${app.update.release-api:}")
-    private String releaseApi;
-
     @Autowired
     private AuthService authService;
+
+    @Autowired
+    private SystemUpdateService systemUpdateService;
 
     /**
      * 获取当前用户信息
@@ -111,52 +105,7 @@ public class SystemController {
     @GetMapping("/checkUpdate")
     public ResultObject<VersionInfoRespDTO> checkUpdate() {
         try {
-            VersionInfoRespDTO respDTO = new VersionInfoRespDTO();
-            respDTO.setCurrentVersion(currentVersion);
-
-            if (releaseApi == null || releaseApi.isBlank()) {
-                respDTO.setLatestVersion(currentVersion);
-                respDTO.setHasUpdate(false);
-                return ResultObject.success(respDTO);
-            }
-
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
-            HttpRequest httpRequest = HttpRequest.newBuilder()
-                    .uri(URI.create(releaseApi))
-                    .timeout(Duration.ofSeconds(15))
-                    .header("Accept", "application/vnd.github+json")
-                    .header("User-Agent", "XianYuSmart")
-                    .GET()
-                    .build();
-
-            HttpResponse<String> response = client.send(httpRequest, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200) {
-                ObjectMapper mapper = new ObjectMapper();
-                JsonNode root = mapper.readTree(response.body());
-
-                String tagName = root.path("tag_name").asText("");
-                String latestVersion = tagName.startsWith("v.") ? tagName.substring(2) :
-                        tagName.startsWith("v") ? tagName.substring(1) : tagName;
-                String body = root.path("body").asText("");
-                String publishedAt = root.path("published_at").asText("");
-                String htmlUrl = root.path("html_url").asText("");
-
-                respDTO.setLatestVersion(latestVersion);
-                respDTO.setHasUpdate(compareVersion(latestVersion, currentVersion) > 0);
-                respDTO.setUpdateContent(body);
-                respDTO.setPublishedAt(publishedAt);
-                respDTO.setDownloadUrl(htmlUrl);
-            } else {
-                log.warn("GitHub API 请求失败, statusCode: {}", response.statusCode());
-                respDTO.setLatestVersion(currentVersion);
-                respDTO.setHasUpdate(false);
-            }
-
-            return ResultObject.success(respDTO);
+            return ResultObject.success(systemUpdateService.checkUpdate());
         } catch (Exception e) {
             log.error("检查更新失败", e);
             VersionInfoRespDTO respDTO = new VersionInfoRespDTO();
@@ -167,17 +116,12 @@ public class SystemController {
         }
     }
 
-    private int compareVersion(String v1, String v2) {
-        String[] parts1 = v1.split("\\.");
-        String[] parts2 = v2.split("\\.");
-        int maxLen = Math.max(parts1.length, parts2.length);
-        for (int i = 0; i < maxLen; i++) {
-            int num1 = i < parts1.length ? Integer.parseInt(parts1[i]) : 0;
-            int num2 = i < parts2.length ? Integer.parseInt(parts2[i]) : 0;
-            if (num1 != num2) {
-                return Integer.compare(num1, num2);
-            }
+    @PostMapping("/update")
+    public ResultObject<java.util.Map<String, Object>> update() {
+        try {
+            return ResultObject.success(systemUpdateService.requestUpdate());
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
         }
-        return 0;
     }
 }

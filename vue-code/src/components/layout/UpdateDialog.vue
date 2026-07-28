@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { checkUpdate } from '@/api/system'
+import { checkUpdate, getVersion, requestSystemUpdate } from '@/api/system'
 import IconClose from '@/components/icons/IconClose.vue'
 import IconCheck from '@/components/icons/IconCheck.vue'
 import IconSparkle from '@/components/icons/IconSparkle.vue'
@@ -11,6 +11,8 @@ const appVersion = __APP_VERSION__ || '2.0.0'
 
 const visible = ref(false)
 const loading = ref(false)
+const updating = ref(false)
+const updateStatus = ref('')
 const updateInfo = ref<{
   currentVersion: string
   latestVersion: string
@@ -54,9 +56,29 @@ const close = () => {
   visible.value = false
 }
 
-const openDownload = () => {
-  if (updateInfo.value?.downloadUrl) {
-    window.open(updateInfo.value.downloadUrl, '_blank')
+const startUpdate = async () => {
+  if (updating.value || !updateInfo.value?.hasUpdate) return
+  updating.value = true
+  updateStatus.value = '正在提交更新任务...'
+  try {
+    await requestSystemUpdate()
+    updateStatus.value = '正在更新并重启服务，请稍候...'
+    for (let attempt = 0; attempt < 40; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 3000))
+      try {
+        const response = await getVersion()
+        if (response.data === updateInfo.value.latestVersion) {
+          window.location.reload()
+          return
+        }
+      } catch {
+        // 服务重启期间请求失败属于正常状态。
+      }
+    }
+    updateStatus.value = '更新仍在执行，可稍后刷新页面查看'
+  } catch (error: any) {
+    updateStatus.value = error.message || '自动更新提交失败'
+    updating.value = false
   }
 }
 
@@ -110,6 +132,7 @@ defineExpose({ open })
               <IconCheck v-if="!isUpdateAvailable" />
               <span>{{ isUpdateAvailable ? '发现新版本' : '已是最新版本' }}</span>
             </div>
+            <div v-if="updateStatus" class="update-progress">{{ updateStatus }}</div>
 
             <!-- Changelog -->
             <div v-if="updateInfo.updateContent" class="changelog">
@@ -126,8 +149,8 @@ defineExpose({ open })
           <!-- Footer -->
           <div v-if="!loading && updateInfo" class="modal-footer">
             <button class="btn btn-secondary" @click="close">关闭</button>
-            <button v-if="isUpdateAvailable" class="btn btn-primary" @click="openDownload">
-              查看更新
+            <button v-if="isUpdateAvailable" class="btn btn-primary" :disabled="updating" @click="startUpdate">
+              {{ updating ? '更新中' : '立即更新' }}
             </button>
           </div>
         </div>
@@ -323,6 +346,16 @@ defineExpose({ open })
   font-size: 13px;
   font-weight: 500;
   color: #0071e3;
+}
+
+.update-progress {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  color: #155eef;
+  background: #eef4ff;
+  font-size: 13px;
+  text-align: center;
 }
 
 .status-badge svg {

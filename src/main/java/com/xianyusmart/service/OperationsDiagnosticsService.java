@@ -16,9 +16,15 @@ import java.util.Map;
 public class OperationsDiagnosticsService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final WebSocketService webSocketService;
+    private final SystemUpdateService systemUpdateService;
 
-    public OperationsDiagnosticsService(JdbcTemplate jdbcTemplate) {
+    public OperationsDiagnosticsService(JdbcTemplate jdbcTemplate,
+                                        WebSocketService webSocketService,
+                                        SystemUpdateService systemUpdateService) {
         this.jdbcTemplate = jdbcTemplate;
+        this.webSocketService = webSocketService;
+        this.systemUpdateService = systemUpdateService;
     }
 
     public Map<String, Object> overview() {
@@ -80,17 +86,42 @@ public class OperationsDiagnosticsService {
                 WHERE tenant_id = ? AND send_status = 0
                   AND create_time >= DATE_SUB(NOW(3), INTERVAL 1 DAY)
                 """, tenantId);
+        List<Long> activeAccountIds = jdbcTemplate.queryForList(
+                "SELECT id FROM xianyu_account WHERE tenant_id = ? AND status = 1",
+                Long.class, tenantId);
+        long websocketDisconnected = activeAccountIds.stream()
+                .filter(accountId -> !webSocketService.isConnected(accountId)).count();
+        long versionWarning = 0;
+        String versionAction = "当前已是最新版本";
+        try {
+            var version = systemUpdateService.checkUpdate();
+            if (Boolean.TRUE.equals(version.getHasUpdate())) {
+                versionWarning = 1;
+                versionAction = "发现新版本 " + version.getLatestVersion() + "，可在右上角自动更新";
+            }
+        } catch (Exception e) {
+            versionWarning = 1;
+            versionAction = "版本服务暂时不可用，请稍后重试";
+        }
+        boolean updateAgentAvailable = Boolean.TRUE.equals(systemUpdateService.updateAgentStatus().get("available"));
+        long updateAgentWarning = updateAgentAvailable ? 0 : 1;
 
         List<Map<String, Object>> checks = List.of(
+                check("DATABASE", "数据库服务", 0, "检查数据库连接"),
+                check("WEBSOCKET", "实时连接", websocketDisconnected, "系统正在自动恢复断开的账号连接"),
                 check("ACCOUNT", "账号连接", accountAbnormal + cookieInvalid, "检查异常账号或更新登录凭证"),
                 check("DELIVERY", "自动发货", deliveryFailed + deliveryReview, "处理失败订单和待人工核对订单"),
                 check("REPLY", "自动回复", replyFailed, "检查失败回复记录"),
                 check("STOCK", "卡密库存", lowStock, "补充低库存卡密仓库"),
                 check("EXTERNAL_SUPPLY", "外部卡密供货", externalReview, "核对失败或不确定的外部供货请求"),
-                check("NOTIFICATION", "通知渠道", notificationFailed, "检查近24小时发送失败的通知")
+                check("NOTIFICATION", "通知渠道", notificationFailed, "检查近24小时发送失败的通知"),
+                check("VERSION", "版本状态", versionWarning, versionAction),
+                check("UPDATE_AGENT", "自动更新服务", updateAgentWarning,
+                        updateAgentAvailable ? "自动更新服务运行正常" : "自动更新服务尚未就绪")
         );
         long criticalCount = deliveryFailed + deliveryReview + externalReview;
-        long warningCount = accountAbnormal + cookieInvalid + replyFailed + lowStock + notificationFailed;
+        long warningCount = accountAbnormal + cookieInvalid + websocketDisconnected
+                + replyFailed + lowStock + notificationFailed + versionWarning + updateAgentWarning;
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("overallStatus", OperationsHealthEvaluator.overallStatus(criticalCount, warningCount));

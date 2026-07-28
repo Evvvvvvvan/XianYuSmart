@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch XianYuSmart update requests
+
+[Path]
+PathExists=/opt/xianyusmart/runtime/update/request.json
+Unit=xianyusmart-update.service
+
+[Install]
+WantedBy=multi-user.target

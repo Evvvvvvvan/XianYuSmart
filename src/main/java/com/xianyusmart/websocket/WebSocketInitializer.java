@@ -91,10 +91,12 @@ public class WebSocketInitializer {
      * 
      * @param client WebSocket客户端
      * @param accountId 账号ID
+     * @param cursor 最后确认的同步游标
      */
-    public void sendSyncStatusMessage(XianyuWebSocketClient client, String accountId) {
+    public WebSocketSyncCursor sendSyncStatusMessage(XianyuWebSocketClient client, String accountId,
+                                                     WebSocketSyncCursor cursor) {
         try {
-            long currentTime = System.currentTimeMillis();
+            WebSocketSyncCursor effectiveCursor = cursor == null ? WebSocketSyncCursor.initial() : cursor;
             
             Map<String, Object> message = new HashMap<>();
             message.put("lwp", "/r/SyncStatus/ackDiff");
@@ -109,11 +111,10 @@ public class WebSocketInitializer {
             bodyItem.put("channel", "sync");
             bodyItem.put("topic", "sync");
             bodyItem.put("highPts", 0);
-            // 重要：pts必须设置为当前时间戳*1000（参考Python实现）
-            // Python: pts = current_time * 1000 (毫秒时间戳 * 1000)
-            bodyItem.put("pts", currentTime * 1000);
-            bodyItem.put("seq", 0);
-            bodyItem.put("timestamp", currentTime);
+            // 复用最后确认游标，连接恢复后由服务端补推断线期间消息。
+            bodyItem.put("pts", effectiveCursor.pts());
+            bodyItem.put("seq", effectiveCursor.seq());
+            bodyItem.put("timestamp", effectiveCursor.timestamp());
             
             message.put("body", new Object[]{bodyItem});
             
@@ -122,10 +123,13 @@ public class WebSocketInitializer {
             
             log.info("{}已发送同步状态消息", logPrefix(accountId));
             log.info("{}同步状态消息内容: {}", logPrefix(accountId), jsonMessage);
-            log.info("{}pts设置为{} (currentTime * 1000)", logPrefix(accountId), currentTime * 1000);
+            log.info("{}消息同步游标: pts={}, seq={}", logPrefix(accountId),
+                    effectiveCursor.pts(), effectiveCursor.seq());
+            return effectiveCursor;
             
         } catch (Exception e) {
             log.error("{}发送同步状态消息失败", logPrefix(accountId), e);
+            throw new IllegalStateException("发送同步状态消息失败", e);
         }
     }
     
@@ -136,8 +140,10 @@ public class WebSocketInitializer {
      * @param token accessToken
      * @param deviceId 设备ID
      * @param accountId 账号ID
+     * @param cursor 最后确认的同步游标
      */
-    public void initialize(XianyuWebSocketClient client, String token, String deviceId, String accountId) {
+    public WebSocketSyncCursor initialize(XianyuWebSocketClient client, String token, String deviceId,
+                                          String accountId, WebSocketSyncCursor cursor) {
         log.info("{}开始WebSocket初始化流程...", logPrefix(accountId));
         log.info("{}设备ID: {}", logPrefix(accountId), deviceId);
         log.info("{}Token长度: {}", logPrefix(accountId), token != null ? token.length() : 0);
@@ -153,8 +159,9 @@ public class WebSocketInitializer {
         }
         
         // 3. 发送同步状态消息
-        sendSyncStatusMessage(client, accountId);
+        WebSocketSyncCursor effectiveCursor = sendSyncStatusMessage(client, accountId, cursor);
         
         log.info("{}WebSocket初始化流程完成", logPrefix(accountId));
+        return effectiveCursor;
     }
 }
