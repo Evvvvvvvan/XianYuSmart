@@ -33,7 +33,9 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
     @Transactional
     public XianyuGoodsOrder discover(XianyuGoodsOrder order, DeliveryChannel channel) {
         int quantity = order.getBuyNum() != null && order.getBuyNum() > 0 ? order.getBuyNum() : 1;
-        order.setDeliveryStatus(DeliveryStatus.PENDING.name());
+        if (!DeliveryStatus.REVIEW_REQUIRED.name().equals(order.getDeliveryStatus())) {
+            order.setDeliveryStatus(DeliveryStatus.PENDING.name());
+        }
         order.setExpectedQuantity(quantity);
         order.setDeliveryChannel(channel.name());
         orderMapper.insert(order);

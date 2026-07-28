@@ -45,6 +45,9 @@ public interface XianyuKamiItemMapper extends BaseMapper<XianyuKamiItem> {
     @Select("SELECT COUNT(*) FROM xianyu_kami_item WHERE kami_config_id = #{kamiConfigId}")
     int countByConfigId(@Param("kamiConfigId") Long kamiConfigId);
 
+    @Select("SELECT COUNT(*) FROM xianyu_kami_item WHERE kami_config_id = #{kamiConfigId} AND status IN (2, 3)")
+    int countUnsettledByConfigId(@Param("kamiConfigId") Long kamiConfigId);
+
     @Select("SELECT COUNT(*) FROM xianyu_kami_item WHERE kami_config_id = #{kamiConfigId} AND kami_content = #{kamiContent}")
     int countByConfigIdAndContent(@Param("kamiConfigId") Long kamiConfigId, @Param("kamiContent") String kamiContent);
 
@@ -78,7 +81,9 @@ public interface XianyuKamiItemMapper extends BaseMapper<XianyuKamiItem> {
     @Update("UPDATE xianyu_kami_item SET status = 1, used_time = NOW(3) WHERE order_id = #{orderId} AND status = 2")
     int commitReservation(@Param("orderId") String orderId);
 
-    @Update("UPDATE xianyu_kami_item SET status = 0, order_id = NULL, reserved_time = NULL WHERE order_id = #{orderId} AND status = 2")
+    @Update("UPDATE xianyu_kami_item item JOIN xianyu_kami_config config ON config.id = item.kami_config_id " +
+            "SET item.status = 0, item.order_id = NULL, item.reserved_time = NULL " +
+            "WHERE item.order_id = #{orderId} AND item.status = 2 AND config.source_type = 'LOCAL'")
     int releaseReservation(@Param("orderId") String orderId);
 
     @Update("UPDATE xianyu_kami_item SET status = 3 WHERE order_id = #{orderId} AND status = 2")

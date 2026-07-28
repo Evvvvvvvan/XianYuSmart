@@ -5,6 +5,7 @@ import com.xianyusmart.event.chatMessageEvent.ChatMessageReceivedEvent;
 import com.xianyusmart.service.AccountService;
 import com.xianyusmart.service.AutoReplyDelayService;
 import com.xianyusmart.service.AutoReplyService;
+import com.xianyusmart.service.BuyerProfileService;
 import com.xianyusmart.service.reply.HumanTakeoverManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,9 @@ public class ChatMessageEventAutoReplyListener {
 
     @Autowired
     private HumanTakeoverManager takeoverManager;
+
+    @Autowired
+    private BuyerProfileService buyerProfileService;
     
     /**
      * 处理聊天消息接收事件 - 判断并触发自动回复
@@ -110,6 +114,15 @@ public class ChatMessageEventAutoReplyListener {
                 return;
             }
             
+            // 6. 买家被标记为人工处理时，不再触发任何自动回复。
+            String blockReason = buyerProfileService.automationBlockReason(
+                    message.getXianyuAccountId(), message.getSenderUserId());
+            if (blockReason != null) {
+                log.info("【账号{}】{}，跳过自动回复: buyerUserId={}",
+                        message.getXianyuAccountId(), blockReason, message.getSenderUserId());
+                return;
+            }
+
             // 7. 检查商品是否开启自动回复开关
             if (!autoReplyService.isAutoReplyEnabled(message.getXianyuAccountId(), message.getXyGoodsId())) {
                 log.info("【账号{}】商品未开启自动回复开关，跳过: xyGoodsId={}", 

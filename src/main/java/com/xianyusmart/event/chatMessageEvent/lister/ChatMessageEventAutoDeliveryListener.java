@@ -8,6 +8,8 @@ import com.xianyusmart.event.chatMessageEvent.ChatMessageData;
 import com.xianyusmart.event.chatMessageEvent.ChatMessageReceivedEvent;
 import com.xianyusmart.mapper.XianyuGoodsInfoMapper;
 import com.xianyusmart.service.DeliveryTaskService;
+import com.xianyusmart.service.BuyerProfileService;
+import com.xianyusmart.service.NotificationCenterService;
 import com.xianyusmart.entity.XianyuGoodsConfig;
 import com.xianyusmart.mapper.XianyuGoodsConfigMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +17,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
+
+import java.util.Map;
 
 /**
  * 自动发货事件监听器
@@ -41,6 +45,12 @@ public class ChatMessageEventAutoDeliveryListener {
 
     @Autowired
     private DeliveryTaskService deliveryTaskService;
+
+    @Autowired
+    private BuyerProfileService buyerProfileService;
+
+    @Autowired
+    private NotificationCenterService notificationCenterService;
 
     @Async
     @EventListener
@@ -77,10 +87,23 @@ public class ChatMessageEventAutoDeliveryListener {
                 return;
             }
 
-            Long recordId = createOrderRecord(accountId, xianyuGoodsId, message);
+            String blockReason = buyerProfileService.automationBlockReason(accountId, message.getSenderUserId());
+            Long recordId = createOrderRecord(accountId, xianyuGoodsId, message, blockReason);
             if (recordId == null) {
                 return;
             }
+            if (blockReason != null) {
+                log.warn("【账号{}】{}，订单已进入人工复核: orderId={}", accountId, blockReason, message.getOrderId());
+            }
+            notificationCenterService.dispatch("ORDER_CREATED", accountId, "发现新的待发货订单",
+                    blockReason != null
+                            ? "订单已暂停自动化并进入人工复核"
+                            : buyerUserName == null
+                            ? "新订单已进入自动发货队列"
+                            : buyerUserName + " 的订单已进入自动发货队列",
+                    Map.of("orderId", message.getOrderId() == null ? "" : message.getOrderId(),
+                            "xyGoodsId", message.getXyGoodsId(),
+                            "reviewRequired", blockReason != null));
 
         } catch (Exception e) {
             log.error("【账号{}】处理自动发货异常: pnmId={}", accountId, message.getPnmId(), e);
@@ -110,7 +133,8 @@ public class ChatMessageEventAutoDeliveryListener {
         return goodsInfo.getId();
     }
 
-    private Long createOrderRecord(Long accountId, Long xianyuGoodsId, ChatMessageData message) {
+    private Long createOrderRecord(Long accountId, Long xianyuGoodsId, ChatMessageData message,
+                                   String reviewReason) {
         XianyuGoodsOrder record = new XianyuGoodsOrder();
         record.setXianyuAccountId(accountId);
         record.setXianyuGoodsId(xianyuGoodsId);
@@ -121,8 +145,12 @@ public class ChatMessageEventAutoDeliveryListener {
         record.setSid(message.getSId());
         record.setOrderId(message.getOrderId());
         record.setContent(null);
-        record.setState(0);
+        record.setState(reviewReason == null ? 0 : -1);
+        record.setFailReason(reviewReason);
         record.setConfirmState(0);
+        if (reviewReason != null) {
+            record.setDeliveryStatus(com.xianyusmart.enums.DeliveryStatus.REVIEW_REQUIRED.name());
+        }
 
         try {
             XianyuGoodsOrder task = deliveryTaskService.discover(record, DeliveryChannel.WEBSOCKET);

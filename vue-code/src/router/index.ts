@@ -63,6 +63,12 @@ const router = createRouter({
       meta: { title: '消息管理', icon: '💬' }
     },
     {
+      path: '/buyers',
+      name: 'buyers',
+      component: () => import('@/views/buyers/index.vue'),
+      meta: { title: '买家管理', icon: '👥' }
+    },
+    {
       path: '/auto-delivery',
       name: 'auto-delivery',
       component: () => import('@/views/auto-delivery/index.vue'),
@@ -97,6 +103,12 @@ const router = createRouter({
       name: 'operation-log',
       component: () => import('@/views/operation-log/index.vue'),
       meta: { title: '操作记录', icon: '📜' }
+    },
+    {
+      path: '/operations-health',
+      name: 'operations-health',
+      component: () => import('@/views/operations-health/index.vue'),
+      meta: { title: '通知与诊断', icon: '🩺' }
     },
     {
       path: '/settings',

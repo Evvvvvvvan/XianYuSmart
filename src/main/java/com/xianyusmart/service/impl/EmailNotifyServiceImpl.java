@@ -1,6 +1,7 @@
 package com.xianyusmart.service.impl;
 
 import com.xianyusmart.service.EmailNotifyService;
+import com.xianyusmart.service.NotificationCenterService;
 import com.xianyusmart.service.SysSettingService;
 import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.mapper.XianyuAccountMapper;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
 import java.util.Properties;
 
 @Slf4j
@@ -35,10 +37,16 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
     @Autowired
     private XianyuAccountMapper accountMapper;
 
+    @Autowired
+    private NotificationCenterService notificationCenterService;
+
     @Override
     @Async
     public void sendWsDisconnectNotifyEmail(Long accountId, String accountNote) {
         setTenantByAccount(accountId);
+        notificationCenterService.dispatch("ACCOUNT_OFFLINE", accountId, "闲鱼账号连接已断开",
+                accountNote == null ? "账号连接已断开，请检查登录状态。" : accountNote,
+                Map.of("accountNote", accountNote == null ? "" : accountNote));
         if (!isEmailConfigured()) {
             log.warn("邮箱未配置，跳过发送WebSocket断开连接通知邮件");
             return;
@@ -81,6 +89,9 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
     @Async
     public void sendCookieExpireNotifyEmail(Long accountId, String accountNote) {
         setTenantByAccount(accountId);
+        notificationCenterService.dispatch("CREDENTIAL_EXPIRED", accountId, "闲鱼账号登录凭证已失效",
+                accountNote == null ? "登录凭证已失效，请重新登录。" : accountNote,
+                Map.of("accountNote", accountNote == null ? "" : accountNote));
         if (!isEmailConfigured()) {
             log.warn("邮箱未配置，跳过发送Cookie过期通知邮件");
             return;
@@ -364,6 +375,10 @@ public class EmailNotifyServiceImpl implements EmailNotifyService {
     @Override
     @Async
     public void sendAutoDeliveryFailEmail(String toEmail, String xyGoodsId, String orderId, String failReason) {
+        notificationCenterService.dispatch("DELIVERY_EXCEPTION", null, "自动发货异常",
+                failReason == null ? "自动发货失败，请检查订单。" : failReason,
+                Map.of("xyGoodsId", xyGoodsId == null ? "" : xyGoodsId,
+                        "orderId", orderId == null ? "" : orderId));
         if (!isEmailConfigured()) {
             log.warn("邮箱未配置，跳过发送自动发货失败邮件");
             return;

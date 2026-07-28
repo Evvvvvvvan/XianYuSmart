@@ -12,6 +12,7 @@ import com.xianyusmart.mapper.XianyuGoodsAutoReplyRecordMapper;
 import com.xianyusmart.service.AutoDeliveryService;
 import com.xianyusmart.service.BuyerMessageService;
 import com.xianyusmart.service.EmailNotifyService;
+import com.xianyusmart.service.NotificationCenterService;
 import com.xianyusmart.service.KamiConfigService;
 import com.xianyusmart.service.OrderService;
 import com.xianyusmart.service.WebSocketService;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 
 /**
@@ -63,6 +65,9 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
 
     @Autowired
     private EmailNotifyService emailNotifyService;
+
+    @Autowired
+    private NotificationCenterService notificationCenterService;
 
     @Autowired
     private OrderService orderService;
@@ -564,6 +569,11 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
 
             if (anySuccess) {
                 updateRecordState(recordId, 1, allContent.toString(), null);
+                notificationCenterService.dispatch("DELIVERY_SUCCESS", accountId, "自动发货完成",
+                        "订单已按配置完成交付。",
+                        Map.of("orderId", orderId == null ? "" : orderId,
+                                "xyGoodsId", xyGoodsId == null ? "" : xyGoodsId,
+                                "deliveryMode", deliveryMode));
             }
 
         } catch (Exception e) {

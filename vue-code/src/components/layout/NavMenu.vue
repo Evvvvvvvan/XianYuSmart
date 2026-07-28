@@ -38,6 +38,10 @@ const onSelect = (index: string) => {
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       <span>消息管理</span>
     </router-link>
+    <router-link to="/buyers" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/buyers')">
+      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>买家管理</span>
+    </router-link>
 
     <div class="nav-menu-divider"><span class="nav-menu-divider-text">自动化</span></div>
 
@@ -68,6 +72,10 @@ const onSelect = (index: string) => {
     <router-link to="/operation-log" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/operation-log')">
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       <span>操作日志</span>
+    </router-link>
+    <router-link to="/operations-health" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/operations-health')">
+      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-5 3 3 5-7"/></svg>
+      <span>通知与诊断</span>
     </router-link>
     <router-link to="/settings" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/settings')">
       <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.32l.06.07a2 2 0 0 1-2.83 2.83l-.07-.06a1.65 1.65 0 0 0-1.32-.33 1.65 1.65 0 0 0-1 1.14V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.32.33l-.07.06a2 2 0 0 1-2.83-2.83l.06-.07A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.14-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.32l-.06-.07a2 2 0 0 1 2.83-2.83l.07.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.14V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.14 1.65 1.65 0 0 0 1.32-.33l.07-.06a2 2 0 0 1 2.83 2.83l-.06.07A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.14 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.14 1z"/></svg>

@@ -1,6 +1,7 @@
 package com.xianyusmart.entity;
 
 import com.baomidou.mybatisplus.annotation.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,19 @@ public class XianyuKamiConfig {
     private Long xianyuAccountId;
 
     private String aliasName;
+
+    private String sourceType;
+
+    private String externalApiUrl;
+
+    @JsonIgnore
+    private String externalApiHeaders;
+
+    private String externalApiBody;
+
+    private String externalApiResultPath;
+
+    private Integer externalApiTimeoutSeconds;
 
     private Integer alertEnabled;
 

@@ -36,8 +36,15 @@ const kamiItems = ref<KamiItem[]>([])
 const itemsLoading = ref(false)
 
 const showCreateDialog = ref(false)
+const editingConfigId = ref<number>()
 const createForm = ref({
-  aliasName: ''
+  aliasName: '',
+  sourceType: 'LOCAL' as 'LOCAL' | 'API',
+  externalApiUrl: '',
+  externalApiHeaders: '{}',
+  externalApiBody: '{\n  "orderId": "{orderId}",\n  "quantity": {quantity},\n  "requestToken": "{requestToken}"\n}',
+  externalApiResultPath: 'data.cards',
+  externalApiTimeoutSeconds: 10
 })
 const createLoading = ref(false)
 
@@ -114,6 +121,40 @@ const clearLowStockFilter = () => {
     selectedConfigId.value = visibleKamiConfigs.value[0].id
     loadKamiItems()
   }
+}
+
+const resetConfigForm = () => {
+  editingConfigId.value = undefined
+  createForm.value = {
+    aliasName: '',
+    sourceType: 'LOCAL',
+    externalApiUrl: '',
+    externalApiHeaders: '{}',
+    externalApiBody: '{\n  "orderId": "{orderId}",\n  "quantity": {quantity},\n  "requestToken": "{requestToken}"\n}',
+    externalApiResultPath: 'data.cards',
+    externalApiTimeoutSeconds: 10
+  }
+}
+
+const openCreateDialog = () => {
+  resetConfigForm()
+  showCreateDialog.value = true
+}
+
+const openSourceConfigDialog = () => {
+  if (!selectedConfig.value) return
+  const config = selectedConfig.value
+  editingConfigId.value = config.id
+  createForm.value = {
+    aliasName: config.aliasName || '',
+    sourceType: config.sourceType || 'LOCAL',
+    externalApiUrl: config.externalApiUrl || '',
+    externalApiHeaders: '',
+    externalApiBody: config.externalApiBody || '{\n  "orderId": "{orderId}",\n  "quantity": {quantity},\n  "requestToken": "{requestToken}"\n}',
+    externalApiResultPath: config.externalApiResultPath || 'data.cards',
+    externalApiTimeoutSeconds: config.externalApiTimeoutSeconds || 10
+  }
+  showCreateDialog.value = true
 }
 
 const loadAccounts = async () => {
@@ -196,13 +237,20 @@ const handleCreate = async () => {
   createLoading.value = true
   try {
     const res = await saveKamiConfig({
+      id: editingConfigId.value,
       xianyuAccountId: selectedAccountId.value,
-      aliasName: createForm.value.aliasName || '未命名'
+      aliasName: createForm.value.aliasName || '未命名',
+      sourceType: createForm.value.sourceType,
+      externalApiUrl: createForm.value.sourceType === 'API' ? createForm.value.externalApiUrl : undefined,
+      externalApiHeaders: createForm.value.sourceType === 'API' ? createForm.value.externalApiHeaders : undefined,
+      externalApiBody: createForm.value.sourceType === 'API' ? createForm.value.externalApiBody : undefined,
+      externalApiResultPath: createForm.value.sourceType === 'API' ? createForm.value.externalApiResultPath : undefined,
+      externalApiTimeoutSeconds: createForm.value.sourceType === 'API' ? createForm.value.externalApiTimeoutSeconds : undefined
     })
     if (res.code === 200) {
-      toast.success('创建成功')
+      toast.success(editingConfigId.value ? '卡密来源已更新' : '创建成功')
       showCreateDialog.value = false
-      createForm.value = { aliasName: '' }
+      resetConfigForm()
       await loadKamiConfigs()
       if (res.data?.id) {
         selectedConfigId.value = res.data.id
@@ -343,6 +391,12 @@ const handleSaveAlert = async () => {
       id: selectedConfigId.value,
       xianyuAccountId: selectedAccountId.value!,
       aliasName: selectedConfig.value?.aliasName,
+      sourceType: selectedConfig.value?.sourceType || 'LOCAL',
+      externalApiUrl: selectedConfig.value?.externalApiUrl,
+      externalApiHeaders: selectedConfig.value?.externalApiHeaders,
+      externalApiBody: selectedConfig.value?.externalApiBody,
+      externalApiResultPath: selectedConfig.value?.externalApiResultPath,
+      externalApiTimeoutSeconds: selectedConfig.value?.externalApiTimeoutSeconds,
       alertEnabled: alertForm.value.alertEnabled,
       alertThresholdType: alertForm.value.alertThresholdType,
       alertThresholdValue: alertForm.value.alertThresholdValue,
@@ -445,7 +499,7 @@ onUnmounted(() => {
         <header class="kami-mobile__header">
           <div class="kami-mobile__header-top">
             <h1 class="kami-page__title">卡密仓库</h1>
-            <button class="btn-primary btn-sm" @click="showCreateDialog = true" :disabled="!selectedAccountId">
+            <button class="btn-primary btn-sm" @click="openCreateDialog" :disabled="!selectedAccountId">
               新建
             </button>
           </div>
@@ -462,6 +516,7 @@ onUnmounted(() => {
           >
             <div class="config-card__name">{{ config.aliasName || `配置#${config.id}` }}</div>
             <div class="config-card__stats">
+              <span v-if="config.sourceType === 'API'" class="tag tag--info">接口供货</span>
               <span class="config-card__stat">总量 {{ config.totalCount }}</span>
               <span class="config-card__stat used">已用 {{ config.usedCount }}</span>
               <span class="config-card__stat avail">可用 {{ config.availableCount }}</span>
@@ -485,8 +540,9 @@ onUnmounted(() => {
             <span class="kami-mobile__config-name">{{ selectedConfig?.aliasName || `配置#${selectedConfigId}` }}</span>
           </div>
           <div class="kami-mobile__detail-actions">
-            <button class="btn-default btn-sm" @click="showAddDialog = true">添加</button>
-            <button class="btn-primary btn-sm" @click="showImportDialog = true">批量导入</button>
+            <button v-if="selectedConfig?.sourceType !== 'API'" class="btn-default btn-sm" @click="showAddDialog = true">添加</button>
+            <button v-if="selectedConfig?.sourceType !== 'API'" class="btn-primary btn-sm" @click="showImportDialog = true">批量导入</button>
+            <button class="btn-default btn-sm" @click="openSourceConfigDialog">来源配置</button>
             <button class="btn-success btn-sm" @click="openExportDialog">导出</button>
             <button class="btn-warning btn-sm" @click="openAlertDialog">预警</button>
           </div>
@@ -556,7 +612,7 @@ onUnmounted(() => {
               :value="acc.id"
             >{{ acc.accountNote || `账号${acc.id}` }}</option>
           </select>
-          <button class="btn-primary" @click="showCreateDialog = true" :disabled="!selectedAccountId">
+          <button class="btn-primary" @click="openCreateDialog" :disabled="!selectedAccountId">
             新建密钥仓库
           </button>
         </div>
@@ -575,6 +631,7 @@ onUnmounted(() => {
           >
             <div class="config-card__name">{{ config.aliasName || `配置#${config.id}` }}</div>
             <div class="config-card__stats">
+              <span v-if="config.sourceType === 'API'" class="tag tag--info">接口供货</span>
               <span class="config-card__stat">总量 {{ config.totalCount }}</span>
               <span class="config-card__stat used">已用 {{ config.usedCount }}</span>
               <span class="config-card__stat avail">可用 {{ config.availableCount }}</span>
@@ -593,8 +650,9 @@ onUnmounted(() => {
             <div class="kami-detail__header">
               <h2>{{ selectedConfig.aliasName || `配置#${selectedConfig.id}` }}</h2>
               <div class="kami-detail__actions">
-                <button class="btn-default" @click="showAddDialog = true">添加卡密</button>
-                <button class="btn-primary" @click="showImportDialog = true">批量导入</button>
+                <button v-if="selectedConfig.sourceType !== 'API'" class="btn-default" @click="showAddDialog = true">添加卡密</button>
+                <button v-if="selectedConfig.sourceType !== 'API'" class="btn-primary" @click="showImportDialog = true">批量导入</button>
+                <button class="btn-default" @click="openSourceConfigDialog">来源配置</button>
                 <button class="btn-success" @click="openExportDialog">导出</button>
                 <button class="btn-warning" @click="openAlertDialog">预警配置</button>
               </div>
@@ -672,7 +730,7 @@ onUnmounted(() => {
         <div v-if="showCreateDialog" class="modal-overlay" @click.self="showCreateDialog = false">
           <div class="modal-container">
             <div class="modal-header">
-              <h2 class="modal-title">新建卡密配置</h2>
+              <h2 class="modal-title">{{ editingConfigId ? '编辑卡密来源' : '新建卡密配置' }}</h2>
               <button class="modal-close" @click="showCreateDialog = false">×</button>
             </div>
             <div class="modal-body">
@@ -680,6 +738,42 @@ onUnmounted(() => {
                 <label class="form-label">别名</label>
                 <input v-model="createForm.aliasName" class="form-input" placeholder="请输入别名" maxlength="50" />
               </div>
+              <div class="form-row">
+                <label class="form-label">卡密来源</label>
+                <div class="form-radio-group">
+                  <label class="form-radio" :class="{ 'is-active': createForm.sourceType === 'LOCAL' }">
+                    <input v-model="createForm.sourceType" type="radio" value="LOCAL" />本地库存
+                  </label>
+                  <label class="form-radio" :class="{ 'is-active': createForm.sourceType === 'API' }">
+                    <input v-model="createForm.sourceType" type="radio" value="API" />外部接口
+                  </label>
+                </div>
+              </div>
+              <template v-if="createForm.sourceType === 'API'">
+                <p class="form-hint">下单时实时调用供货接口。请求会携带 Idempotency-Key，超时或结果不确定时自动转人工核对。</p>
+                <div class="form-row">
+                  <label class="form-label">接口地址</label>
+                  <input v-model="createForm.externalApiUrl" class="form-input" placeholder="https://supplier.example.com/cards" />
+                </div>
+                <div class="form-row">
+                  <label class="form-label">请求头 JSON</label>
+                  <textarea v-model="createForm.externalApiHeaders" class="form-textarea" rows="3" :placeholder="editingConfigId && selectedConfig?.externalApiHeadersConfigured ? '已保存请求头；留空保持不变' : '{&quot;Authorization&quot;:&quot;Bearer xxx&quot;}'"></textarea>
+                  <span class="form-suffix">认证请求头不进入业务备份，恢复数据后需要重新填写。</span>
+                </div>
+                <div class="form-row">
+                  <label class="form-label">请求体 JSON</label>
+                  <textarea v-model="createForm.externalApiBody" class="form-textarea" rows="6"></textarea>
+                  <span class="form-suffix">变量：{orderId}、{quantity}、{requestToken}</span>
+                </div>
+                <div class="form-row">
+                  <label class="form-label">结果路径</label>
+                  <input v-model="createForm.externalApiResultPath" class="form-input" placeholder="例如 data.cards" />
+                </div>
+                <div class="form-row">
+                  <label class="form-label">超时秒数</label>
+                  <input v-model.number="createForm.externalApiTimeoutSeconds" type="number" min="3" max="30" class="form-input form-input--num" />
+                </div>
+              </template>
             </div>
             <div class="modal-footer">
               <button class="btn btn-secondary" @click="showCreateDialog = false">取消</button>

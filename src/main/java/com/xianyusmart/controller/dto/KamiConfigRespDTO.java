@@ -13,6 +13,20 @@ public class KamiConfigRespDTO {
 
     private String aliasName;
 
+    private String sourceType;
+
+    private String externalApiUrl;
+
+    private String externalApiHeaders;
+
+    private Boolean externalApiHeadersConfigured;
+
+    private String externalApiBody;
+
+    private String externalApiResultPath;
+
+    private Integer externalApiTimeoutSeconds;
+
     private Integer alertEnabled;
 
     private Integer alertThresholdType;

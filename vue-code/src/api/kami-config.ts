@@ -4,6 +4,13 @@ export interface KamiConfig {
   id: number;
   xianyuAccountId: number;
   aliasName: string;
+  sourceType?: 'LOCAL' | 'API';
+  externalApiUrl?: string;
+  externalApiHeaders?: string;
+  externalApiHeadersConfigured?: boolean;
+  externalApiBody?: string;
+  externalApiResultPath?: string;
+  externalApiTimeoutSeconds?: number;
   alertEnabled?: number;
   alertThresholdType?: number;
   alertThresholdValue?: number;
@@ -30,6 +37,12 @@ export interface SaveKamiConfigReq {
   id?: number;
   xianyuAccountId: number;
   aliasName?: string;
+  sourceType?: 'LOCAL' | 'API';
+  externalApiUrl?: string;
+  externalApiHeaders?: string;
+  externalApiBody?: string;
+  externalApiResultPath?: string;
+  externalApiTimeoutSeconds?: number;
   alertEnabled?: number;
   alertThresholdType?: number;
   alertThresholdValue?: number;

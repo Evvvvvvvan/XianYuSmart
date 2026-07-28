@@ -66,11 +66,13 @@ const pageTitleMap: Record<string, string> = {
   '/goods': '商品管理',
   '/orders': '发货记录',
   '/messages': '消息管理',
+  '/buyers': '买家管理',
   '/auto-delivery': '自动发货',
   '/fixed-delivery-templates': '固定内容模板',
 
   '/auto-reply': '自动回复',
   '/operation-log': '操作日志',
+  '/operations-health': '通知与诊断',
   '/settings': '系统设置'
 }
 
@@ -83,11 +85,13 @@ const pageIconMap: Record<string, any> = {
   '/orders': markRaw(IconTruck),
   '/pending-orders': markRaw(IconTruck),
   '/messages': markRaw(IconMessage),
+  '/buyers': markRaw(IconAccount),
   '/auto-delivery': markRaw(IconRobot),
   '/fixed-delivery-templates': markRaw(IconTruck),
   '/kami-config': markRaw(IconShield),
   '/auto-reply': markRaw(IconChat),
   '/operation-log': markRaw(IconLog),
+  '/operations-health': markRaw(IconChart),
   '/settings': markRaw(IconShield),
   '/qrlogin': markRaw(IconWifi)
 }

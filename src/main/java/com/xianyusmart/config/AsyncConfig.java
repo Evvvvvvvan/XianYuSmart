@@ -75,6 +75,34 @@ public class AsyncConfig {
         return executor;
     }
 
+    @Bean(name = "notificationExecutor")
+    public Executor notificationExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(200);
+        executor.setThreadNamePrefix("xys-notification-");
+        executor.setTaskDecorator(task -> {
+            Long tenantId = TenantContext.get();
+            return () -> {
+                try {
+                    if (tenantId != null) {
+                        TenantContext.set(tenantId);
+                    }
+                    task.run();
+                } finally {
+                    TenantContext.clear();
+                }
+            };
+        });
+        // 通知过载时只丢弃通知任务，避免反向阻塞自动回复和自动发货线程。
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.DiscardPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
+
     @Bean(name = "websocketMessageExecutor", destroyMethod = "shutdown")
     public ExecutorService websocketMessageExecutor() {
         return new ThreadPoolExecutor(

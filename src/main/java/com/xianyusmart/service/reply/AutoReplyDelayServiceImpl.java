@@ -9,6 +9,7 @@ import com.xianyusmart.mapper.XianyuGoodsAutoReplyRecordMapper;
 import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.service.AutoReplyDelayService;
 import com.xianyusmart.service.AutoReplyService;
+import com.xianyusmart.service.BuyerProfileService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -57,6 +58,9 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
 
     @Autowired
     private HumanTakeoverManager takeoverManager;
+
+    @Autowired
+    private BuyerProfileService buyerProfileService;
 
     @Autowired
     private ReplyConfigProvider configProvider;
@@ -288,6 +292,14 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
             }
             TenantContext.set(account.getTenantId());
             if (takeoverManager.isTakenOver(accountId, sId)) {
+                autoReplyRecordMapper.cancelById(recordId);
+                return;
+            }
+            // 延时期间可能暂停买家自动化，执行前再次校验可避免已排队回复继续发送。
+            String blockReason = buyerProfileService.automationBlockReason(accountId, lastMessage.getSenderUserId());
+            if (blockReason != null) {
+                log.info("【账号{}】买家自动化已暂停，取消延时回复: buyerId={}, reason={}",
+                        accountId, lastMessage.getSenderUserId(), blockReason);
                 autoReplyRecordMapper.cancelById(recordId);
                 return;
             }

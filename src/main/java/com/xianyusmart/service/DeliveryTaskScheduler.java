@@ -32,6 +32,7 @@ public class DeliveryTaskScheduler {
     private final OrderService orderService;
     private final PendingOrderPollService pendingOrderPollService;
     private final WebSocketService webSocketService;
+    private final BuyerProfileService buyerProfileService;
     private final Executor taskExecutor;
     private final String workerId = buildWorkerId();
 
@@ -46,6 +47,7 @@ public class DeliveryTaskScheduler {
                                  OrderService orderService,
                                  PendingOrderPollService pendingOrderPollService,
                                  WebSocketService webSocketService,
+                                 BuyerProfileService buyerProfileService,
                                  @Qualifier("taskExecutor") Executor taskExecutor) {
         this.deliveryTaskService = deliveryTaskService;
         this.autoDeliveryService = autoDeliveryService;
@@ -55,6 +57,7 @@ public class DeliveryTaskScheduler {
         this.orderService = orderService;
         this.pendingOrderPollService = pendingOrderPollService;
         this.webSocketService = webSocketService;
+        this.buyerProfileService = buyerProfileService;
         this.taskExecutor = taskExecutor;
     }
 
@@ -91,6 +94,13 @@ public class DeliveryTaskScheduler {
     private void executeTask(XianyuGoodsOrder task) {
         try {
             TenantContext.set(task.getTenantId());
+            // 任务领取后再次检查买家状态，避免排队期间新增拦截仍继续自动发货。
+            String blockReason = buyerProfileService.automationBlockReason(
+                    task.getXianyuAccountId(), task.getBuyerUserId());
+            if (blockReason != null) {
+                deliveryTaskService.markReviewRequired(task.getId(), blockReason);
+                return;
+            }
             String sId = task.getSid();
             if (sId == null || sId.isBlank()) {
                 String receiverId = task.getBuyerUserId() != null ? task.getBuyerUserId() : task.getOrderId();

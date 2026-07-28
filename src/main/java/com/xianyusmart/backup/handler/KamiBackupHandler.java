@@ -2,12 +2,16 @@ package com.xianyusmart.backup.handler;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xianyusmart.backup.DataBackupHandler;
+import com.xianyusmart.common.ResultObject;
+import com.xianyusmart.controller.dto.KamiConfigReqDTO;
+import com.xianyusmart.controller.dto.KamiConfigRespDTO;
 import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.entity.XianyuKamiConfig;
 import com.xianyusmart.entity.XianyuKamiItem;
 import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.mapper.XianyuKamiConfigMapper;
 import com.xianyusmart.mapper.XianyuKamiItemMapper;
+import com.xianyusmart.service.KamiConfigService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -26,6 +30,9 @@ public class KamiBackupHandler implements DataBackupHandler {
 
     @Autowired
     private XianyuAccountMapper accountMapper;
+
+    @Autowired
+    private KamiConfigService kamiConfigService;
 
     @Override
     public String getModuleKey() {
@@ -51,6 +58,11 @@ public class KamiBackupHandler implements DataBackupHandler {
             map.put("sourceId", config.getId());
             map.put("unb", account.getUnb());
             map.put("aliasName", config.getAliasName());
+            map.put("sourceType", config.getSourceType());
+            map.put("externalApiUrl", config.getExternalApiUrl());
+            map.put("externalApiBody", config.getExternalApiBody());
+            map.put("externalApiResultPath", config.getExternalApiResultPath());
+            map.put("externalApiTimeoutSeconds", config.getExternalApiTimeoutSeconds());
             map.put("alertEnabled", config.getAlertEnabled());
             map.put("alertThresholdType", config.getAlertThresholdType());
             map.put("alertThresholdValue", config.getAlertThresholdValue());
@@ -114,27 +126,30 @@ public class KamiBackupHandler implements DataBackupHandler {
                            .eq(XianyuKamiConfig::getAliasName, aliasName);
                     XianyuKamiConfig existing = kamiConfigMapper.selectOne(wrapper);
 
-                    XianyuKamiConfig config = new XianyuKamiConfig();
-                    config.setXianyuAccountId(accountId);
-                    config.setAliasName(aliasName);
-                    config.setAlertEnabled(map.get("alertEnabled") != null ? ((Number) map.get("alertEnabled")).intValue() : null);
-                    config.setAlertThresholdType(map.get("alertThresholdType") != null ? ((Number) map.get("alertThresholdType")).intValue() : null);
-                    config.setAlertThresholdValue(map.get("alertThresholdValue") != null ? ((Number) map.get("alertThresholdValue")).intValue() : null);
-                    config.setAlertEmail((String) map.get("alertEmail"));
+                    KamiConfigReqDTO request = new KamiConfigReqDTO();
+                    request.setId(existing == null ? null : existing.getId());
+                    request.setXianyuAccountId(accountId);
+                    request.setAliasName(aliasName);
+                    request.setSourceType(map.get("sourceType") == null ? "LOCAL" : (String) map.get("sourceType"));
+                    request.setExternalApiUrl((String) map.get("externalApiUrl"));
+                    request.setExternalApiBody((String) map.get("externalApiBody"));
+                    request.setExternalApiResultPath((String) map.get("externalApiResultPath"));
+                    request.setExternalApiTimeoutSeconds(map.get("externalApiTimeoutSeconds") != null
+                            ? ((Number) map.get("externalApiTimeoutSeconds")).intValue() : 10);
+                    request.setAlertEnabled(map.get("alertEnabled") != null ? ((Number) map.get("alertEnabled")).intValue() : null);
+                    request.setAlertThresholdType(map.get("alertThresholdType") != null ? ((Number) map.get("alertThresholdType")).intValue() : null);
+                    request.setAlertThresholdValue(map.get("alertThresholdValue") != null ? ((Number) map.get("alertThresholdValue")).intValue() : null);
+                    request.setAlertEmail((String) map.get("alertEmail"));
 
-                    if (existing == null) {
-                        config.setTotalCount(0);
-                        config.setUsedCount(0);
-                        kamiConfigMapper.insert(config);
-                    } else {
-                        config.setId(existing.getId());
-                        config.setTotalCount(existing.getTotalCount());
-                        config.setUsedCount(existing.getUsedCount());
-                        kamiConfigMapper.updateById(config);
+                    // 备份恢复复用配置服务，确保供货中的仓库不会绕过行锁和未结请求校验。
+                    ResultObject<KamiConfigRespDTO> saveResult = kamiConfigService.createOrUpdateConfig(request);
+                    if (!Integer.valueOf(200).equals(saveResult.getCode()) || saveResult.getData() == null) {
+                        throw new IllegalArgumentException(saveResult.getMsg());
                     }
-                    configKeyToId.put(unb + ":" + aliasName, config.getId());
+                    Long configId = saveResult.getData().getId();
+                    configKeyToId.put(unb + ":" + aliasName, configId);
                     if (map.get("sourceId") != null) {
-                        sourceIdToId.put(String.valueOf(map.get("sourceId")), config.getId());
+                        sourceIdToId.put(String.valueOf(map.get("sourceId")), configId);
                     }
                 } catch (Exception e) {
                     log.warn("[KamiBackup] 导入单条卡密配置失败: {}", e.getMessage());
