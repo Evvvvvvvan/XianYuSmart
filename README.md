@@ -433,10 +433,11 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=Evvvvvvvan%2FXianYuSmart&type=date&legend=top-left">
+<a href="https://star-history.com/#Evvvvvvvan/XianYuSmart&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Evvvvvvvan/XianYuSmart&type=date&theme=dark&legend=top-left&sealed_token=J_OgquuwcaEKmgGf1EFy5Fb_REc2dJ8QZZ5GU3mTg1zsH9-2vrm2VaCFZuK9KdC-tsqnZuoVCJrct0TmRCYHx5WPkUMa6GOYSG4rxQCucZLX9FLDoqwYUw" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Evvvvvvvan/XianYuSmart&type=date&legend=top-left&sealed_token=J_OgquuwcaEKmgGf1EFy5Fb_REc2dJ8QZZ5GU3mTg1zsH9-2vrm2VaCFZuK9KdC-tsqnZuoVCJrct0TmRCYHx5WPkUMa6GOYSG4rxQCucZLX9FLDoqwYUw" />
-    <img alt="XianYuSmart Star History Chart" src="https://api.star-history.com/chart?repos=Evvvvvvvan/XianYuSmart&type=date&legend=top-left&sealed_token=J_OgquuwcaEKmgGf1EFy5Fb_REc2dJ8QZZ5GU3mTg1zsH9-2vrm2VaCFZuK9KdC-tsqnZuoVCJrct0TmRCYHx5WPkUMa6GOYSG4rxQCucZLX9FLDoqwYUw" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/star-history-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/star-history-light.png" />
+    <img alt="XianYuSmart Star History Chart" src="docs/assets/star-history-light.png" width="100%" />
   </picture>
 </a>
+<sub>由 [`scripts/gen_star_history.py`](scripts/gen_star_history.py) 生成，[GitHub Actions](.github/workflows/star-history.yml) 每日自动更新 · 点击图片查看实时数据</sub>
