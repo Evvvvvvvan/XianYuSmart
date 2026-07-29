@@ -470,7 +470,7 @@ public class ItemServiceImpl implements ItemService {
                     
                     if (detailInfo != null && !detailInfo.isEmpty()) {
                         // 更新数据库中的详情信息
-                        goodsInfoService.updateDetailInfo(reqDTO.getXyGoodId(), detailInfo);
+                        goodsInfoService.updateDetailInfo(item.getXianyuAccountId(), reqDTO.getXyGoodId(), detailInfo);
                         item.setDetailInfo(detailInfo);
                         log.info("商品详情已更新: xyGoodId={}", reqDTO.getXyGoodId());
                     } else {
@@ -589,7 +589,7 @@ public class ItemServiceImpl implements ItemService {
             log.info("Cookie获取成功，准备调用API: itemId={}", itemId);
             
             // 3. 首选方式：通过闲鱼API获取商品详情
-            String detailJson = fetchDetailFromApi(itemId, cookiesStr);
+            String detailJson = fetchDetailFromApi(itemId, cookiesStr, getAccountIdFromCookieId(cookieId));
             
             if (detailJson != null && !detailJson.isEmpty()) {
                 log.info("通过API获取商品详情成功: itemId={}, 详情长度={}", itemId, detailJson.length());
@@ -619,9 +619,10 @@ public class ItemServiceImpl implements ItemService {
      *
      * @param itemId 商品ID
      * @param cookiesStr Cookie字符串
+     * @param accountId 闲鱼账号ID
      * @return 商品详情JSON字符串
      */
-    private String fetchDetailFromApi(String itemId, String cookiesStr) {
+    private String fetchDetailFromApi(String itemId, String cookiesStr, Long accountId) {
         try {
             log.info("调用闲鱼API获取商品详情: itemId={}", itemId);
             
@@ -675,11 +676,9 @@ public class ItemServiceImpl implements ItemService {
                     itemId, detailJson.length(), extractedDesc.length());
             
             List<XianyuGoodsSku> skuList = ItemDetailUtils.extractSkuList(detailJson);
-            if (!skuList.isEmpty()) {
-                XianyuGoodsInfo goodsInfo = goodsInfoService.getByXyGoodId(itemId);
-                Long accountId = goodsInfo != null ? goodsInfo.getXianyuAccountId() : null;
+            if (!skuList.isEmpty() && accountId != null) {
                 goodsSkuService.saveSkus(itemId, accountId, skuList);
-                goodsInfoService.updateSkuCount(itemId, skuList.size());
+                goodsInfoService.updateSkuCount(accountId, itemId, skuList.size());
                 List<XianyuGoodsSkuProperty> propertyList = ItemDetailUtils.extractSkuPropertyList(detailJson);
                 if (!propertyList.isEmpty()) {
                     goodsSkuPropertyService.saveProperties(itemId, accountId, propertyList);

@@ -12,5 +12,5 @@ public interface GoodsSkuService {
 
     void saveSkus(String xyGoodsId, Long xianyuAccountId, List<XianyuGoodsSku> skuList);
 
-    void deleteByXyGoodsId(String xyGoodsId);
+    void deleteByXyGoodsId(String xyGoodsId, Long xianyuAccountId);
 }

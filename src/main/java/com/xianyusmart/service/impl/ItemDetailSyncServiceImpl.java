@@ -159,26 +159,41 @@ public class ItemDetailSyncServiceImpl implements ItemDetailSyncService {
                 return false;
             }
 
-            log.info("mtop.taobao.idle.pc.detail 完整响应: itemId={}, response={}", itemId, response);
-
-            String extractedDesc = extractDescFromDetailJson(response);
-            
-            if (extractedDesc != null && !extractedDesc.isEmpty()) {
-                goodsInfoService.updateDetailInfo(itemId, extractedDesc);
+            log.debug("mtop.taobao.idle.pc.detail 响应: itemId={}, response={}", itemId, response);
+            JsonNode itemDONode = readSuccessfulItem(response, itemId);
+            if (itemDONode == null) {
+                log.warn("商品详情同步被平台拒绝: itemId={}", itemId);
+                return false;
             }
 
+            String extractedDesc = itemDONode.path("desc").asText("");
+            
+            if (!extractedDesc.isEmpty()
+                    && !goodsInfoService.updateDetailInfo(accountId, itemId, extractedDesc)) {
+                return false;
+            }
+
+            JsonNode skuDataNode = itemDONode.get("skuList");
+            if (skuDataNode == null || !skuDataNode.isArray()) {
+                skuDataNode = itemDONode.get("idleItemSkuList");
+            }
             List<XianyuGoodsSku> skuList = ItemDetailUtils.extractSkuList(response);
             if (!skuList.isEmpty()) {
                 goodsSkuService.saveSkus(itemId, accountId, skuList);
-                goodsInfoService.updateSkuCount(itemId, skuList.size());
+                if (!goodsInfoService.updateSkuCount(accountId, itemId, skuList.size())) {
+                    return false;
+                }
                 List<XianyuGoodsSkuProperty> propertyList = ItemDetailUtils.extractSkuPropertyList(response);
                 if (!propertyList.isEmpty()) {
                     goodsSkuPropertyService.saveProperties(itemId, accountId, propertyList);
                 }
-            } else {
-                goodsSkuService.deleteByXyGoodsId(itemId);
-                goodsSkuPropertyService.deleteByXyGoodsId(itemId);
-                goodsInfoService.updateSkuCount(itemId, 0);
+            } else if (skuDataNode != null && skuDataNode.isArray() && skuDataNode.isEmpty()) {
+                // 平台明确返回空SKU时才清理，避免异常或截断响应误删现有规格。
+                goodsSkuService.deleteByXyGoodsId(itemId, accountId);
+                goodsSkuPropertyService.deleteByXyGoodsId(itemId, accountId);
+                if (!goodsInfoService.updateSkuCount(accountId, itemId, 0)) {
+                    return false;
+                }
             }
 
             log.debug("商品详情同步成功: itemId={}", itemId);
@@ -187,6 +202,29 @@ public class ItemDetailSyncServiceImpl implements ItemDetailSyncService {
         } catch (Exception e) {
             log.error("获取商品详情异常: itemId={}", itemId, e);
             return false;
+        }
+    }
+
+    private JsonNode readSuccessfulItem(String response, String itemId) {
+        try {
+            JsonNode rootNode = objectMapper.readTree(response);
+            JsonNode retNode = rootNode.path("ret");
+            if (!retNode.isArray() || retNode.isEmpty()
+                    || !retNode.get(0).asText("").startsWith("SUCCESS")) {
+                return null;
+            }
+            JsonNode itemDONode = rootNode.path("data").path("itemDO");
+            if (!itemDONode.isObject()) {
+                return null;
+            }
+            String responseItemId = itemDONode.path("itemId").asText("");
+            if (responseItemId.isBlank()) {
+                responseItemId = itemDONode.path("id").asText("");
+            }
+            return itemId.equals(responseItemId) ? itemDONode : null;
+        } catch (Exception e) {
+            log.warn("商品详情响应解析失败", e);
+            return null;
         }
     }
 
@@ -203,36 +241,6 @@ public class ItemDetailSyncServiceImpl implements ItemDetailSyncService {
         }
         log.info("同步单个商品: accountId={}, itemId={}", accountId, itemId);
         return fetchAndSaveDetail(itemId, cookieStr, accountId);
-    }
-
-    private String extractDescFromDetailJson(String detailJson) {
-        try {
-            JsonNode rootNode = objectMapper.readTree(detailJson);
-            
-            JsonNode dataNode = rootNode.get("data");
-            if (dataNode == null || dataNode.isNull()) {
-                log.warn("未找到data字段");
-                return null;
-            }
-
-            JsonNode itemDONode = dataNode.get("itemDO");
-            if (itemDONode == null || itemDONode.isNull()) {
-                log.warn("未找到itemDO字段");
-                return null;
-            }
-
-            JsonNode descNode = itemDONode.get("desc");
-            if (descNode != null && !descNode.isNull()) {
-                return descNode.asText();
-            } else {
-                log.warn("itemDO中未找到desc字段");
-                return null;
-            }
-
-        } catch (Exception e) {
-            log.error("解析商品详情JSON失败", e);
-            return null;
-        }
     }
 
     @Override

@@ -23,6 +23,8 @@ public class MerchantTask {
 
     private String taskType;
 
+    private String requestKey;
+
     private Long resourceId;
 
     private Long xianyuAccountId;

@@ -19,6 +19,13 @@ public interface GoodsInfoService {
      * @return 是否保存成功
      */
     boolean saveOrUpdateGoodsInfo(ItemDTO itemDTO, Long xianyuAccountId);
+
+    /**
+     * 独立保存平台刚发布的商品，避免本地失败回滚外层发布任务。
+     */
+    boolean savePublishedGoods(String xyGoodId, Long xianyuAccountId, String title,
+                               String coverPic, String infoPic, String detailInfo,
+                               String detailUrl, String soldPrice);
     
     /**
      * 批量保存或更新商品信息
@@ -105,11 +112,12 @@ public interface GoodsInfoService {
     /**
      * 更新商品详情信息
      *
+     * @param xianyuAccountId 闲鱼账号ID
      * @param xyGoodId 闲鱼商品ID
      * @param detailInfo 商品详情信息
      * @return 是否更新成功
      */
-    boolean updateDetailInfo(String xyGoodId, String detailInfo);
+    boolean updateDetailInfo(Long xianyuAccountId, String xyGoodId, String detailInfo);
     
     /**
      * 根据商品ID获取商品详情信息
@@ -134,7 +142,7 @@ public interface GoodsInfoService {
      */
     boolean deleteGoodsInfo(Long xianyuAccountId, String xyGoodId);
 
-    boolean updateSkuCount(String xyGoodId, int skuCount);
+    boolean updateSkuCount(Long xianyuAccountId, String xyGoodId, int skuCount);
 
     /**
      * 标记本地在售但远程不存在的商品为已下架

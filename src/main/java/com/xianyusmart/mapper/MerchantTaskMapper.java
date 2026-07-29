@@ -24,6 +24,12 @@ public interface MerchantTaskMapper extends BaseMapper<MerchantTask> {
                                     @Param("status") Integer status,
                                     @Param("limit") int limit);
 
+    @Select("SELECT * FROM merchant_task WHERE tenant_id = #{tenantId} AND task_type = #{taskType} " +
+            "AND request_key = #{requestKey} LIMIT 1")
+    MerchantTask selectByRequestKey(@Param("tenantId") Long tenantId,
+                                    @Param("taskType") String taskType,
+                                    @Param("requestKey") String requestKey);
+
     // 直接返回任务汇总，概览页无需加载任务明细再计算。
     @Select("SELECT COUNT(*) AS taskCount, COALESCE(SUM(CASE WHEN status = -1 THEN 1 ELSE 0 END), 0) AS failedTaskCount FROM merchant_task")
     Map<String, Object> selectOverviewCounts();

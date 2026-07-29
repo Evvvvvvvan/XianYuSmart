@@ -14,6 +14,7 @@ import com.xianyusmart.utils.XianyuApiCallUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -40,6 +41,7 @@ public class PlatformPublishService {
     private final ObjectMapper objectMapper;
     private final XianyuApiCallUtils apiCallUtils;
     private final ImageUploadService imageUploadService;
+    private final GoodsInfoService goodsInfoService;
     private final PlatformMarketplaceParser responseParser;
     private final PublishAddressCatalog addressCatalog;
 
@@ -47,12 +49,14 @@ public class PlatformPublishService {
                                   AccountService accountService,
                                   ObjectMapper objectMapper,
                                   XianyuApiCallUtils apiCallUtils,
-                                  ImageUploadService imageUploadService) {
+                                  ImageUploadService imageUploadService,
+                                  GoodsInfoService goodsInfoService) {
         this.playwrightManager = playwrightManager;
         this.accountService = accountService;
         this.objectMapper = objectMapper;
         this.apiCallUtils = apiCallUtils;
         this.imageUploadService = imageUploadService;
+        this.goodsInfoService = goodsInfoService;
         this.responseParser = new PlatformMarketplaceParser(objectMapper);
         this.addressCatalog = new PublishAddressCatalog(objectMapper);
     }
@@ -105,13 +109,45 @@ public class PlatformPublishService {
         if (itemId.isBlank()) {
             throw new IllegalStateException("平台返回成功但缺少商品ID，发布结果无法确认");
         }
+        boolean localSynced = true;
+        try {
+            persistPublishedItem(itemId, title, description, material.getAmount(), cdnImages, accountId);
+        } catch (Exception e) {
+            localSynced = false;
+            log.error("平台商品发布成功但本地商品记录保存失败: itemId={}, accountId={}", itemId, accountId, e);
+        }
         return Map.of(
                 "success", true,
                 "itemId", itemId,
                 "url", "https://www.goofish.com/item?id=" + itemId,
                 "category", category,
-                "imageCount", cdnImages.size()
+                "imageCount", cdnImages.size(),
+                "localSynced", localSynced
         );
+    }
+
+    private void persistPublishedItem(String itemId, String title, String description, BigDecimal amount,
+                                      List<String> images, Long accountId) {
+        String infoPic;
+        try {
+            infoPic = objectMapper.writeValueAsString(
+                    images.stream().map(image -> Map.of("url", image)).toList());
+        } catch (Exception e) {
+            throw new IllegalStateException("商品图片信息序列化失败", e);
+        }
+
+        // 发布成功后立即落本地商品主记录，保证自动发货配置可直接关联。
+        if (!goodsInfoService.savePublishedGoods(
+                itemId,
+                accountId,
+                title,
+                images.isEmpty() ? null : images.get(0),
+                infoPic,
+                description,
+                "https://www.goofish.com/item?id=" + itemId,
+                amount.stripTrailingZeros().toPlainString())) {
+            throw new IllegalStateException("本地商品记录保存失败");
+        }
     }
 
     public Map<String, Object> preflight(Map<String, Object> request, Long accountId) {

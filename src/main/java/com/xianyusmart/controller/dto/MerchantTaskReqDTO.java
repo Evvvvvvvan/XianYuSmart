@@ -13,6 +13,8 @@ public class MerchantTaskReqDTO {
 
     private String taskType;
 
+    private String requestKey;
+
     private Long resourceId;
 
     private Long xianyuAccountId;

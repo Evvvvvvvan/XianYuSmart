@@ -34,7 +34,7 @@ public class GoodsSkuPropertyServiceImpl implements GoodsSkuPropertyService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveProperties(String xyGoodsId, Long xianyuAccountId, List<XianyuGoodsSkuProperty> propertyList) {
-        deleteByXyGoodsId(xyGoodsId);
+        deleteByXyGoodsId(xyGoodsId, xianyuAccountId);
         String now = LocalDateTime.now().format(FORMATTER);
         for (XianyuGoodsSkuProperty prop : propertyList) {
             prop.setXyGoodsId(xyGoodsId);
@@ -48,9 +48,10 @@ public class GoodsSkuPropertyServiceImpl implements GoodsSkuPropertyService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void deleteByXyGoodsId(String xyGoodsId) {
+    public void deleteByXyGoodsId(String xyGoodsId, Long xianyuAccountId) {
         LambdaQueryWrapper<XianyuGoodsSkuProperty> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(XianyuGoodsSkuProperty::getXyGoodsId, xyGoodsId);
+        wrapper.eq(XianyuGoodsSkuProperty::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsSkuProperty::getXyGoodsId, xyGoodsId);
         mapper.delete(wrapper);
     }
 }

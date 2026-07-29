@@ -13,6 +13,8 @@ const step = ref(1)
 const maxStep = ref(1)
 const loading = ref(false)
 const uploading = ref(false)
+const publishRequestId = ref('')
+const publishFingerprint = ref('')
 const accounts = ref<Account[]>([])
 const materials = ref<MerchantResource[]>([])
 const form = reactive({
@@ -101,15 +103,34 @@ const goStep = (target: number) => {
   if (target <= maxStep.value) step.value = target
 }
 
+const currentPublishRequestId = () => {
+  const fingerprint = JSON.stringify({ ...form, images: images.value })
+  if (!publishRequestId.value || publishFingerprint.value !== fingerprint) {
+    publishRequestId.value = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    publishFingerprint.value = fingerprint
+  }
+  return publishRequestId.value
+}
+
 const submit = async (dryRun: boolean) => {
   loading.value = true
   try {
-    const response = await createPublishPlan({ ...form, images: images.value, dryRun })
+    const response = await createPublishPlan({
+      ...form,
+      images: images.value,
+      dryRun,
+      requestId: dryRun ? undefined : currentPublishRequestId()
+    })
     if (response.data?.valid === false) {
       return toast.error(String(response.data.error || '商品发布失败'))
     }
     const category = response.data?.platform?.category?.catName
     const itemId = response.data?.platform?.itemId
+    if (!dryRun && response.data?.platform?.localSynced === false) {
+      return toast.warning(`平台已发布${itemId ? `，商品 ID：${itemId}` : ''}，本地同步待恢复，请勿重复发布`)
+    }
     toast.success(dryRun
       ? `平台校验通过${category ? `，识别类目：${category}` : ''}`
       : `平台已确认发布成功${itemId ? `，商品 ID：${itemId}` : ''}`)

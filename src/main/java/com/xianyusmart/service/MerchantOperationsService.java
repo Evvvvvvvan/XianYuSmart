@@ -330,7 +330,6 @@ public class MerchantOperationsService {
         return imported;
     }
 
-    @Transactional
     public Map<String, Object> createPublishPlan(Map<String, Object> request) {
         Long accountId = longValue(request.get("xianyuAccountId"));
         validateOwnedAccount(accountId);
@@ -350,6 +349,12 @@ public class MerchantOperationsService {
         BigDecimal amount = decimalValue(request.get("amount"), BigDecimal.ZERO);
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("商品价格必须大于 0");
+        }
+        String requestKey = text(request.get("requestId"));
+        MerchantTask existingTask = requestKey.isBlank() ? null
+                : taskMapper.selectByRequestKey(requireTenantId(), "PUBLISH", requestKey);
+        if (existingTask != null) {
+            return existingPublishResult(existingTask);
         }
 
         Map<String, Object> data = new HashMap<>(request);
@@ -372,10 +377,11 @@ public class MerchantOperationsService {
 
         MerchantTaskReqDTO taskRequest = new MerchantTaskReqDTO();
         taskRequest.setTaskType("PUBLISH");
+        taskRequest.setRequestKey(requestKey.isBlank() ? null : requestKey);
         taskRequest.setResourceId(material.getId());
         taskRequest.setXianyuAccountId(accountId);
         MerchantTask task = createTask(taskRequest);
-        executeTask(task);
+        claimAndExecute(task);
         MerchantTask completedTask = taskMapper.selectById(task.getId());
         if (completedTask == null || completedTask.getStatus() != 2) {
             String error = completedTask == null ? "发布任务状态丢失" : completedTask.getErrorMessage();
@@ -412,16 +418,39 @@ public class MerchantOperationsService {
         MerchantTask task = new MerchantTask();
         task.setTenantId(requireTenantId());
         task.setTaskType(request.getTaskType());
+        task.setRequestKey(blankToNull(request.getRequestKey()));
         task.setResourceId(request.getResourceId());
         task.setXianyuAccountId(request.getXianyuAccountId());
         task.setXyGoodsId(blankToNull(request.getXyGoodsId()));
         task.setStatus(0);
         task.setScheduledTime(request.getScheduledTime() == null ? LocalDateTime.now() : request.getScheduledTime());
         task.setAttemptCount(0);
-        task.setMaxAttempts(3);
+        // 发布结果不确定时禁止自动重发，避免平台已成功但本地超时造成重复商品。
+        task.setMaxAttempts("PUBLISH".equals(request.getTaskType()) ? 1 : 3);
         task.setRequestJson(writeJson(request.getRequest()));
         taskMapper.insert(task);
         return task;
+    }
+
+    private Map<String, Object> existingPublishResult(MerchantTask task) {
+        if (task.getStatus() != null && task.getStatus() == 2) {
+            MerchantResource material = requireResource(task.getResourceId());
+            return Map.of(
+                    "valid", true,
+                    "dryRun", false,
+                    "material", toResponse(material),
+                    "task", task,
+                    "platform", readJson(task.getResultJson())
+            );
+        }
+        return Map.of(
+                "valid", false,
+                "dryRun", false,
+                "task", task,
+                "error", task.getStatus() != null && task.getStatus() == 1
+                        ? "商品正在发布，请勿重复提交"
+                        : "同一发布请求已失败，请在任务中心确认远端结果后手动处理"
+        );
     }
 
     public List<MerchantTask> batchPublish(Map<String, Object> request) {
@@ -452,7 +481,6 @@ public class MerchantOperationsService {
         return tasks;
     }
 
-    @Transactional
     public MerchantTask executeResource(Long resourceId) {
         MerchantResource resource = resourceMapper.selectById(resourceId);
         if (resource == null) {
@@ -465,7 +493,7 @@ public class MerchantOperationsService {
         request.setXyGoodsId(resource.getXyGoodsId());
         request.setScheduledTime(LocalDateTime.now());
         MerchantTask task = createTask(request);
-        executeTask(task);
+        claimAndExecute(task);
         return taskMapper.selectById(task.getId());
     }
 
@@ -478,7 +506,7 @@ public class MerchantOperationsService {
         request.setXianyuAccountId(resource.getXianyuAccountId());
         request.setScheduledTime(LocalDateTime.now());
         MerchantTask task = createTask(request);
-        executeTask(task);
+        claimAndExecute(task);
         return taskMapper.selectById(task.getId());
     }
 
@@ -552,7 +580,7 @@ public class MerchantOperationsService {
             task.setStatus(0);
             task.setScheduledTime(LocalDateTime.now());
             task.setAttemptCount(0);
-            task.setMaxAttempts(3);
+            task.setMaxAttempts("PUBLISH".equals(task.getTaskType()) ? 1 : 3);
             task.setRequestJson(rule.getDataJson());
             taskMapper.insert(task);
             int intervalMinutes = Math.max(5, intValue(readJson(rule.getDataJson()).get("intervalMinutes"), 1440));
@@ -566,6 +594,13 @@ public class MerchantOperationsService {
                 executeTask(task);
             }
         }
+    }
+
+    private void claimAndExecute(MerchantTask task) {
+        if (taskMapper.claim(task.getId()) != 1) {
+            throw new IllegalStateException("任务已被其他执行器处理");
+        }
+        executeTask(task);
     }
 
     void executeTask(MerchantTask task) {
@@ -710,7 +745,7 @@ public class MerchantOperationsService {
                             publishRequest.setResourceId(materialId);
                             publishRequest.setXianyuAccountId(accountId);
                             MerchantTask publishTask = createTask(publishRequest);
-                            executeTask(publishTask);
+                            claimAndExecute(publishTask);
                             MerchantTask completedTask = taskMapper.selectById(publishTask.getId());
                             if (completedTask == null || completedTask.getStatus() != 2) {
                                 throw new IllegalStateException(completedTask == null

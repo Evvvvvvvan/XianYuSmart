@@ -3,6 +3,7 @@ package com.xianyusmart.exception;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -35,6 +36,17 @@ public class GlobalExceptionHandler {
         result.put("code", 401);
         result.put("message", e.getMessage());
         result.put("captchaUrl", e.getCaptchaUrl());
+        return result;
+    }
+
+    /**
+     * 处理图片请求超过上传限制
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Map<String, Object> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("code", 413);
+        result.put("message", "图片大小不能超过10MB");
         return result;
     }
     

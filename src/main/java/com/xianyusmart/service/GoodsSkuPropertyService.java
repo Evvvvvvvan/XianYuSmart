@@ -10,5 +10,5 @@ public interface GoodsSkuPropertyService {
 
     void saveProperties(String xyGoodsId, Long xianyuAccountId, List<XianyuGoodsSkuProperty> propertyList);
 
-    void deleteByXyGoodsId(String xyGoodsId);
+    void deleteByXyGoodsId(String xyGoodsId, Long xianyuAccountId);
 }

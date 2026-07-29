@@ -10,6 +10,7 @@ import com.xianyusmart.service.GoodsInfoService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -55,7 +56,8 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
             
             // 查询是否已存在
             LambdaQueryWrapper<XianyuGoodsInfo> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
+            queryWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId)
+                    .eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
             XianyuGoodsInfo existingGoods = goodsInfoMapper.selectOne(queryWrapper);
             
             // 构建商品信息
@@ -104,6 +106,35 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
                     itemDTO.getDetailParams() != null ? itemDTO.getDetailParams().getItemId() : "null", e);
             throw new RuntimeException("保存或更新商品信息失败: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW, rollbackFor = Exception.class)
+    public boolean savePublishedGoods(String xyGoodId, Long xianyuAccountId, String title,
+                                      String coverPic, String infoPic, String detailInfo,
+                                      String detailUrl, String soldPrice) {
+        LambdaQueryWrapper<XianyuGoodsInfo> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
+        XianyuGoodsInfo goodsInfo = goodsInfoMapper.selectOne(queryWrapper);
+        boolean isNew = goodsInfo == null;
+        if (isNew) {
+            goodsInfo = new XianyuGoodsInfo();
+            goodsInfo.setXyGoodId(xyGoodId);
+            goodsInfo.setXianyuAccountId(xianyuAccountId);
+            goodsInfo.setCreatedTime(getCurrentTimeString());
+        }
+        goodsInfo.setTitle(title);
+        goodsInfo.setCoverPic(coverPic);
+        goodsInfo.setInfoPic(infoPic);
+        goodsInfo.setDetailInfo(detailInfo);
+        goodsInfo.setDetailUrl(detailUrl);
+        goodsInfo.setSoldPrice(soldPrice);
+        goodsInfo.setStatus(0);
+        goodsInfo.setUpdatedTime(getCurrentTimeString());
+
+        // 发布结果使用独立事务原子落库，失败时保留远端商品ID供人工恢复。
+        return isNew ? goodsInfoMapper.insert(goodsInfo) == 1 : goodsInfoMapper.updateById(goodsInfo) == 1;
     }
 
     @Override
@@ -261,10 +292,11 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
     
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean updateDetailInfo(String xyGoodId, String detailInfo) {
+    public boolean updateDetailInfo(Long xianyuAccountId, String xyGoodId, String detailInfo) {
         try {
             LambdaQueryWrapper<XianyuGoodsInfo> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
+            queryWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId)
+                    .eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
             XianyuGoodsInfo existingGoods = goodsInfoMapper.selectOne(queryWrapper);
             
             if (existingGoods == null) {
@@ -338,10 +370,11 @@ public class GoodsInfoServiceImpl implements GoodsInfoService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public boolean updateSkuCount(String xyGoodId, int skuCount) {
+    public boolean updateSkuCount(Long xianyuAccountId, String xyGoodId, int skuCount) {
         try {
             LambdaQueryWrapper<XianyuGoodsInfo> queryWrapper = new LambdaQueryWrapper<>();
-            queryWrapper.eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
+            queryWrapper.eq(XianyuGoodsInfo::getXianyuAccountId, xianyuAccountId)
+                    .eq(XianyuGoodsInfo::getXyGoodId, xyGoodId);
             XianyuGoodsInfo existingGoods = goodsInfoMapper.selectOne(queryWrapper);
 
             if (existingGoods == null) {

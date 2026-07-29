@@ -188,6 +188,7 @@ export function generateOpportunityImage(data: { xianyuAccountId: number; prompt
 }
 
 export function createPublishPlan(data: {
+  requestId?: string
   xianyuAccountId: number
   name: string
   description: string
