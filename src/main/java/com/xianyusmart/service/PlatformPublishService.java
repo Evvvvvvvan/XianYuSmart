@@ -82,21 +82,11 @@ public class PlatformPublishService {
         List<String> sourceImages = extractImages(data.get("images")).stream().limit(9).toList();
         validatePublishInput(title, description, sourceImages, material.getAmount(), material.getStock());
 
-        Map<String, Object> category = recommendCategory(accountId, cookieText, title, description, sourceImages);
+        // 先把图片上传到闲鱼 CDN：类目推荐接口只识别自家 CDN 图片，否则会返回空类目。
+        List<String> cdnImages = uploadImages(accountId, sourceImages);
+
+        Map<String, Object> category = recommendCategory(accountId, cookieText, title, description, cdnImages);
         Map<String, Object> platformAddress = resolveAddress(accountId, cookieText, address, data);
-        List<String> cdnImages = new ArrayList<>();
-        for (String image : sourceImages) {
-            String normalizedImage = normalizeImageUrl(image);
-            if (isPlatformImage(normalizedImage)) {
-                cdnImages.add(normalizedImage);
-                continue;
-            }
-            ResultObject<String> upload = imageUploadService.uploadImageFromUrl(accountId, normalizedImage);
-            if (upload.getCode() != 200 || upload.getData() == null || upload.getData().isBlank()) {
-                throw new IllegalStateException("商品图片上传失败: " + upload.getMsg());
-            }
-            cdnImages.add(upload.getData());
-        }
 
         Map<String, Object> publishData = buildPublishData(
                 title, description, material.getAmount(), material.getStock(), cdnImages, category, platformAddress);
@@ -171,13 +161,15 @@ public class PlatformPublishService {
             stock = 1;
         }
         validatePublishInput(title, description, images, amount, stock);
-        Map<String, Object> category = recommendCategory(accountId, cookieText, title, description, images);
+        // 预检也需要用闲鱼 CDN 图片做类目推荐，否则会误报"未返回可发布类目"。
+        List<String> cdnImages = uploadImages(accountId, images);
+        Map<String, Object> category = recommendCategory(accountId, cookieText, title, description, cdnImages);
         Map<String, Object> address = resolveAddress(accountId, cookieText, request, request);
         return Map.of(
                 "valid", true,
                 "category", category,
                 "address", address,
-                "imageCount", images.size()
+                "imageCount", cdnImages.size()
         );
     }
 
@@ -392,6 +384,27 @@ public class PlatformPublishService {
     public record PlatformSearchResult(List<Map<String, Object>> items, int pageNumber, int pageSize,
                                        boolean hasMore, long total) { }
 
+    /**
+     * 把源图（外链或协议相对地址）上传到闲鱼 CDN。
+     * 已经在 alicdn 域上的图片直接复用，其余走上传接口。
+     */
+    private List<String> uploadImages(Long accountId, List<String> images) {
+        List<String> cdnImages = new ArrayList<>();
+        for (String image : images) {
+            String normalizedImage = normalizeImageUrl(image);
+            if (isPlatformImage(normalizedImage)) {
+                cdnImages.add(normalizedImage);
+                continue;
+            }
+            ResultObject<String> upload = imageUploadService.uploadImageFromUrl(accountId, normalizedImage);
+            if (upload.getCode() != 200 || upload.getData() == null || upload.getData().isBlank()) {
+                throw new IllegalStateException("商品图片上传失败: " + upload.getMsg());
+            }
+            cdnImages.add(upload.getData());
+        }
+        return cdnImages;
+    }
+
     private Map<String, Object> recommendCategory(Long accountId, String cookieText, String title,
                                                    String description, List<String> images) {
         List<Map<String, Object>> imageInfos = new ArrayList<>();
@@ -428,20 +441,75 @@ public class PlatformPublishService {
         if (!result.isSuccess()) {
             throw new IllegalStateException("平台类目识别失败: " + result.getErrorMessage());
         }
-        Map<String, Object> response = readData(result.getResponse());
+        String rawResponse = result.getResponse();
+        Map<String, Object> response = readData(rawResponse);
         Map<String, Object> responseData = map(response.get("data"));
-        Object prediction = responseData.get("categoryPredictResult");
-        Map<String, Object> category = prediction instanceof List<?> list && !list.isEmpty()
-                ? map(list.get(0)) : map(prediction);
+        Map<String, Object> category = extractCategory(responseData);
         if (text(category.get("catId")).isBlank()) {
-            throw new IllegalStateException("平台未返回可发布类目，请调整标题和详情后重试");
+            // 拿不到类目时打印平台原始响应，避免"调整标题详情"这种误导性提示掩盖真实原因。
+            log.error("平台类目推荐未返回可用类目，原始响应: {}", rawResponse);
+            throw new IllegalStateException("平台未返回可发布类目，请稍后重试或检查账号/图片状态（详见服务日志）");
         }
         return Map.of(
                 "catId", text(category.get("catId")),
                 "catName", text(category.get("catName")),
-                "channelCatId", text(category.get("channelCatId")),
-                "tbCatId", text(category.get("tbCatId"))
+                "channelCatId", firstValue(category, "channelCatId", "channelCid"),
+                "tbCatId", firstValue(category, "tbCatId", "tbCid")
         );
+    }
+
+    /**
+     * 从类目推荐响应中提取类目信息。
+     * 闲鱼不同版本/网关的响应结构存在差异，因此按多种已知路径尝试，最后递归兜底查找首个含 catId 的节点。
+     */
+    private Map<String, Object> extractCategory(Map<String, Object> responseData) {
+        // 路径1：data.categoryPredictResult（列表取首项或对象）
+        Object prediction = responseData.get("categoryPredictResult");
+        Map<String, Object> candidate = prediction instanceof List<?> list && !list.isEmpty()
+                ? map(list.get(0)) : map(prediction);
+        if (!text(firstValue(candidate, "catId", "cid", "categoryId")).isBlank()) {
+            return candidate;
+        }
+        // 路径2：data.predictList / data.categoryList / data.resultList（取首个含 catId 的项）
+        for (String listKey : List.of("predictList", "categoryList", "resultList", "categories")) {
+            Object listValue = responseData.get(listKey);
+            if (listValue instanceof List<?> items && !items.isEmpty()) {
+                for (Object item : items) {
+                    Map<String, Object> itemMap = map(item);
+                    if (!text(firstValue(itemMap, "catId", "cid", "categoryId")).isBlank()) {
+                        return itemMap;
+                    }
+                }
+            }
+        }
+        // 路径3：递归兜底，在 data 任意层级中找首个含 catId/cid 的 Map
+        Map<String, Object> fallback = findCategoryMap(responseData);
+        return fallback == null ? Map.of() : fallback;
+    }
+
+    private Map<String, Object> findCategoryMap(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            if (value instanceof List<?> list) {
+                for (Object child : list) {
+                    Map<String, Object> found = findCategoryMap(child);
+                    if (found != null) {
+                        return found;
+                    }
+                }
+            }
+            return null;
+        }
+        Map<String, Object> current = map(source);
+        if (!text(firstValue(current, "catId", "cid", "categoryId")).isBlank()) {
+            return current;
+        }
+        for (Object child : source.values()) {
+            Map<String, Object> found = findCategoryMap(child);
+            if (found != null) {
+                return found;
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> resolveAddress(Long accountId, String cookieText,
@@ -483,7 +551,8 @@ public class PlatformPublishService {
             return normalized;
         }
         XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
-                accountId, "mtop.idle.pc.idleitem.preget", Map.of(), cookieText);
+                accountId, "mtop.taobao.idle.local.poi.get",
+                Map.of("longitude", "116.403324", "latitude", "39.919353"), cookieText);
         if (!result.isSuccess()) {
             throw new IllegalStateException("平台默认发布地址读取失败: " + result.getErrorMessage());
         }

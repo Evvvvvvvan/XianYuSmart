@@ -15,6 +15,7 @@ services:
       - --collation-server=utf8mb4_0900_ai_ci
       - --default-time-zone=+08:00
       - --max-connections=100
+      - --log-bin-trust-function-creators=1
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
