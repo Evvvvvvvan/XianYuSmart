@@ -1,0 +1,1 @@
+import{r as t}from"./index-Cz2s9ToJ.js";function o(e,r){const a=new FormData;return a.append("accountId",String(e)),a.append("file",r),t({url:"/image/upload",method:"POST",data:a,headers:{"Content-Type":"multipart/form-data"}})}function s(e){return t({url:"/websocket/sendImageMessage",method:"POST",data:e})}export{s,o as u};

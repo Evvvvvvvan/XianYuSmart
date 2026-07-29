@@ -282,7 +282,15 @@ public class MerchantOperationsService {
             String sourceUrl = text(candidate.get("sourceUrl"));
             if (!sourceUrl.isBlank()) {
                 // 入库前通过签名详情接口补齐描述和图片，保证后续润色、发布使用完整商品数据。
-                candidate.putAll(platformPublishService.collect(sourceUrl, accountId));
+                try {
+                    candidate.putAll(platformPublishService.collect(sourceUrl, accountId));
+                } catch (IllegalStateException e) {
+                    // 详情接口受限时保留搜索快照，避免真实候选商品在整理环节被直接丢弃。
+                    candidate.put("detailStatus", "SEARCH_FALLBACK");
+                    candidate.put("detailMessage", e.getMessage());
+                    log.warn("商品详情补齐失败，已使用搜索快照继续导入: itemId={}, error={}",
+                            candidate.get("itemId"), e.getMessage());
+                }
             }
             String itemId = text(candidate.get("itemId"));
             MerchantResource existing = itemId.isBlank() ? null

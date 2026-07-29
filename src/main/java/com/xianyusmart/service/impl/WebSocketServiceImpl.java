@@ -992,6 +992,7 @@ public class WebSocketServiceImpl implements WebSocketService {
         }
     }
 
+    @Override
     public void completePendingResponse(Long accountId, String mid, int code, Map<String, Object> response) {
         XianyuWebSocketClient client = webSocketClients.get(accountId);
         if (client != null) {

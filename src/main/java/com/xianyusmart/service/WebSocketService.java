@@ -100,6 +100,11 @@ public interface WebSocketService {
     boolean sendImageMessageWithResult(Long accountId, String cid, String toId, String imageUrl, int width, int height);
 
     /**
+     * 按请求mid完成等待中的平台响应
+     */
+    void completePendingResponse(Long accountId, String mid, int code, Map<String, Object> response);
+
+    /**
      * 分页读取指定会话的历史消息
      */
     List<Map<String, Object>> listConversationHistory(Long accountId, String cid, int maxMessages);

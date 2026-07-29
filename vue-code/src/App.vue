@@ -24,10 +24,10 @@ const isLoginPage = computed(() => route.path === '/login')
 
 <style>
 html {
-  overflow-y: scroll;
+  overflow: hidden;
 }
 
 body {
-  overflow-x: hidden;
+  overflow: hidden;
 }
 </style>

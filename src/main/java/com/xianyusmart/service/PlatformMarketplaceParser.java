@@ -86,6 +86,7 @@ class PlatformMarketplaceParser {
             item.put("sellerAvatar", https(firstNonBlank(
                     firstText(exContent, "userAvatarUrl", "avatar"),
                     firstText(user, "avatar", "logo"))));
+            putSellerFacts(item, record);
             result.add(item);
             if (result.size() >= limit) {
                 break;
@@ -171,7 +172,76 @@ class PlatformMarketplaceParser {
         result.put("sellerId", firstText(seller, "sellerId", "userId"));
         result.put("sellerNick", firstText(seller, "nick", "userNick", "nickname"));
         result.put("sellerAvatar", https(firstText(seller, "portraitUrl", "avatar", "logo")));
+        putSellerFacts(result, data);
         return result;
+    }
+
+    private void putSellerFacts(Map<String, Object> target, Object source) {
+        // 比价只展示平台真实返回的信用与评价数据，缺失字段交由前端明确标记为未公开。
+        putTextIfPresent(target, "sellerCredit", recursiveText(source, Set.of(
+                "sellerCredit", "sellerCreditLevel", "sellerZhimaCredit", "sellerZhimaLevel",
+                "zhimaCredit", "zhimaCreditLevel", "zhimaLevel")));
+        putTextIfPresent(target, "buyerCredit", recursiveText(source, Set.of(
+                "buyerCredit", "buyerCreditLevel", "buyerZhimaCredit", "buyerZhimaLevel")));
+        putLongIfPresent(target, "sellerPositiveCount", recursiveLong(source, Set.of(
+                "sellerPositiveCount", "positiveRateCount", "positiveCount", "goodRateCount",
+                "goodCount", "receivedPositiveCount", "goodRateNum")));
+        putLongIfPresent(target, "sellerNegativeCount", recursiveLong(source, Set.of(
+                "sellerNegativeCount", "negativeRateCount", "negativeCount", "badRateCount",
+                "badCount", "receivedNegativeCount", "badRateNum")));
+    }
+
+    private void putTextIfPresent(Map<String, Object> target, String key, String value) {
+        if (!value.isBlank()) {
+            target.put(key, value);
+        }
+    }
+
+    private void putLongIfPresent(Map<String, Object> target, String key, Long value) {
+        if (value != null) {
+            target.put(key, value);
+        }
+    }
+
+    private String recursiveText(Object source, Set<String> keys) {
+        Object value = recursiveValue(source, keys);
+        if (value instanceof Map<?, ?> details) {
+            return firstText(map(details), "text", "value", "level", "displayName", "title", "description");
+        }
+        return text(value);
+    }
+
+    private Long recursiveLong(Object source, Set<String> keys) {
+        Object value = recursiveValue(source, keys);
+        try {
+            return value == null ? null : Long.valueOf(String.valueOf(value).replaceAll("[^0-9-]", ""));
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private Object recursiveValue(Object source, Set<String> keys) {
+        if (source instanceof Map<?, ?> values) {
+            for (Map.Entry<?, ?> entry : values.entrySet()) {
+                if (keys.contains(String.valueOf(entry.getKey())) && entry.getValue() != null) {
+                    return entry.getValue();
+                }
+            }
+            for (Object child : values.values()) {
+                Object found = recursiveValue(child, keys);
+                if (found != null) {
+                    return found;
+                }
+            }
+        } else if (source instanceof List<?> values) {
+            for (Object child : values) {
+                Object found = recursiveValue(child, keys);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> locateSearchCard(Map<String, Object> record) {

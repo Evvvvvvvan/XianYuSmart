@@ -172,7 +172,7 @@ public class XianyuApiCallUtils {
             // 6. 检查是否触发风控
             if (isRiskControl(retCode)) {
                 log.error("【账号{}】触发风控: {}", accountId, retCode);
-                return new ApiCallResult(false, response, "触发风控，需要人工处理", false);
+                return new ApiCallResult(false, response, platformRestrictionMessage(retCode), false);
             }
 
             // 7. 其他错误
@@ -277,6 +277,16 @@ public class XianyuApiCallUtils {
         return retCode.contains("RGV587_ERROR") ||
                retCode.contains("被挤爆啦") ||
                retCode.contains("FAIL_SYS_USER_VALIDATE");
+    }
+
+    private String platformRestrictionMessage(String retCode) {
+        if (retCode.contains("FAIL_SYS_USER_VALIDATE")) {
+            return "平台要求完成账号验证，搜索结果仍可继续整理；发布前请在连接管理更新登录状态后重试";
+        }
+        if (retCode.contains("被挤爆啦")) {
+            return "平台当前请求繁忙，请稍后重试";
+        }
+        return "平台限制了本次详情访问，搜索结果仍可继续整理；发布前请重新校验账号状态";
     }
     
     /**

@@ -105,22 +105,31 @@ const loadConversationContext = async (syncPlatform = false) => {
   const sid = selected.value.sid
   contextLoading.value = true
   try {
-    if (syncPlatform) {
-      platformSyncing.value = true
-      await syncContextMessages({ xianyuAccountId: accountId, sid, maxMessages: 500 })
-      synchronizedSessions.value = new Set([...synchronizedSessions.value, `${accountId}:${sid}`])
-    }
     const response = await getContextMessages({ xianyuAccountId: accountId, sid, limit: 500, offset: 0 })
     if (selectedAccountId.value === accountId && selected.value?.sid === sid) {
       contextMessages.value = response.data || []
       await scrollToBottom()
     }
   } catch (error: any) {
-    if (syncPlatform) showWarning(error?.message || '平台历史同步失败，已保留本地会话记录')
-    const response = await getContextMessages({ xianyuAccountId: accountId, sid, limit: 500, offset: 0 })
-    contextMessages.value = response.data || selected.value?.messages || []
+    if (!error?.messageShown) showWarning(error?.message || '本地会话读取失败')
+    contextMessages.value = selected.value?.messages || []
   } finally {
     contextLoading.value = false
+  }
+  if (!syncPlatform) return
+  platformSyncing.value = true
+  try {
+    await syncContextMessages({ xianyuAccountId: accountId, sid, maxMessages: 500 })
+    synchronizedSessions.value = new Set([...synchronizedSessions.value, `${accountId}:${sid}`])
+    const response = await getContextMessages({ xianyuAccountId: accountId, sid, limit: 500, offset: 0 })
+    if (selectedAccountId.value === accountId && selected.value?.sid === sid) {
+      contextMessages.value = response.data || contextMessages.value
+      await scrollToBottom()
+    }
+  } catch (error: any) {
+    // 平台同步失败时继续显示本地消息，避免一次超时让整个会话区域变空。
+    if (!error?.messageShown) showWarning(error?.message || '平台历史同步失败，已保留本地会话记录')
+  } finally {
     platformSyncing.value = false
   }
 }
@@ -401,7 +410,7 @@ onBeforeUnmount(() => {
   .chat { height: auto; overflow: visible; }
   .chat__layout { display: block; height: auto; min-height: 0; }
   .chat__conversations { max-height: 42vh; }
-  .chat__main { min-height: 58vh; margin-top: 10px; }
+  .chat__main { min-height: 58vh; margin-top: 10px; margin-bottom: max(12px, env(safe-area-inset-bottom)); }
   .chat__message { max-width: 88%; }
   .chat__main-header .workbench__btn { padding: 6px 8px; font-size: 11px; }
 }

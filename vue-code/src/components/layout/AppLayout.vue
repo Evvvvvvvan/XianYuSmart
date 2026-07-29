@@ -91,6 +91,7 @@ const pageIconMap: Record<string, any> = {
   '/product-publish': markRaw(IconShoppingBag),
   '/operations': markRaw(IconChart),
   '/opportunities': markRaw(IconChart),
+  '/price-comparison': markRaw(IconChart),
   '/supplies': markRaw(IconShoppingBag),
   '/workflows': markRaw(IconRobot),
   '/automation': markRaw(IconRobot),
@@ -272,6 +273,8 @@ onUnmounted(() => {
 <style scoped>
 .app-layout {
   height: 100vh;
+  height: 100dvh;
+  min-height: 100svh;
   background: var(--bg-gradient);
   overflow: hidden;
   display: flex;
@@ -308,6 +311,7 @@ onUnmounted(() => {
 
 .layout-container {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: row;
@@ -315,6 +319,7 @@ onUnmounted(() => {
 
 .el-container {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -407,11 +412,14 @@ main {
   padding: 0;
   overflow: auto;
   background: transparent;
-  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
   scrollbar-width: thin;
   scrollbar-color: #c9cdd4 transparent;
   -ms-overflow-style: none;
   flex: 1;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 main::-webkit-scrollbar {
@@ -578,6 +586,7 @@ main::-webkit-scrollbar {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -729,6 +738,7 @@ main::-webkit-scrollbar {
   main {
     padding: 0;
     overflow: auto;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .drawer-menu {
@@ -776,6 +786,7 @@ main::-webkit-scrollbar {
   main {
     padding: 0;
     overflow: auto;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .drawer-menu {

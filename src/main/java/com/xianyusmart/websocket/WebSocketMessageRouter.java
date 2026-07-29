@@ -98,6 +98,9 @@ public class WebSocketMessageRouter {
         try {
             // 确保已初始化
             ensureInitialized();
+
+            // 平台响应可能保留请求lwp，必须优先按mid唤醒等待任务，避免历史消息请求误判超时。
+            completePendingResponse(accountId, messageData);
             
             // 获取lwp路径
             Object lwpObj = messageData.get("lwp");
@@ -140,24 +143,6 @@ public class WebSocketMessageRouter {
         
         log.debug("【账号{}】处理响应消息: code={}", accountId, code);
         
-        // 完成等待中的sendMessage Future
-        try {
-            Long accountIdLong = Long.parseLong(accountId);
-            Object headersObj = messageData.get("headers");
-            if (headersObj instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> headers = (Map<String, Object>) headersObj;
-                Object mid = headers.get("mid");
-                if (mid != null) {
-                    int codeValue = Integer.parseInt(code.toString());
-                    ((com.xianyusmart.service.impl.WebSocketServiceImpl) webSocketService)
-                        .completePendingResponse(accountIdLong, mid.toString(), codeValue, messageData);
-                }
-            }
-        } catch (Exception e) {
-            log.debug("完成pendingResponse失败: {}", e.getMessage());
-        }
-        
         try {
             int codeValue = Integer.parseInt(code.toString());
             
@@ -191,6 +176,45 @@ public class WebSocketMessageRouter {
             }
         } catch (Exception e) {
             log.warn("【账号{}】解析响应码失败: {}", accountId, code);
+        }
+    }
+
+    private void completePendingResponse(String accountId, Map<String, Object> messageData) {
+        Object code = messageData.get("code");
+        Object headersObj = messageData.get("headers");
+        if (!(headersObj instanceof Map<?, ?> headers)) {
+            return;
+        }
+        Object mid = headers.get("mid");
+        if (mid == null) {
+            return;
+        }
+        // 历史消息响应可能不返回code，按业务响应体识别成功结果，避免已返回的数据被误判为超时。
+        int codeValue = code == null && isHistoryResponse(messageData) ? 200 : parseResponseCode(code);
+        if (codeValue < 0) {
+            return;
+        }
+        try {
+            webSocketService.completePendingResponse(Long.parseLong(accountId), mid.toString(),
+                    codeValue, messageData);
+        } catch (Exception e) {
+            log.debug("完成pendingResponse失败: {}", e.getMessage());
+        }
+    }
+
+    private boolean isHistoryResponse(Map<String, Object> messageData) {
+        Object body = messageData.get("body");
+        return body instanceof Map<?, ?> bodyMap && bodyMap.containsKey("userMessageModels");
+    }
+
+    private int parseResponseCode(Object code) {
+        if (code == null) {
+            return -1;
+        }
+        try {
+            return Integer.parseInt(code.toString());
+        } catch (NumberFormatException e) {
+            return -1;
         }
     }
     

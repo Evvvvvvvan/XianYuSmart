@@ -113,12 +113,15 @@ const capture = async () => {
   if (!selectedCandidates.value.length) return toast.error('至少选择一个候选商品')
   const response = await importOpportunities({ candidates: selectedCandidates.value, xianyuAccountId: accountId.value })
   const item = selectedCandidates.value[0]!
-  const collected = response.data?.[0]?.data || item
+  const collected: Record<string, any> = response.data?.[0]?.data || item
   active.value = item
   draft.name = String(collected.title || item.title)
   draft.description = String(collected.description || collected.title || item.title)
   draft.amount = Number(collected.price || item.price || 0)
   draft.images = collected.images || item.images || []
+  if (collected.detailStatus === 'SEARCH_FALLBACK') {
+    toast.warning('平台详情暂时受限，已保留真实搜索结果继续整理；发布前请在连接管理确认登录状态')
+  }
   step.value = 2
   maxStep.value = 2
 }
@@ -198,7 +201,7 @@ onMounted(loadAccounts)
     </div>
 
     <div v-if="step === 1" class="opportunity__layout workbench__section">
-      <main>
+      <div class="opportunity__search-pane">
         <div class="workbench__card workbench__toolbar">
           <select v-model="accountId" class="workbench__select opportunity__account">
             <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option>
@@ -215,10 +218,10 @@ onMounted(loadAccounts)
           {{ total > 0 ? `平台共匹配 ${total} 件，` : '' }}当前已加载 {{ results.length }} 件
         </div>
         <div class="workbench__list workbench__section">
-          <button v-for="item in results" :key="item.itemId" class="workbench__item opportunity__result" :class="{ 'opportunity__result--active': active?.itemId === item.itemId }" @click="toggle(item)">
+          <article v-for="item in results" :key="item.itemId" class="workbench__item opportunity__result" :class="{ 'opportunity__result--active': active?.itemId === item.itemId }" tabindex="0" @click="toggle(item)" @keydown.enter="toggle(item)">
             <input type="checkbox" :checked="selectedIds.includes(item.itemId)" @click.stop="toggle(item)">
             <img :src="item.images?.[0]" alt="">
-            <div>
+            <div class="opportunity__result-copy">
               <h3>{{ item.title }}</h3>
               <div class="workbench__tags">
                 <span class="workbench__tag workbench__tag--good">机会分 {{ item.opportunityScore }}</span>
@@ -227,11 +230,11 @@ onMounted(loadAccounts)
               </div>
             </div>
             <strong>¥ {{ item.price || '--' }}</strong>
-          </button>
+          </article>
           <div v-if="!results.length" class="workbench__empty">{{ searched ? '平台未返回可用商品，请检查输入内容、账号状态或平台验证。' : '选择商品搜索或店铺采集后开始发现候选商品。' }}</div>
           <button v-if="hasMore" class="workbench__btn opportunity__more" :disabled="loadingMore" @click="search(true)">{{ loadingMore ? '加载中' : '加载更多平台商品' }}</button>
         </div>
-      </main>
+      </div>
       <aside class="workbench__card opportunity__preview">
         <template v-if="active">
           <img :src="active.images?.[0]" alt="">
@@ -297,12 +300,15 @@ onMounted(loadAccounts)
 .opportunity__layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
 .opportunity__account { max-width: 180px; }
 .opportunity__mode { max-width: 130px; }
+.opportunity__search-pane { min-width: 0; }
 .opportunity__result-meta { margin: 12px 0 -4px; color: #667085; font-size: 12px; }
-.opportunity__result { width: 100%; color: inherit; text-align: left; cursor: pointer; }
+.opportunity__result { width: 100%; min-width: 0; grid-template-columns: auto 56px minmax(0, 1fr) auto; color: inherit; text-align: left; cursor: pointer; }
+.opportunity__result-copy { min-width: 0; }
+.opportunity__result > strong { white-space: nowrap; }
 .opportunity__result--active { border-color: #84adff; background: #f5f8ff; }
 .opportunity__preview { position: sticky; top: 16px; align-self: start; }
 .opportunity__preview > img { width: 100%; aspect-ratio: 4 / 3; border-radius: 8px; object-fit: cover; }
-.opportunity__preview h2 { font-size: 15px; line-height: 1.5; }
+.opportunity__preview h2 { display: -webkit-box; overflow: hidden; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .opportunity__preview > strong { color: #d92d20; font-size: 22px; }
 .opportunity__preview > p { color: #667085; font-size: 12px; }
 .opportunity__preview > button { width: 100%; }
@@ -321,5 +327,12 @@ onMounted(loadAccounts)
 .opportunity__summary p { color: #667085; white-space: pre-wrap; }
 .opportunity__summary strong, .opportunity__summary small { display: block; margin-top: 10px; }
 @media (max-width: 900px) { .opportunity__layout { grid-template-columns: 1fr; } .opportunity__preview { position: static; } }
-@media (max-width: 767px) { .opportunity__summary { grid-template-columns: 1fr; } .opportunity__summary img { width: 100%; height: auto; aspect-ratio: 1; } }
+@media (max-width: 767px) {
+  .opportunity__result { grid-template-columns: auto 52px minmax(0, 1fr); align-items: start; }
+  .opportunity__result img { width: 52px; height: 52px; }
+  .opportunity__result > strong { grid-column: 3; }
+  .opportunity__summary { grid-template-columns: 1fr; }
+  .opportunity__summary img { width: 100%; height: auto; aspect-ratio: 1; }
+  .opportunity__preview { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
 </style>

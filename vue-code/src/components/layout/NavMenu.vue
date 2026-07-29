@@ -56,6 +56,10 @@ const hasSystemMenu = computed(() => isPlatformAdmin.value || [
       <span class="nav-menu-symbol">⌕</span>
       <span>商机发掘</span>
     </router-link>
+    <router-link v-if="hasPermission('menu:operations')" to="/price-comparison" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/price-comparison')">
+      <span class="nav-menu-symbol">≋</span>
+      <span>全站比价</span>
+    </router-link>
     <router-link v-if="hasPermission('menu:operations')" to="/supplies" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/supplies')">
       <span class="nav-menu-symbol">▣</span>
       <span>货源库</span>

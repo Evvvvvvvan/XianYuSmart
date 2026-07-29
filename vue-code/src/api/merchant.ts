@@ -12,6 +12,10 @@ export interface OpportunityCandidate {
   sellerId?: string
   sellerNick?: string
   sellerAvatar?: string
+  sellerCredit?: string
+  buyerCredit?: string
+  sellerPositiveCount?: number
+  sellerNegativeCount?: number
   opportunityScore: number
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   matchReason: string

@@ -24,6 +24,12 @@ const router = createRouter({
       meta: { title: '商机发掘', icon: '⌕', permission: 'menu:operations', writePermission: 'action:operations-write' }
     },
     {
+      path: '/price-comparison',
+      name: 'price-comparison',
+      component: () => import('@/views/price-comparison/index.vue'),
+      meta: { title: '全站比价', icon: '≋', permission: 'menu:operations' }
+    },
+    {
       path: '/supplies',
       name: 'supplies',
       component: () => import('@/views/supplies/index.vue'),
