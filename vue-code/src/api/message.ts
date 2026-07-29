@@ -44,11 +44,12 @@ export function getMessageList(data: {
   pageNum?: number;
   pageSize?: number;
   filterCurrentAccount?: boolean; // 过滤当前账号消息
-}) {
+}, silent = false) {
   return request<MessageListResponse>({
     url: '/msg/list',
     method: 'POST',
-    data
+    data,
+    silent
   });
 }
 
@@ -75,11 +76,12 @@ export function syncContextMessages(data: {
   xianyuAccountId: number;
   sid: string;
   maxMessages?: number;
-}) {
+}, silent = false) {
   return request<{ received: number; saved: number }>({
     url: '/msg/context/sync',
     method: 'POST',
-    data
+    data,
+    silent
   });
 }
 

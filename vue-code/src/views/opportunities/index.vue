@@ -256,8 +256,8 @@ onMounted(loadAccounts)
             <button class="workbench__btn" :disabled="loading || draft.images.length >= 9" @click="generateImage">AI 生成商品图</button>
           </div>
         </div>
-        <label class="workbench__field">商品标题<input v-model="draft.name" class="workbench__input" maxlength="120"></label>
-        <label class="workbench__field">商品详情<textarea v-model="draft.description" class="workbench__textarea" maxlength="3000"></textarea></label>
+        <label class="workbench__field">商品标题<input v-model="draft.name" class="workbench__input" maxlength="120"><small>{{ draft.name.length }} / 120</small></label>
+        <label class="workbench__field">商品详情<textarea v-model="draft.description" class="workbench__textarea" maxlength="3000"></textarea><small>{{ draft.description.length }} / 3000</small></label>
         <div class="opportunity__images">
           <article v-for="(image, index) in draft.images" :key="image">
             <img :src="image" alt="">

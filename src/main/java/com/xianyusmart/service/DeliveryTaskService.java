@@ -20,4 +20,6 @@ public interface DeliveryTaskService {
     void requeue(Long taskId);
 
     boolean requeueFailed(Long taskId, Long accountId);
+
+    boolean markDelivered(Long taskId, Long accountId);
 }

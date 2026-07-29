@@ -33,9 +33,15 @@ public class FixedDeliveryTemplateService {
         try {
             requireOwnedAccount(request.getXianyuAccountId());
             String name = normalizeRequired(request.getTemplateName(), "模板名称", 100);
-            String content = normalizeRequired(request.getDeliveryContent(), "全部发货内容", 5000);
+            String content = normalizeRequired(request.getDeliveryContent(), "全部发货内容", 200);
             String messageTemplate = buyerMessageService.normalizeDeliveryMessageTemplate(
                     request.getMessageTemplate());
+            String renderedPreview = buyerMessageService.renderVariables(
+                    messageTemplate, "示例会员", "202607240001", content);
+            // 发货凭证接口最多接收200个字符，保存前校验最终内容避免履约时才失败。
+            if (renderedPreview.length() > 200) {
+                throw new IllegalArgumentException("发送预览不能超过200个字符");
+            }
 
             XianyuFixedDeliveryTemplate template;
             if (request.getId() == null) {

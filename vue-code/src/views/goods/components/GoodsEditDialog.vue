@@ -79,6 +79,7 @@ const submit = () => {
           <label class="goods-edit__field">
             <span>商品标题</span>
             <input v-model="form.title" maxlength="256" autocomplete="off" />
+            <small>{{ form.title.length }}/256</small>
           </label>
 
           <label class="goods-edit__field">
@@ -89,6 +90,7 @@ const submit = () => {
           <label class="goods-edit__field">
             <span>封面地址</span>
             <input v-model="form.coverPic" maxlength="2000" autocomplete="off" placeholder="https://" />
+            <small>{{ form.coverPic.length }}/2000</small>
           </label>
 
           <label class="goods-edit__field">

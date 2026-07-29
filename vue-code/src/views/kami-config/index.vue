@@ -737,6 +737,7 @@ onUnmounted(() => {
               <div class="form-row">
                 <label class="form-label">别名</label>
                 <input v-model="createForm.aliasName" class="form-input" placeholder="请输入别名" maxlength="50" />
+                <small class="form-hint">{{ createForm.aliasName.length }} / 50</small>
               </div>
               <div class="form-row">
                 <label class="form-label">卡密来源</label>

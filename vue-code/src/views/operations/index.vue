@@ -393,7 +393,7 @@ onMounted(async () => {
       <form class="editor" @submit.prevent="submitForm">
         <header><div><h2>{{ form.id ? '编辑' : '新建' }}{{ currentType.label }}</h2><p>{{ currentType.guide }}</p></div><button type="button" :disabled="saving" aria-label="关闭" @click="showEditor = false">×</button></header>
         <div class="form-grid">
-          <label class="wide"><span>名称</span><input v-model="form.name" required maxlength="200" placeholder="输入便于识别的名称"></label>
+          <label class="wide"><span>名称</span><input v-model="form.name" required maxlength="200" placeholder="输入便于识别的名称"><small class="form-hint">{{ form.name.length }} / 200</small></label>
           <label><span>状态</span><select v-model="form.status"><option :value="1">启用</option><option :value="0">停用</option></select></label>
           <label><span>关联账号</span><select v-model="form.xianyuAccountId"><option :value="undefined">不关联</option><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option></select></label>
           <template v-if="['MATERIAL','SUPPLY'].includes(form.resourceType)">

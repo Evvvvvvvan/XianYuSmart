@@ -120,7 +120,7 @@ const loadConversationContext = async (syncPlatform = false, showLoading = true)
   if (!syncPlatform) return
   platformSyncing.value = true
   try {
-    await syncContextMessages({ xianyuAccountId: accountId, sid, maxMessages: 500 })
+    await syncContextMessages({ xianyuAccountId: accountId, sid, maxMessages: 500 }, true)
     synchronizedSessions.value = new Set([...synchronizedSessions.value, `${accountId}:${sid}`])
     const response = await getContextMessages({ xianyuAccountId: accountId, sid, limit: 500, offset: 0 })
     if (selectedAccountId.value === accountId && selected.value?.sid === sid) {
@@ -234,7 +234,7 @@ watch([selectedAccountId, messageList], async () => {
   }
 }, { deep: false })
 
-watch(() => [selectedAccountId.value, selected.value?.sid], async ([accountId, sid]) => {
+watch([selectedAccountId, () => selected.value?.sid], async ([accountId, sid]) => {
   contextMessages.value = []
   await loadQuickReplies()
   if (!accountId || !sid) return
@@ -261,8 +261,8 @@ onBeforeUnmount(() => {
         <select v-model="selectedAccountId" class="workbench__select chat__account" @change="handleAccountChange">
           <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option>
         </select>
-        <button class="workbench__btn" :disabled="loading || platformSyncing || refreshing" @click="refresh">
-          {{ loading || platformSyncing || refreshing ? '同步中' : '同步消息' }}
+        <button class="workbench__btn" :disabled="loading || platformSyncing" @click="refresh">
+          {{ loading || platformSyncing ? '同步中' : '同步消息' }}
         </button>
       </div>
     </header>

@@ -23,6 +23,7 @@ interface Emits {
   (e: 'copySid', sid: string): void
   (e: 'confirmShipment', item: DeliveryRecordItem): void
   (e: 'retryDelivery', item: DeliveryRecordItem): void
+  (e: 'markDelivered', item: DeliveryRecordItem): void
   (e: 'resendDelivery', item: DeliveryRecordItem): void
   (e: 'rate', item: DeliveryRecordItem): void
   (e: 'viewDetail', item: DeliveryRecordItem): void
@@ -127,6 +128,8 @@ const getDeliveryMeta = (order: DeliveryRecordItem) => getDeliveryStatusMeta(ord
 const getRateMeta = (order: DeliveryRecordItem) => getRateStatusMeta(order)
 const showFailReason = (order: DeliveryRecordItem) => Boolean(order.failReason)
   && shouldShowDeliveryError(order.deliveryStatus, order.state)
+const isRetryable = (order: DeliveryRecordItem) =>
+  ['FAILED', 'RETRY_WAIT', 'REVIEW_REQUIRED'].includes(order.deliveryStatus || '') && order.state !== 1
 
 const getConfirmText = (state: number) => {
   return state === 1 ? '已确认' : '未确认'
@@ -205,7 +208,7 @@ const getConfirmBg = (state: number) => {
           <span>复制订单ID</span>
         </button>
         <button
-          v-if="order.deliveryStatus === 'FAILED'"
+          v-if="isRetryable(order)"
           class="order-card__action order-card__action--retry"
           :class="{ 'order-card__action--loading': order.retrying }"
           :disabled="order.retrying"
@@ -213,6 +216,15 @@ const getConfirmBg = (state: number) => {
         >
           <IconTruck />
           <span>{{ order.retrying ? '处理中' : '重新排队' }}</span>
+        </button>
+        <button
+          v-if="isRetryable(order)"
+          class="order-card__action order-card__action--detail"
+          :disabled="order.markingDelivered"
+          @click="emit('markDelivered', order)"
+        >
+          <IconTruck />
+          <span>{{ order.markingDelivered ? '处理中' : '标记已发货' }}</span>
         </button>
         <button
           v-if="order.state === 1 && order.orderId && order.content"
@@ -327,7 +339,7 @@ const getConfirmBg = (state: number) => {
           </td>
           <td class="table__td table__td--actions">
             <button
-              v-if="order.deliveryStatus === 'FAILED'"
+              v-if="isRetryable(order)"
               class="table__action table__action--retry"
               :class="{ 'table__action--loading': order.retrying }"
               :disabled="order.retrying"
@@ -335,6 +347,15 @@ const getConfirmBg = (state: number) => {
             >
               <IconTruck />
               <span>{{ order.retrying ? '处理中' : '重新排队' }}</span>
+            </button>
+            <button
+              v-if="isRetryable(order)"
+              class="table__action table__action--detail"
+              :disabled="order.markingDelivered"
+              @click="emit('markDelivered', order)"
+            >
+              <IconTruck />
+              <span>{{ order.markingDelivered ? '处理中' : '标记已发货' }}</span>
             </button>
             <button
               v-if="order.state === 1 && order.orderId && order.content"

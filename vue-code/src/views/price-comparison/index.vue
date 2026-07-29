@@ -55,7 +55,17 @@ const priceSummary = computed(() => {
 })
 
 const profileKey = (item: OpportunityCandidate) => item.sellerId || item.itemId
-const profileFor = (item: OpportunityCandidate) => sellerProfiles.value[profileKey(item)]
+const profileFor = (item: OpportunityCandidate): SellerPublicProfile => sellerProfiles.value[profileKey(item)] || {
+  itemId: item.itemId,
+  sellerId: item.sellerId,
+  sellerNick: item.sellerNick,
+  sellerAvatar: item.sellerAvatar,
+  sellerProfileUrl: item.sellerId ? `https://www.goofish.com/personal?userId=${item.sellerId}` : undefined,
+  sellerCredit: item.sellerCredit,
+  sellerPositiveCount: item.sellerPositiveCount,
+  sellerNeutralCount: item.sellerNeutralCount,
+  sellerNegativeCount: item.sellerNegativeCount
+}
 const hasValue = (value?: string | number) => value != null && value !== ''
 const selectedSellerProfile = computed(() => selectedSellerItem.value ? profileFor(selectedSellerItem.value) : undefined)
 
@@ -67,9 +77,10 @@ const loadSellerProfile = async (item: OpportunityCandidate) => {
   sellerProfileErrors.value.delete(key)
   try {
     const response = await getSellerPublicProfile({ itemId: item.itemId, xianyuAccountId: accountId.value })
-    if (!response.data) throw new Error(response.msg || '卖家口碑读取失败')
-    const profiles = { ...sellerProfiles.value, [key]: response.data }
-    if (response.data.sellerId) profiles[response.data.sellerId] = response.data
+    if (!response.data) throw new Error(response.msg || '该商品暂未返回卖家口碑')
+    const profile = { ...profileFor(item), ...response.data }
+    const profiles = { ...sellerProfiles.value, [key]: profile }
+    if (profile.sellerId) profiles[profile.sellerId] = profile
     sellerProfiles.value = profiles
   } catch {
     sellerProfileErrors.value = new Set([...sellerProfileErrors.value, key])
@@ -77,13 +88,6 @@ const loadSellerProfile = async (item: OpportunityCandidate) => {
     const loadingKeys = new Set(sellerProfileLoading.value)
     loadingKeys.delete(key)
     sellerProfileLoading.value = loadingKeys
-  }
-}
-
-const hydrateFirstSellerProfiles = async () => {
-  const visibleItems = results.value.slice(0, 6)
-  for (let index = 0; index < visibleItems.length; index += 2) {
-    await Promise.all(visibleItems.slice(index, index + 2).map(loadSellerProfile))
   }
 }
 
@@ -119,7 +123,6 @@ const search = async () => {
     sellerProfileErrors.value = new Set()
     selectedSellerItem.value = undefined
     searched.value = true
-    void hydrateFirstSellerProfiles()
   } finally {
     loading.value = false
   }
@@ -177,21 +180,15 @@ onMounted(loadAccounts)
         <div v-else class="comparison__image-empty">暂无图片</div>
         <div class="comparison__content">
           <h2>{{ item.title }}</h2>
-          <div class="comparison__seller" @mouseenter="loadSellerProfile(item)" @focusin="loadSellerProfile(item)">
+          <div class="comparison__seller">
             <strong>{{ item.sellerNick || '平台卖家' }}</strong>
             <span v-if="hasValue(profileFor(item)?.sellerCredit)">信用 {{ profileFor(item)?.sellerCredit }}</span>
           </div>
-          <div v-if="profileFor(item)" class="comparison__reviews">
+          <div class="comparison__reviews">
             <span v-if="hasValue(profileFor(item)?.sellerPositiveCount)" class="comparison__positive">历史好评 {{ profileFor(item)?.sellerPositiveCount }}</span>
             <span v-if="hasValue(profileFor(item)?.sellerNeutralCount)">一般评价 {{ profileFor(item)?.sellerNeutralCount }}</span>
             <span v-if="hasValue(profileFor(item)?.sellerNegativeCount)" class="comparison__negative">历史差评 {{ profileFor(item)?.sellerNegativeCount }}</span>
             <button class="comparison__review-link" @click="showSellerProfile(item)">查看卖家口碑</button>
-          </div>
-          <div v-else class="comparison__reviews">
-            <span v-if="sellerProfileLoading.has(profileKey(item))">正在读取卖家口碑…</span>
-            <button v-else class="comparison__review-link" @click="showSellerProfile(item)">
-              {{ sellerProfileErrors.has(profileKey(item)) ? '重试卖家口碑' : '查看卖家口碑' }}
-            </button>
           </div>
           <small>信用与评价均来自该卖家的平台公开历史统计，不使用商品评价或推测数据。</small>
         </div>
@@ -227,15 +224,15 @@ onMounted(loadAccounts)
             && !hasValue(selectedSellerProfile.sellerPositiveCount)
             && !hasValue(selectedSellerProfile.sellerNeutralCount)
             && !hasValue(selectedSellerProfile.sellerNegativeCount)" class="comparison__dialog-note">
-            该商品详情未返回卖家信用或口碑统计。
+            {{ sellerProfileErrors.has(profileKey(selectedSellerItem))
+              ? '当前账号搜索正常；本次商品详情未开放卖家统计，不代表账号异常。'
+              : '该商品公开数据中没有返回卖家信用或口碑统计。' }}
           </p>
-          <p class="comparison__dialog-note">平台商品详情仅返回卖家历史统计；评价文字与图片在卖家公开主页查看。</p>
+          <p class="comparison__dialog-note">只展示平台返回的卖家历史统计；评价文字与图片在卖家公开主页查看。</p>
           <a v-if="selectedSellerProfile.sellerProfileUrl" class="workbench__btn workbench__btn--primary"
             :href="selectedSellerProfile.sellerProfileUrl" target="_blank" rel="noopener noreferrer">查看好评 / 差评明细</a>
         </template>
-        <div v-else class="workbench__empty">
-          卖家口碑读取失败，可关闭后重试或直接查看原商品。
-        </div>
+        <div v-else class="workbench__empty">该商品暂未返回卖家公开统计，可直接查看卖家主页。</div>
       </article>
     </div>
   </section>

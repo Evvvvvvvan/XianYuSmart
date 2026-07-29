@@ -130,7 +130,8 @@ export function useMessageManager() {
       if (goodsIdFilter.value) {
         params.xyGoodsId = goodsIdFilter.value
       }
-      const response = await getMessageList(params)
+      // 后台轮询静默更新数据，不弹出全局提示或切换页面加载态。
+      const response = await getMessageList(params, silent)
       if (response.code === 0 || response.code === 200) {
         const newList = response.data?.list || []
         const newTotal = response.data?.totalCount || 0

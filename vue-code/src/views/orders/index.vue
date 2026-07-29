@@ -47,6 +47,7 @@ const {
   copySId,
   handleConfirmShipment,
   handleRetryDelivery,
+  handleMarkDelivered,
   handleResendDelivery,
   handleGoodsScroll,
   selectGoods,
@@ -413,6 +414,7 @@ const executeConfirmShipment = async () => {
           @copy-sid="copySId"
           @confirm-shipment="openConfirmDialog"
           @retry-delivery="handleRetryDelivery"
+          @mark-delivered="handleMarkDelivered"
           @resend-delivery="handleResendDelivery"
           @rate="openRateDetail"
         />

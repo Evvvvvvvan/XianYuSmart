@@ -2,6 +2,10 @@ import axios, { type AxiosInstance, type AxiosRequestConfig, type AxiosResponse 
 import { toast } from './toast'
 import type { ApiResponse } from '@/types'
 
+export interface RequestConfig extends AxiosRequestConfig {
+  silent?: boolean
+}
+
 // Token存储key
 const TOKEN_KEY = 'xianyu_auth_token'
 const USERNAME_KEY = 'xianyu_auth_username'
@@ -81,7 +85,8 @@ service.interceptors.response.use(
     // 如果响应码不是 0 或 200，认为是错误
     if (res.code !== 0 && res.code !== 200) {
       const errorMsg = res.msg || res.message || '请求失败'
-      toast.error(errorMsg)
+      // 后台轮询和可降级查询由业务页面自行呈现，避免打断当前操作。
+      if (!(response.config as RequestConfig).silent) toast.error(errorMsg)
       const error = new Error(errorMsg)
       // 标记这个错误已经显示过消息，避免重复提示
       ;(error as any).messageShown = true
@@ -100,7 +105,7 @@ service.interceptors.response.use(
       return Promise.reject(error)
     }
     // 只有在错误消息未显示过时才弹出提示
-    if (!(error as any).messageShown) {
+    if (!(error as any).messageShown && !(error.config as RequestConfig | undefined)?.silent) {
       toast.error(error.message || '网络请求失败')
     }
     return Promise.reject(error)
@@ -108,7 +113,7 @@ service.interceptors.response.use(
 )
 
 // 封装请求方法
-export function request<T = any>(config: AxiosRequestConfig): Promise<ApiResponse<T>> {
+export function request<T = any>(config: RequestConfig): Promise<ApiResponse<T>> {
   return service.request<ApiResponse<T>>(config).then(response => response.data)
 }
 

@@ -150,7 +150,12 @@ export function searchOpportunities(data: {
 }
 
 export function getSellerPublicProfile(data: { itemId: string; xianyuAccountId: number }) {
-  return request<SellerPublicProfile>({ url: '/merchant/opportunities/seller-profile', method: 'POST', data })
+  return request<SellerPublicProfile>({
+    url: '/merchant/opportunities/seller-profile',
+    method: 'POST',
+    data,
+    silent: true
+  })
 }
 
 export function crawlShopOpportunities(data: {

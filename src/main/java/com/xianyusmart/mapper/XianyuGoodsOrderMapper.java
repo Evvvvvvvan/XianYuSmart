@@ -196,8 +196,17 @@ public interface XianyuGoodsOrderMapper {
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'PENDING', next_retry_time = NOW(3), " +
             "state = 0, fail_reason = NULL, attempt_count = 0, lease_owner = NULL, lease_expire_time = NULL, " +
             "last_error_code = NULL, last_error_message = NULL " +
-            "WHERE id = #{id} AND xianyu_account_id = #{accountId} AND state <> 1 AND delivery_status = 'FAILED'")
+            "WHERE id = #{id} AND xianyu_account_id = #{accountId} AND state <> 1 " +
+            "AND delivery_status IN ('FAILED', 'RETRY_WAIT', 'REVIEW_REQUIRED')")
     int requeueFailedTask(@Param("id") Long id, @Param("accountId") Long accountId);
+
+    @Update("UPDATE xianyu_goods_order SET state = 1, delivery_status = 'COMPLETED', " +
+            "delivered_quantity = expected_quantity, fail_reason = NULL, next_retry_time = NULL, " +
+            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL, " +
+            "delivery_message_content = NULL, delivery_message_state = 0, delivery_message_attempt_count = 0, " +
+            "delivery_message_next_retry_time = NULL WHERE id = #{id} AND xianyu_account_id = #{accountId} " +
+            "AND state <> 1 AND delivery_status IN ('FAILED', 'RETRY_WAIT', 'REVIEW_REQUIRED')")
+    int markDeliveredTask(@Param("id") Long id, @Param("accountId") Long accountId);
     
     @Update("UPDATE xianyu_goods_order SET confirm_state = 1 WHERE xianyu_account_id = #{accountId} AND order_id = #{orderId}")
     int updateConfirmState(@Param("accountId") Long accountId, @Param("orderId") String orderId);

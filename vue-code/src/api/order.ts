@@ -91,6 +91,14 @@ export function requeueDelivery(data: { id: number; xianyuAccountId: number }) {
   })
 }
 
+export function markDeliveryCompleted(data: { id: number; xianyuAccountId: number }) {
+  return request<string>({
+    url: '/order/markDeliveryCompleted',
+    method: 'POST',
+    data
+  })
+}
+
 export function resendDelivery(data: { xianyuAccountId: number; orderId: string }) {
   return request<string>({
     url: '/order/resendDelivery',

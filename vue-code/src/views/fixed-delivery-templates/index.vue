@@ -75,6 +75,10 @@ const submit = async () => {
     showError('发送模板必须包含“全部发货内容”变量')
     return
   }
+  if (preview.value.length > 200) {
+    showError('发送预览不能超过200个字符，请缩短模板或发货内容')
+    return
+  }
   saving.value = true
   try {
     const response = await saveFixedDeliveryTemplate({
@@ -174,10 +178,12 @@ onMounted(async () => {
         <label>
           <span>模板名称</span>
           <input v-model="form.templateName" maxlength="100" placeholder="例如：百度网盘资源" />
+          <small class="template-field-count">{{ form.templateName.length }} / 100</small>
         </label>
         <label>
           <span>全部发货内容</span>
-          <textarea v-model="form.deliveryContent" maxlength="5000" rows="5" placeholder="填写网盘链接、提取码、使用说明等固定内容"></textarea>
+          <textarea v-model="form.deliveryContent" maxlength="200" rows="5" placeholder="填写网盘链接、提取码、使用说明等固定内容"></textarea>
+          <small class="template-field-count">{{ form.deliveryContent.length }} / 200</small>
         </label>
         <label>
           <span class="template-label-row">
@@ -188,15 +194,17 @@ onMounted(async () => {
               <button type="button" @click="appendVariable('{deliveryContent}')">全部发货内容</button>
             </span>
           </span>
-          <textarea v-model="form.messageTemplate" maxlength="1000" rows="5"></textarea>
+          <textarea v-model="form.messageTemplate" maxlength="200" rows="5"></textarea>
+          <small class="template-field-count">{{ form.messageTemplate.length }} / 200</small>
         </label>
-        <div class="template-preview">
+        <div class="template-preview" :class="{ 'template-preview--invalid': preview.length > 200 }">
           <strong>发送预览</strong>
           <p>{{ preview }}</p>
+          <small>{{ preview.length }} / 200</small>
         </div>
         <footer>
           <button type="button" @click="dialogVisible = false">取消</button>
-          <button type="submit" class="primary-btn" :disabled="saving">{{ saving ? '保存中...' : '保存模板' }}</button>
+          <button type="submit" class="primary-btn" :disabled="saving || preview.length > 200">{{ saving ? '保存中...' : '保存模板' }}</button>
         </footer>
       </form>
     </div>
@@ -234,9 +242,13 @@ dd { margin: 5px 0 0; color: #344054; font-size: 13px; line-height: 1.55; white-
 .template-label-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .template-label-row > span { display: flex; flex-wrap: wrap; gap: 5px; }
 .template-label-row button { height: 27px; padding: 0 8px; color: #155eef; font-size: 12px; }
+.template-field-count { color: #667085; font-size: 12px; font-weight: 400; text-align: right; }
 .template-preview { margin-top: 14px; padding: 12px; border: 1px solid #e4e7ec; border-radius: 7px; background: #f9fafb; }
 .template-preview strong { font-size: 12px; }
 .template-preview p { margin: 7px 0 0; color: #344054; font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.template-preview small { display: block; margin-top: 8px; color: #667085; text-align: right; }
+.template-preview--invalid { border-color: #f04438; background: #fff5f4; }
+.template-preview--invalid small { color: #d92d20; }
 .template-dialog footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 @media (max-width: 680px) {
   .fixed-template-page { padding: 14px; }

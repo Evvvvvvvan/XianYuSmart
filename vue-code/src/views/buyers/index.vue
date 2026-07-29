@@ -44,6 +44,15 @@ const form = ref({
 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
+const normalizedTags = computed(() => form.value.tagsText
+  .split(/[,，]/)
+  .map(value => value.trim())
+  .filter(Boolean))
+const tagsError = computed(() => {
+  if (normalizedTags.value.length > 10) return '最多设置10个标签'
+  if (normalizedTags.value.some(tag => tag.length > 20)) return '单个标签不能超过20个字符'
+  return ''
+})
 const orderedMessages = computed(() => {
   const records = detail.value?.messages || []
   const filtered = selectedOrderId.value
@@ -92,12 +101,16 @@ const openEdit = (profile: BuyerProfile) => {
 
 const save = async () => {
   if (!editing.value) return
+  if (tagsError.value) {
+    toast.error(tagsError.value)
+    return
+  }
   const target = editing.value
   await saveBuyerProfile({
     xianyuAccountId: target.xianyuAccountId,
     buyerUserId: target.buyerUserId,
     buyerUserName: form.value.buyerUserName,
-    tags: form.value.tagsText.split(/[,，]/).map(value => value.trim()).filter(Boolean),
+    tags: normalizedTags.value,
     note: form.value.note,
     automationBlocked: form.value.automationBlocked,
     blockedReason: form.value.blockedReason
@@ -403,15 +416,15 @@ onMounted(async () => {
             <div><h3>编辑买家资料</h3><p>{{ editing.buyerUserName || editing.buyerUserId }}</p></div>
             <button class="close" @click="editing = undefined">×</button>
           </header>
-          <label>买家名称<input v-model="form.buyerUserName" maxlength="200" /></label>
-          <label>标签<input v-model="form.tagsText" placeholder="例如：老客户，高意向；最多10个" /></label>
-          <label>运营备注<textarea v-model="form.note" rows="3" maxlength="500"></textarea></label>
+          <label>买家名称<input v-model="form.buyerUserName" maxlength="200" /><small>{{ form.buyerUserName.length }} / 200</small></label>
+          <label>标签<input v-model="form.tagsText" placeholder="例如：老客户，高意向；最多10个" /><small :class="{ danger: tagsError }">{{ tagsError || `${normalizedTags.length} / 10，每个最多20字` }}</small></label>
+          <label>运营备注<textarea v-model="form.note" rows="3" maxlength="500"></textarea><small>{{ form.note.length }} / 500</small></label>
           <label class="switch-row">
             <span><strong>暂停自动化</strong><small>开启后不再自动回复，新订单进入人工复核。</small></span>
             <input v-model="form.automationBlocked" type="checkbox" />
           </label>
-          <label v-if="form.automationBlocked">暂停原因<input v-model="form.blockedReason" maxlength="200" /></label>
-          <footer><button @click="editing = undefined">取消</button><button class="primary" @click="save">保存</button></footer>
+          <label v-if="form.automationBlocked">暂停原因<input v-model="form.blockedReason" maxlength="200" /><small>{{ form.blockedReason.length }} / 200</small></label>
+          <footer><button @click="editing = undefined">取消</button><button class="primary" :disabled="Boolean(tagsError)" @click="save">保存</button></footer>
         </section>
       </div>
     </Teleport>

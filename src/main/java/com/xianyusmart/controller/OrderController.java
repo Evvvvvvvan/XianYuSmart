@@ -172,7 +172,7 @@ public class OrderController {
     }
 
     /**
-     * 将明确失败的履约任务重新加入队列
+     * 将异常履约任务重新加入队列
      */
     @PostMapping("/requeueDelivery")
     public ResultObject<String> requeueDelivery(@RequestBody RequeueDeliveryReqDTO reqDTO) {
@@ -185,9 +185,29 @@ public class OrderController {
             }
             return ResultObject.success("订单已重新进入发货队列");
         } catch (Exception e) {
-            log.error("失败订单重新排队异常: id={}, xianyuAccountId={}",
+            log.error("异常订单重新排队异常: id={}, xianyuAccountId={}",
                     reqDTO.getId(), reqDTO.getXianyuAccountId(), e);
             return ResultObject.failed("重新排队失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 人工发货完成后仅关闭本地异常，不再次调用平台发货
+     */
+    @PostMapping("/markDeliveryCompleted")
+    public ResultObject<String> markDeliveryCompleted(@RequestBody RequeueDeliveryReqDTO reqDTO) {
+        try {
+            if (reqDTO.getId() == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("订单记录ID和账号ID不能为空");
+            }
+            if (!deliveryTaskService.markDelivered(reqDTO.getId(), reqDTO.getXianyuAccountId())) {
+                return ResultObject.failed("订单状态已变化，请刷新后重试");
+            }
+            return ResultObject.success("订单已标记为已发货");
+        } catch (Exception e) {
+            log.error("订单标记已发货异常: id={}, xianyuAccountId={}",
+                    reqDTO.getId(), reqDTO.getXianyuAccountId(), e);
+            return ResultObject.failed("标记已发货失败: " + e.getMessage());
         }
     }
 

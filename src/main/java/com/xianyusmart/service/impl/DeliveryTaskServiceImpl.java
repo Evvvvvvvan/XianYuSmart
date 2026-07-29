@@ -105,7 +105,13 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
 
     @Override
     public boolean requeueFailed(Long taskId, Long accountId) {
-        // 账号和失败状态同时进入更新条件，保证并发重试只成功一次。
+        // 账号和异常状态同时进入更新条件，保证并发重试只成功一次。
         return orderMapper.requeueFailedTask(taskId, accountId) == 1;
+    }
+
+    @Override
+    public boolean markDelivered(Long taskId, Long accountId) {
+        // 仅更新本地履约状态并清理待发私聊，不调用平台接口，避免人工发货后重复发送。
+        return orderMapper.markDeliveredTask(taskId, accountId) == 1;
     }
 }

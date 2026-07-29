@@ -133,8 +133,8 @@ onMounted(load)
     <form class="workbench__card publish__panel workbench__section" @submit.prevent>
       <template v-if="step === 1">
         <label class="workbench__field">复用已有素材<select class="workbench__select" @change="useMaterial"><option value="">从素材库选择（可选）</option><option v-for="item in materials" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
-        <label class="workbench__field">商品标题<input v-model="form.name" class="workbench__input" maxlength="120"></label>
-        <label class="workbench__field">商品详情<textarea v-model="form.description" class="workbench__textarea" maxlength="3000"></textarea></label>
+        <label class="workbench__field">商品标题<input v-model="form.name" class="workbench__input" maxlength="120"><small>{{ form.name.length }} / 120</small></label>
+        <label class="workbench__field">商品详情<textarea v-model="form.description" class="workbench__textarea" maxlength="3000"></textarea><small>{{ form.description.length }} / 3000</small></label>
       </template>
       <template v-else-if="step === 2">
         <div class="workbench__grid workbench__grid--two">
@@ -144,7 +144,7 @@ onMounted(load)
           <label class="workbench__field">交付方式<select v-model="form.deliveryMethod" class="workbench__select"><option>线上交付</option><option>快递发货</option><option>当面交易</option></select></label>
         </div>
         <label class="workbench__field">上传商品图片（最多 9 张）<input class="workbench__input" type="file" accept="image/*" multiple :disabled="uploading" @change="uploadFiles"></label>
-        <label class="workbench__field">或填写图片 HTTPS 地址（每行一张）<textarea v-model="form.imagesText" class="workbench__textarea" maxlength="5000"></textarea></label>
+        <label class="workbench__field">或填写图片 HTTPS 地址（每行一张）<textarea v-model="form.imagesText" class="workbench__textarea" maxlength="5000"></textarea><small>{{ form.imagesText.length }} / 5000</small></label>
         <div class="publish__images"><button v-for="image in images.slice(0, 9)" :key="image" type="button" @click="removeImage(image)"><img :src="image" alt=""><span>移除</span></button></div>
       </template>
       <template v-else-if="step === 3">

@@ -296,7 +296,7 @@ onMounted(load)
       <div v-if="editing" class="overlay" @click.self="editing = false">
         <section class="dialog">
           <header><h3>{{ channelForm.id ? '编辑通知渠道' : '新建通知渠道' }}</h3><button class="close" @click="editing = false">×</button></header>
-          <label>渠道名称<input v-model="channelForm.channelName" maxlength="100" placeholder="例如：运维群机器人" /></label>
+          <label>渠道名称<input v-model="channelForm.channelName" maxlength="100" placeholder="例如：运维群机器人" /><small>{{ channelForm.channelName.length }} / 100</small></label>
           <div class="channel-types">
             <button v-for="item in channelTypes" :key="item.value" type="button"
               :class="{ active: channelForm.channelType === item.value }"
@@ -311,7 +311,7 @@ onMounted(load)
           </label>
           <label>通知内容模板
             <textarea v-model="channelForm.messageTemplate" maxlength="1000" rows="5"></textarea>
-            <small>可用变量：{eventName} 事件、{title} 标题、{content} 内容、{accountId} 账号</small>
+            <small>可用变量：{eventName} 事件、{title} 标题、{content} 内容、{accountId} 账号 · {{ channelForm.messageTemplate.length }} / 1000</small>
           </label>
           <fieldset>
             <legend>接收事件</legend>

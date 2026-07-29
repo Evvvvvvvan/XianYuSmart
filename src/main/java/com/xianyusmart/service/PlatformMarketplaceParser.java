@@ -86,7 +86,12 @@ class PlatformMarketplaceParser {
             item.put("sellerAvatar", https(firstNonBlank(
                     firstText(exContent, "userAvatarUrl", "avatar"),
                     firstText(user, "avatar", "logo"))));
-            putSellerFacts(item, record);
+            // 搜索卡片只从卖家对象和明确的卖家字段读取口碑，避免把商品热度误识别为卖家评价。
+            Map<String, Object> seller = firstNonEmptyMap(
+                    card.get("seller"), card.get("sellerDO"), exContent.get("seller"),
+                    detailParams.get("seller"), user);
+            putSellerFacts(item, seller);
+            putSearchSellerFacts(item, detailParams, exContent);
             result.add(item);
             if (result.size() >= limit) {
                 break;
@@ -196,6 +201,35 @@ class PlatformMarketplaceParser {
         putLongIfPresent(target, "sellerNegativeCount", recursiveLong(source, Set.of(
                 "sellerNegativeCount", "negativeRateCount", "negativeCount", "badRateCount",
                 "badCount", "receivedNegativeCount", "badRateNum", "sellerBadRemarkCnt")));
+    }
+
+    @SafeVarargs
+    private final void putSearchSellerFacts(Map<String, Object> target, Map<String, Object>... sources) {
+        for (Map<String, Object> source : sources) {
+            putTextIfPresent(target, "sellerCredit", firstText(source,
+                    "sellerCredit", "sellerCreditLevel", "sellerZhimaCredit", "sellerZhimaLevel"));
+            putLongIfPresent(target, "sellerPositiveCount", directLong(source,
+                    "sellerPositiveCount", "sellerGoodRemarkCnt", "sellerPositiveRateCount"));
+            putLongIfPresent(target, "sellerNeutralCount", directLong(source,
+                    "sellerNeutralCount", "sellerDefaultRemarkCnt", "sellerNeutralRateCount"));
+            putLongIfPresent(target, "sellerNegativeCount", directLong(source,
+                    "sellerNegativeCount", "sellerBadRemarkCnt", "sellerNegativeRateCount"));
+        }
+    }
+
+    private Long directLong(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            Object value = source.get(key);
+            if (value == null) {
+                continue;
+            }
+            try {
+                return Long.valueOf(String.valueOf(value).replaceAll("[^0-9-]", ""));
+            } catch (NumberFormatException ignored) {
+                // 当前字段格式异常时继续读取下一个平台兼容字段。
+            }
+        }
+        return null;
     }
 
     private void putTextIfPresent(Map<String, Object> target, String key, String value) {

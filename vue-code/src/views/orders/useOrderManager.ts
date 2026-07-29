@@ -1,6 +1,6 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { queryDeliveryRecordList, queryOrderRateDetails, confirmShipment, requeueDelivery, resendDelivery } from '@/api/order'
+import { queryDeliveryRecordList, queryOrderRateDetails, confirmShipment, markDeliveryCompleted, requeueDelivery, resendDelivery } from '@/api/order'
 import { getAccountList } from '@/api/account'
 import { getGoodsList, type GoodsItemWithConfig } from '@/api/goods'
 import type { DeliveryRecordVO, DeliveryRecordQueryReq } from '@/api/order'
@@ -12,6 +12,7 @@ import { deliveryStatusOptions, parseDeliveryStatuses } from './order-status'
 export interface DeliveryRecordItem extends DeliveryRecordVO {
   confirming?: boolean
   retrying?: boolean
+  markingDelivered?: boolean
   resending?: boolean
 }
 
@@ -322,6 +323,31 @@ export function useOrderManager() {
     }
   }
 
+  const handleMarkDelivered = async (row: DeliveryRecordItem) => {
+    if (!row.xianyuAccountId) {
+      showError('账号ID为空')
+      return
+    }
+    try {
+      await showConfirm(
+        `确认将订单「${row.orderId || row.id}」标记为已发货？此操作只更新本系统状态，不会再次向闲鱼发货。`,
+        '标记已发货'
+      )
+    } catch {
+      return
+    }
+    row.markingDelivered = true
+    try {
+      await markDeliveryCompleted({ id: row.id, xianyuAccountId: row.xianyuAccountId })
+      showSuccess('订单已标记为已发货')
+      await loadOrders()
+    } catch (error: any) {
+      showError(error.message || '标记已发货失败')
+    } finally {
+      row.markingDelivered = false
+    }
+  }
+
   return {
     loading,
     orderList,
@@ -352,6 +378,7 @@ export function useOrderManager() {
     copySId,
     handleConfirmShipment,
     handleRetryDelivery,
+    handleMarkDelivered,
     handleResendDelivery,
     handleGoodsScroll,
     selectGoods,
