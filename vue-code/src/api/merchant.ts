@@ -15,10 +15,23 @@ export interface OpportunityCandidate {
   sellerCredit?: string
   buyerCredit?: string
   sellerPositiveCount?: number
+  sellerNeutralCount?: number
   sellerNegativeCount?: number
   opportunityScore: number
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   matchReason: string
+}
+
+export interface SellerPublicProfile {
+  itemId: string
+  sellerId?: string
+  sellerNick?: string
+  sellerAvatar?: string
+  sellerProfileUrl?: string
+  sellerCredit?: string
+  sellerPositiveCount?: number
+  sellerNeutralCount?: number
+  sellerNegativeCount?: number
 }
 
 export interface OpportunitySearchPage {
@@ -134,6 +147,10 @@ export function searchOpportunities(data: {
   limit?: number
 }) {
   return request<OpportunitySearchPage>({ url: '/merchant/opportunities/search', method: 'POST', data })
+}
+
+export function getSellerPublicProfile(data: { itemId: string; xianyuAccountId: number }) {
+  return request<SellerPublicProfile>({ url: '/merchant/opportunities/seller-profile', method: 'POST', data })
 }
 
 export function crawlShopOpportunities(data: {

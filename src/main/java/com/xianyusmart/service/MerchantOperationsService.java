@@ -190,6 +190,27 @@ public class MerchantOperationsService {
         );
     }
 
+    public Map<String, Object> getSellerPublicProfile(Map<String, Object> request) {
+        Long accountId = longValue(request.get("xianyuAccountId"));
+        validateOwnedAccount(accountId);
+        String itemId = text(request.get("itemId"));
+        if (!itemId.matches("\\d{8,}")) {
+            throw new IllegalArgumentException("商品ID格式无效");
+        }
+        Map<String, Object> detail = platformPublishService.collect(
+                "https://www.goofish.com/item?id=" + itemId, accountId);
+        Map<String, Object> profile = new LinkedHashMap<>();
+        for (String key : List.of(
+                "sellerId", "sellerNick", "sellerAvatar", "sellerProfileUrl", "sellerCredit",
+                "sellerPositiveCount", "sellerNeutralCount", "sellerNegativeCount")) {
+            if (detail.containsKey(key)) {
+                profile.put(key, detail.get(key));
+            }
+        }
+        profile.put("itemId", itemId);
+        return profile;
+    }
+
     public Map<String, Object> crawlShopOpportunities(Map<String, Object> request) {
         String shopUrl = text(request.get("shopUrl"));
         if (shopUrl.isBlank()) {

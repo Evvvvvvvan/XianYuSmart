@@ -24,7 +24,6 @@ const {
   getCurrentAccountUnb,
   loadAccounts,
   loadMessages,
-  loadGoodsList,
   handleAccountChange,
   formatMessageTime
 } = useMessageManager()
@@ -41,6 +40,7 @@ const messageText = ref('')
 const imageUrls = ref('')
 const showImageUploader = ref(false)
 const sending = ref(false)
+const refreshing = ref(false)
 const quickReplies = ref<string[]>([])
 const messagesRef = ref<HTMLElement>()
 
@@ -96,14 +96,15 @@ const scrollToBottom = () => nextTick(() => {
   if (messagesRef.value) messagesRef.value.scrollTop = messagesRef.value.scrollHeight
 })
 
-const loadConversationContext = async (syncPlatform = false) => {
+const loadConversationContext = async (syncPlatform = false, showLoading = true) => {
   if (!selectedAccountId.value || !selected.value) {
     contextMessages.value = []
     return
   }
   const accountId = selectedAccountId.value
   const sid = selected.value.sid
-  contextLoading.value = true
+  const displayLoading = showLoading && contextMessages.value.length === 0
+  if (displayLoading) contextLoading.value = true
   try {
     const response = await getContextMessages({ xianyuAccountId: accountId, sid, limit: 500, offset: 0 })
     if (selectedAccountId.value === accountId && selected.value?.sid === sid) {
@@ -111,10 +112,10 @@ const loadConversationContext = async (syncPlatform = false) => {
       await scrollToBottom()
     }
   } catch (error: any) {
-    if (!error?.messageShown) showWarning(error?.message || '本地会话读取失败')
-    contextMessages.value = selected.value?.messages || []
+    if (showLoading && !error?.messageShown) showWarning(error?.message || '本地会话读取失败')
+    if (!contextMessages.value.length) contextMessages.value = selected.value?.messages || []
   } finally {
-    contextLoading.value = false
+    if (displayLoading) contextLoading.value = false
   }
   if (!syncPlatform) return
   platformSyncing.value = true
@@ -183,7 +184,7 @@ const sendCurrentMessage = async () => {
     messageText.value = ''
     imageUrls.value = ''
     showImageUploader.value = false
-    await loadConversationContext(false)
+    await loadConversationContext(false, false)
     showSuccess('消息发送成功')
   } catch (error: any) {
     showError(error?.message || '消息发送失败')
@@ -193,8 +194,18 @@ const sendCurrentMessage = async () => {
 }
 
 const refresh = async () => {
-  await loadMessages(true)
-  if (selected.value) await loadConversationContext(false)
+  if (refreshing.value || platformSyncing.value) return
+  refreshing.value = true
+  try {
+    const previousMessageId = selected.value?.latest.id
+    await loadMessages(true)
+    if (selected.value && selected.value.latest.id !== previousMessageId) {
+      // 仅在会话出现新消息时更新正文，避免轮询造成滚动位置跳动。
+      await loadConversationContext(false, false)
+    }
+  } finally {
+    refreshing.value = false
+  }
 }
 
 watch(conversations, value => {
@@ -234,8 +245,7 @@ watch(() => [selectedAccountId.value, selected.value?.sid], async ([accountId, s
 let timer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
   await loadAccounts()
-  await Promise.all([loadGoodsList(), loadMessages()])
-  timer = setInterval(refresh, 5000)
+  timer = setInterval(refresh, 10000)
 })
 
 onBeforeUnmount(() => {
@@ -251,8 +261,8 @@ onBeforeUnmount(() => {
         <select v-model="selectedAccountId" class="workbench__select chat__account" @change="handleAccountChange">
           <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option>
         </select>
-        <button class="workbench__btn" :disabled="loading || platformSyncing" @click="refresh">
-          {{ loading || platformSyncing ? '同步中' : '同步消息' }}
+        <button class="workbench__btn" :disabled="loading || platformSyncing || refreshing" @click="refresh">
+          {{ loading || platformSyncing || refreshing ? '同步中' : '同步消息' }}
         </button>
       </div>
     </header>

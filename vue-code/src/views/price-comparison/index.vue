@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { getAccountList } from '@/api/account'
-import { searchOpportunities, type OpportunityCandidate } from '@/api/merchant'
+import {
+  getSellerPublicProfile,
+  searchOpportunities,
+  type OpportunityCandidate,
+  type SellerPublicProfile
+} from '@/api/merchant'
 import type { Account } from '@/types'
 import { toast } from '@/utils/toast'
 import '@/styles/merchant-workbench.css'
@@ -16,6 +21,10 @@ const loading = ref(false)
 const searched = ref(false)
 const results = ref<OpportunityCandidate[]>([])
 const platformTotal = ref(0)
+const sellerProfiles = ref<Record<string, SellerPublicProfile>>({})
+const sellerProfileLoading = ref(new Set<string>())
+const sellerProfileErrors = ref(new Set<string>())
+const selectedSellerItem = ref<OpportunityCandidate>()
 
 const priceNumber = (value?: string | number) => {
   const normalized = String(value ?? '').replace(/[^0-9.]/g, '')
@@ -45,7 +54,43 @@ const priceSummary = computed(() => {
   return { lowest: prices[0]!, median, highest: prices[prices.length - 1]! }
 })
 
-const displayFact = (value?: string | number) => value == null || value === '' ? '平台未公开' : String(value)
+const profileKey = (item: OpportunityCandidate) => item.sellerId || item.itemId
+const profileFor = (item: OpportunityCandidate) => sellerProfiles.value[profileKey(item)]
+const hasValue = (value?: string | number) => value != null && value !== ''
+const selectedSellerProfile = computed(() => selectedSellerItem.value ? profileFor(selectedSellerItem.value) : undefined)
+
+const loadSellerProfile = async (item: OpportunityCandidate) => {
+  if (!accountId.value) return
+  const key = profileKey(item)
+  if (sellerProfiles.value[key] || sellerProfileLoading.value.has(key)) return
+  sellerProfileLoading.value = new Set([...sellerProfileLoading.value, key])
+  sellerProfileErrors.value.delete(key)
+  try {
+    const response = await getSellerPublicProfile({ itemId: item.itemId, xianyuAccountId: accountId.value })
+    if (!response.data) throw new Error(response.msg || '卖家口碑读取失败')
+    const profiles = { ...sellerProfiles.value, [key]: response.data }
+    if (response.data.sellerId) profiles[response.data.sellerId] = response.data
+    sellerProfiles.value = profiles
+  } catch {
+    sellerProfileErrors.value = new Set([...sellerProfileErrors.value, key])
+  } finally {
+    const loadingKeys = new Set(sellerProfileLoading.value)
+    loadingKeys.delete(key)
+    sellerProfileLoading.value = loadingKeys
+  }
+}
+
+const hydrateFirstSellerProfiles = async () => {
+  const visibleItems = results.value.slice(0, 6)
+  for (let index = 0; index < visibleItems.length; index += 2) {
+    await Promise.all(visibleItems.slice(index, index + 2).map(loadSellerProfile))
+  }
+}
+
+const showSellerProfile = (item: OpportunityCandidate) => {
+  selectedSellerItem.value = item
+  void loadSellerProfile(item)
+}
 
 const loadAccounts = async () => {
   const response = await getAccountList()
@@ -69,7 +114,12 @@ const search = async () => {
     })
     results.value = response.data?.items || []
     platformTotal.value = Number(response.data?.total || results.value.length)
+    sellerProfiles.value = {}
+    sellerProfileLoading.value = new Set()
+    sellerProfileErrors.value = new Set()
+    selectedSellerItem.value = undefined
     searched.value = true
+    void hydrateFirstSellerProfiles()
   } finally {
     loading.value = false
   }
@@ -127,16 +177,23 @@ onMounted(loadAccounts)
         <div v-else class="comparison__image-empty">暂无图片</div>
         <div class="comparison__content">
           <h2>{{ item.title }}</h2>
-          <div class="comparison__seller">
+          <div class="comparison__seller" @mouseenter="loadSellerProfile(item)" @focusin="loadSellerProfile(item)">
             <strong>{{ item.sellerNick || '平台卖家' }}</strong>
-            <span>卖家信用：{{ displayFact(item.sellerCredit) }}</span>
-            <span>买家信用：{{ displayFact(item.buyerCredit) }}</span>
+            <span v-if="hasValue(profileFor(item)?.sellerCredit)">信用 {{ profileFor(item)?.sellerCredit }}</span>
           </div>
-          <div class="comparison__reviews">
-            <span class="comparison__positive">历史好评 {{ displayFact(item.sellerPositiveCount) }}</span>
-            <span class="comparison__negative">历史差评 {{ displayFact(item.sellerNegativeCount) }}</span>
+          <div v-if="profileFor(item)" class="comparison__reviews">
+            <span v-if="hasValue(profileFor(item)?.sellerPositiveCount)" class="comparison__positive">历史好评 {{ profileFor(item)?.sellerPositiveCount }}</span>
+            <span v-if="hasValue(profileFor(item)?.sellerNeutralCount)">一般评价 {{ profileFor(item)?.sellerNeutralCount }}</span>
+            <span v-if="hasValue(profileFor(item)?.sellerNegativeCount)" class="comparison__negative">历史差评 {{ profileFor(item)?.sellerNegativeCount }}</span>
+            <button class="comparison__review-link" @click="showSellerProfile(item)">查看卖家口碑</button>
           </div>
-          <small>信用和评价仅展示平台本次接口公开的真实字段，未返回时不会推测或补造。</small>
+          <div v-else class="comparison__reviews">
+            <span v-if="sellerProfileLoading.has(profileKey(item))">正在读取卖家口碑…</span>
+            <button v-else class="comparison__review-link" @click="showSellerProfile(item)">
+              {{ sellerProfileErrors.has(profileKey(item)) ? '重试卖家口碑' : '查看卖家口碑' }}
+            </button>
+          </div>
+          <small>信用与评价均来自该卖家的平台公开历史统计，不使用商品评价或推测数据。</small>
         </div>
         <div class="comparison__action">
           <strong>¥ {{ item.price || '--' }}</strong>
@@ -145,6 +202,41 @@ onMounted(loadAccounts)
       </article>
       <div v-if="searched && !filteredResults.length" class="workbench__card workbench__empty">当前价格范围内没有结果，可调整筛选条件后查看。</div>
       <div v-else-if="!searched" class="workbench__card workbench__empty">输入关键词后开始全站比价。</div>
+    </div>
+
+    <div v-if="selectedSellerItem" class="comparison__dialog-mask" role="presentation" @click.self="selectedSellerItem = undefined">
+      <article class="workbench__card comparison__dialog" role="dialog" aria-modal="true" aria-label="卖家口碑">
+        <header>
+          <div>
+            <h2>卖家口碑</h2>
+            <p>{{ selectedSellerProfile?.sellerNick || selectedSellerItem.sellerNick || '平台卖家' }}</p>
+          </div>
+          <button class="comparison__dialog-close" aria-label="关闭" @click="selectedSellerItem = undefined">×</button>
+        </header>
+        <div v-if="sellerProfileLoading.has(profileKey(selectedSellerItem))" class="workbench__empty">正在读取卖家公开数据…</div>
+        <template v-else-if="selectedSellerProfile">
+          <div v-if="hasValue(selectedSellerProfile.sellerCredit)" class="comparison__credit">
+            <span>卖家信用</span><strong>{{ selectedSellerProfile.sellerCredit }}</strong>
+          </div>
+          <div class="comparison__dialog-metrics">
+            <div v-if="hasValue(selectedSellerProfile.sellerPositiveCount)"><span>历史好评</span><strong>{{ selectedSellerProfile.sellerPositiveCount }}</strong></div>
+            <div v-if="hasValue(selectedSellerProfile.sellerNeutralCount)"><span>一般评价</span><strong>{{ selectedSellerProfile.sellerNeutralCount }}</strong></div>
+            <div v-if="hasValue(selectedSellerProfile.sellerNegativeCount)"><span>历史差评</span><strong>{{ selectedSellerProfile.sellerNegativeCount }}</strong></div>
+          </div>
+          <p v-if="!hasValue(selectedSellerProfile.sellerCredit)
+            && !hasValue(selectedSellerProfile.sellerPositiveCount)
+            && !hasValue(selectedSellerProfile.sellerNeutralCount)
+            && !hasValue(selectedSellerProfile.sellerNegativeCount)" class="comparison__dialog-note">
+            该商品详情未返回卖家信用或口碑统计。
+          </p>
+          <p class="comparison__dialog-note">平台商品详情仅返回卖家历史统计；评价文字与图片在卖家公开主页查看。</p>
+          <a v-if="selectedSellerProfile.sellerProfileUrl" class="workbench__btn workbench__btn--primary"
+            :href="selectedSellerProfile.sellerProfileUrl" target="_blank" rel="noopener noreferrer">查看好评 / 差评明细</a>
+        </template>
+        <div v-else class="workbench__empty">
+          卖家口碑读取失败，可关闭后重试或直接查看原商品。
+        </div>
+      </article>
     </div>
   </section>
 </template>
@@ -165,9 +257,23 @@ onMounted(loadAccounts)
 .comparison__reviews { margin-top: 8px; }
 .comparison__positive { color: #067647; }
 .comparison__negative { color: #b42318; }
+.comparison__review-link { padding: 0; border: 0; color: #155eef; background: transparent; cursor: pointer; }
 .comparison__content small { display: block; margin-top: 8px; color: #98a2b3; }
 .comparison__action { display: flex; align-items: stretch; flex-direction: column; gap: 10px; }
 .comparison__action > strong { color: #d92d20; font-size: 22px; text-align: right; white-space: nowrap; }
+.comparison__dialog-mask { position: fixed; z-index: 1000; inset: 0; display: grid; padding: 20px; place-items: center; background: rgb(15 23 42 / 42%); }
+.comparison__dialog { width: min(520px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; }
+.comparison__dialog header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.comparison__dialog h2, .comparison__dialog p { margin: 0; }
+.comparison__dialog header p { margin-top: 4px; color: #667085; }
+.comparison__dialog-close { border: 0; color: #667085; background: transparent; font-size: 26px; line-height: 1; cursor: pointer; }
+.comparison__credit { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; padding: 12px 14px; border-radius: 8px; background: #f5f8ff; }
+.comparison__dialog-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.comparison__dialog-metrics > div { padding: 13px; border: 1px solid #eaecf0; border-radius: 8px; }
+.comparison__dialog-metrics span, .comparison__dialog-metrics strong { display: block; }
+.comparison__dialog-metrics span { color: #667085; font-size: 12px; }
+.comparison__dialog-metrics strong { margin-top: 6px; font-size: 20px; }
+.comparison__dialog-note { margin: 14px 0 !important; color: #667085; font-size: 13px; line-height: 1.7; }
 @media (max-width: 900px) {
   .comparison__filters, .comparison__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -178,5 +284,8 @@ onMounted(loadAccounts)
   .comparison__content h2 { display: -webkit-box; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .comparison__action { grid-column: 1 / -1; align-items: center; flex-direction: row; justify-content: space-between; }
   .comparison__action > strong { text-align: left; }
+  .comparison__dialog-mask { align-items: end; padding: 0; }
+  .comparison__dialog { width: 100%; max-height: calc(100dvh - 24px); border-radius: 14px 14px 0 0; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
+  .comparison__dialog-metrics { grid-template-columns: 1fr; }
 }
 </style>

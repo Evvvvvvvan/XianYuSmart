@@ -169,26 +169,33 @@ class PlatformMarketplaceParser {
         result.put("price", firstText(item, "soldPrice", "price", "originalPrice"));
         result.put("images", images);
         result.put("sourceUrl", "https://www.goofish.com/item?id=" + itemId);
-        result.put("sellerId", firstText(seller, "sellerId", "userId"));
+        String sellerId = firstText(seller, "sellerId", "userId");
+        result.put("sellerId", sellerId);
         result.put("sellerNick", firstText(seller, "nick", "userNick", "nickname"));
         result.put("sellerAvatar", https(firstText(seller, "portraitUrl", "avatar", "logo")));
-        putSellerFacts(result, data);
+        if (!sellerId.isBlank()) {
+            result.put("sellerProfileUrl", "https://www.goofish.com/personal?userId=" + sellerId);
+        }
+        putSellerFacts(result, seller);
         return result;
     }
 
     private void putSellerFacts(Map<String, Object> target, Object source) {
-        // 比价只展示平台真实返回的信用与评价数据，缺失字段交由前端明确标记为未公开。
+        // 商品详情中的卖家信用与历史口碑是公开事实，缺失时不推测数据。
         putTextIfPresent(target, "sellerCredit", recursiveText(source, Set.of(
                 "sellerCredit", "sellerCreditLevel", "sellerZhimaCredit", "sellerZhimaLevel",
-                "zhimaCredit", "zhimaCreditLevel", "zhimaLevel")));
+                "zhimaCredit", "zhimaCreditLevel", "zhimaLevel", "zhimaLevelInfo")));
         putTextIfPresent(target, "buyerCredit", recursiveText(source, Set.of(
                 "buyerCredit", "buyerCreditLevel", "buyerZhimaCredit", "buyerZhimaLevel")));
         putLongIfPresent(target, "sellerPositiveCount", recursiveLong(source, Set.of(
                 "sellerPositiveCount", "positiveRateCount", "positiveCount", "goodRateCount",
-                "goodCount", "receivedPositiveCount", "goodRateNum")));
+                "goodCount", "receivedPositiveCount", "goodRateNum", "sellerGoodRemarkCnt")));
+        putLongIfPresent(target, "sellerNeutralCount", recursiveLong(source, Set.of(
+                "sellerNeutralCount", "neutralRateCount", "neutralCount", "defaultRateCount",
+                "defaultCount", "sellerDefaultRemarkCnt")));
         putLongIfPresent(target, "sellerNegativeCount", recursiveLong(source, Set.of(
                 "sellerNegativeCount", "negativeRateCount", "negativeCount", "badRateCount",
-                "badCount", "receivedNegativeCount", "badRateNum")));
+                "badCount", "receivedNegativeCount", "badRateNum", "sellerBadRemarkCnt")));
     }
 
     private void putTextIfPresent(Map<String, Object> target, String key, String value) {
@@ -206,7 +213,7 @@ class PlatformMarketplaceParser {
     private String recursiveText(Object source, Set<String> keys) {
         Object value = recursiveValue(source, keys);
         if (value instanceof Map<?, ?> details) {
-            return firstText(map(details), "text", "value", "level", "displayName", "title", "description");
+            return firstText(map(details), "text", "value", "level", "levelName", "displayName", "title", "description");
         }
         return text(value);
     }
