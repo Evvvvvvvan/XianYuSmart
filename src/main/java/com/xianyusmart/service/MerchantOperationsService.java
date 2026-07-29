@@ -36,6 +36,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -69,6 +70,7 @@ public class MerchantOperationsService {
     private final WorkflowDefinitionService workflowDefinitionService;
     private final OperationLogService operationLogService;
     private final AIService aiService;
+    private final OpportunityImageService opportunityImageService;
     private final ObjectMapper objectMapper;
 
     public MerchantOperationsService(MerchantResourceMapper resourceMapper,
@@ -84,6 +86,7 @@ public class MerchantOperationsService {
                                      WorkflowDefinitionService workflowDefinitionService,
                                      OperationLogService operationLogService,
                                      AIService aiService,
+                                     OpportunityImageService opportunityImageService,
                                      ObjectMapper objectMapper) {
         this.resourceMapper = resourceMapper;
         this.taskMapper = taskMapper;
@@ -98,6 +101,7 @@ public class MerchantOperationsService {
         this.workflowDefinitionService = workflowDefinitionService;
         this.operationLogService = operationLogService;
         this.aiService = aiService;
+        this.opportunityImageService = opportunityImageService;
         this.objectMapper = objectMapper;
     }
 
@@ -186,6 +190,33 @@ public class MerchantOperationsService {
         );
     }
 
+    public Map<String, Object> crawlShopOpportunities(Map<String, Object> request) {
+        String shopUrl = text(request.get("shopUrl"));
+        if (shopUrl.isBlank()) {
+            throw new IllegalArgumentException("请输入闲鱼店铺链接");
+        }
+        Long accountId = longValue(request.get("xianyuAccountId"));
+        validateOwnedAccount(accountId);
+        int limit = Math.max(1, Math.min(intValue(request.get("limit"), 20), 50));
+        int pageNumber = Math.max(1, intValue(request.get("pageNumber"), 1));
+        PlatformPublishService.PlatformSearchResult page = platformPublishService.crawlShop(
+                shopUrl, accountId, pageNumber, limit);
+        List<Map<String, Object>> items = page.items().stream().map(candidate -> {
+            Map<String, Object> item = new LinkedHashMap<>(candidate);
+            item.put("opportunityScore", 75);
+            item.put("riskLevel", "LOW");
+            item.put("matchReason", "店铺在售商品 · 可采集详情");
+            return item;
+        }).toList();
+        return Map.of(
+                "items", items,
+                "pageNumber", page.pageNumber(),
+                "pageSize", page.pageSize(),
+                "hasMore", page.hasMore(),
+                "total", page.total()
+        );
+    }
+
     public Map<String, Object> polishOpportunity(Map<String, Object> request) {
         String title = text(request.get("title"));
         String description = text(request.get("description"));
@@ -216,6 +247,19 @@ public class MerchantOperationsService {
         } catch (Exception e) {
             throw new IllegalStateException("AI返回内容无法解析，请重试");
         }
+    }
+
+    public Map<String, Object> generateOpportunityImage(Map<String, Object> request) {
+        Long accountId = longValue(request.get("xianyuAccountId"));
+        if (accountId == null) {
+            throw new IllegalArgumentException("请选择图片上传账号");
+        }
+        validateOwnedAccount(accountId);
+        String prompt = text(request.get("prompt"));
+        if (prompt.isBlank()) {
+            throw new IllegalArgumentException("请输入商品图生成要求");
+        }
+        return Map.of("url", opportunityImageService.generate(accountId, prompt));
     }
 
     @Transactional

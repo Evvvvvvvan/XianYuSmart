@@ -15,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -31,6 +33,8 @@ import java.util.regex.Pattern;
 public class PlatformPublishService {
 
     private static final Pattern GOODS_ID_PATTERN = Pattern.compile("(?:id=|/item/)(\\d{8,})");
+    private static final Pattern SHOP_USER_ID_PATTERN =
+            Pattern.compile("(?i)(?:[?&](?:userId|sellerId|user_id)=)(\\d{5,})");
     private final PlaywrightManager playwrightManager;
     private final AccountService accountService;
     private final ObjectMapper objectMapper;
@@ -267,6 +271,40 @@ public class PlatformPublishService {
         return new PlatformSearchResult(page.items(), safePageNumber, safeLimit, page.hasMore(), page.total());
     }
 
+    public PlatformSearchResult crawlShop(String shopUrl, Long accountId, int pageNumber, int limit) {
+        if (accountId == null) {
+            throw new IllegalArgumentException("请选择用于采集的账号");
+        }
+        String userId = extractShopUserId(shopUrl);
+        String cookieText = accountService.getCookieByAccountId(accountId);
+        if (cookieText == null || cookieText.isBlank()) {
+            throw new IllegalStateException("账号Cookie不可用");
+        }
+        int safePageNumber = Math.max(1, pageNumber);
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
+                accountId,
+                "mtop.idle.web.xyh.item.list",
+                Map.of(
+                        "pageNumber", safePageNumber,
+                        "pageSize", safeLimit,
+                        "needGroupInfo", true,
+                        "userId", userId
+                ),
+                cookieText,
+                null,
+                Map.of(
+                        "spm_cnt", "a21ybx.personal.0.0",
+                        "spm_pre", "a21ybx.item.0.0"
+                ));
+        if (!result.isSuccess()) {
+            throw new IllegalStateException("平台店铺商品获取失败: " + result.getErrorMessage());
+        }
+        PlatformMarketplaceParser.SearchPage page =
+                responseParser.parseShopPageResponse(result.getResponse(), safeLimit);
+        return new PlatformSearchResult(page.items(), safePageNumber, safeLimit, page.hasMore(), page.total());
+    }
+
     static Map<String, Object> buildSearchRequest(String keyword, int limit) {
         return buildSearchRequest(keyword, 1, limit);
     }
@@ -287,6 +325,32 @@ public class PlatformPublishService {
         data.put("extraFilterValue", "{}");
         data.put("userPositionJson", "{}");
         return data;
+    }
+
+    static String extractShopUserId(String shopUrl) {
+        if (shopUrl == null || shopUrl.isBlank()) {
+            throw new IllegalArgumentException("请输入闲鱼店铺链接");
+        }
+        String value = URLDecoder.decode(shopUrl.trim(), StandardCharsets.UTF_8);
+        if (value.matches("\\d{5,}")) {
+            return value;
+        }
+        URI uri;
+        try {
+            uri = URI.create(value);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("闲鱼店铺链接格式无效", e);
+        }
+        String host = uri.getHost();
+        if (!"https".equalsIgnoreCase(uri.getScheme()) || host == null
+                || !(host.equals("goofish.com") || host.endsWith(".goofish.com"))) {
+            throw new IllegalArgumentException("仅支持HTTPS闲鱼店铺地址");
+        }
+        Matcher matcher = SHOP_USER_ID_PATTERN.matcher(value);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("店铺链接缺少userId，请从闲鱼网页版店铺主页复制完整地址");
+        }
+        return matcher.group(1);
     }
 
     public record PlatformSearchResult(List<Map<String, Object>> items, int pageNumber, int pageSize,

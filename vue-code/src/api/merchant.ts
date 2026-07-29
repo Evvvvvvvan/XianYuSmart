@@ -132,6 +132,15 @@ export function searchOpportunities(data: {
   return request<OpportunitySearchPage>({ url: '/merchant/opportunities/search', method: 'POST', data })
 }
 
+export function crawlShopOpportunities(data: {
+  shopUrl: string
+  xianyuAccountId?: number
+  pageNumber?: number
+  limit?: number
+}) {
+  return request<OpportunitySearchPage>({ url: '/merchant/opportunities/shop', method: 'POST', data })
+}
+
 export function importOpportunities(data: { candidates: OpportunityCandidate[]; xianyuAccountId?: number }) {
   return request<MerchantResource[]>({ url: '/merchant/opportunities/import', method: 'POST', data })
 }
@@ -139,6 +148,14 @@ export function importOpportunities(data: { candidates: OpportunityCandidate[]; 
 export function polishOpportunity(data: { title: string; description: string }) {
   return request<{ title: string; description: string }>({
     url: '/merchant/opportunities/polish',
+    method: 'POST',
+    data
+  })
+}
+
+export function generateOpportunityImage(data: { xianyuAccountId: number; prompt: string }) {
+  return request<{ url: string }>({
+    url: '/merchant/opportunities/image',
     method: 'POST',
     data
   })

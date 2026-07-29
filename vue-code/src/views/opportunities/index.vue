@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getAccountList } from '@/api/account'
-import { createPublishPlan, importOpportunities, polishOpportunity, searchOpportunities, type OpportunityCandidate } from '@/api/merchant'
+import { createPublishPlan, crawlShopOpportunities, generateOpportunityImage, importOpportunities, polishOpportunity, searchOpportunities, type OpportunityCandidate } from '@/api/merchant'
 import PublishAddressFields from '@/components/PublishAddressFields.vue'
 import type { PublishAddress } from '@/data/publish-address'
 import type { Account } from '@/types'
@@ -10,7 +10,9 @@ import '@/styles/merchant-workbench.css'
 
 const accounts = ref<Account[]>([])
 const accountId = ref<number>()
+const sourceMode = ref<'keyword' | 'shop'>('keyword')
 const keyword = ref('')
+const shopUrl = ref('')
 const loading = ref(false)
 const loadingMore = ref(false)
 const results = ref<OpportunityCandidate[]>([])
@@ -59,19 +61,28 @@ const loadAccounts = async () => {
   accountId.value ||= accounts.value[0]?.id
 }
 
+const resetResults = () => {
+  results.value = []
+  selectedIds.value = []
+  active.value = undefined
+  searched.value = false
+  pageNumber.value = 1
+  hasMore.value = false
+  total.value = 0
+}
+
 const search = async (append = false) => {
-  if (!keyword.value.trim()) return toast.error('请输入商品关键词')
+  if (sourceMode.value === 'keyword' && !keyword.value.trim()) return toast.error('请输入商品关键词')
+  if (sourceMode.value === 'shop' && !shopUrl.value.trim()) return toast.error('请输入闲鱼店铺链接')
   if (!accountId.value) return toast.error('请选择搜索账号')
   if (append) loadingMore.value = true
   else loading.value = true
   try {
     const targetPage = append ? pageNumber.value + 1 : 1
-    const response = await searchOpportunities({
-      keyword: keyword.value,
-      xianyuAccountId: accountId.value,
-      pageNumber: targetPage,
-      limit: 30
-    })
+    const common = { xianyuAccountId: accountId.value, pageNumber: targetPage, limit: 30 }
+    const response = sourceMode.value === 'keyword'
+      ? await searchOpportunities({ ...common, keyword: keyword.value })
+      : await crawlShopOpportunities({ ...common, shopUrl: shopUrl.value })
     const page = response.data
     const pageItems = page?.items || []
     results.value = append
@@ -155,13 +166,31 @@ const polish = async () => {
   }
 }
 
+const generateImage = async () => {
+  if (!accountId.value) return toast.error('请选择图片上传账号')
+  if (!draft.name.trim()) return toast.error('请先填写商品标题')
+  loading.value = true
+  try {
+    const response = await generateOpportunityImage({
+      xianyuAccountId: accountId.value,
+      prompt: `生成一张简洁真实的闲鱼商品主图，不添加水印、二维码和虚假参数。商品：${draft.name}。详情：${draft.description}`
+    })
+    if (response.data?.url) {
+      draft.images = [...new Set([...draft.images, response.data.url])].slice(0, 9)
+      toast.success('AI商品图已生成并上传到闲鱼图片服务')
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(loadAccounts)
 </script>
 
 <template>
   <section class="workbench opportunity">
     <header class="workbench__header">
-      <div><h1>商机发掘</h1><p>从候选商品到发布任务，一次完成采集、整理与配置。</p></div>
+      <div><h1>商机发掘</h1><p>按关键词搜索商品，或采集指定店铺，再完成详情整理、AI 润色与发布。</p></div>
     </header>
 
     <div class="workbench__steps">
@@ -174,10 +203,17 @@ onMounted(loadAccounts)
           <select v-model="accountId" class="workbench__select opportunity__account">
             <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option>
           </select>
-          <input v-model="keyword" class="workbench__input" placeholder="输入商品关键词，例如：华为 Mate 80" @keyup.enter="search(false)">
+          <select v-model="sourceMode" class="workbench__select opportunity__mode" @change="resetResults">
+            <option value="keyword">商品搜索</option>
+            <option value="shop">店铺采集</option>
+          </select>
+          <input v-if="sourceMode === 'keyword'" v-model="keyword" class="workbench__input" placeholder="输入商品关键词，例如：华为 Mate 80" @keyup.enter="search(false)">
+          <input v-else v-model="shopUrl" class="workbench__input" placeholder="粘贴闲鱼网页版店铺主页完整链接" @keyup.enter="search(false)">
           <button class="workbench__btn workbench__btn--primary" :disabled="loading" @click="search(false)">{{ loading ? '搜索中' : '开始搜索' }}</button>
         </div>
-        <div v-if="searched" class="opportunity__result-meta">平台共匹配 {{ total }} 件，当前已加载 {{ results.length }} 件</div>
+        <div v-if="searched" class="opportunity__result-meta">
+          {{ total > 0 ? `平台共匹配 ${total} 件，` : '' }}当前已加载 {{ results.length }} 件
+        </div>
         <div class="workbench__list workbench__section">
           <button v-for="item in results" :key="item.itemId" class="workbench__item opportunity__result" :class="{ 'opportunity__result--active': active?.itemId === item.itemId }" @click="toggle(item)">
             <input type="checkbox" :checked="selectedIds.includes(item.itemId)" @click.stop="toggle(item)">
@@ -192,7 +228,7 @@ onMounted(loadAccounts)
             </div>
             <strong>¥ {{ item.price || '--' }}</strong>
           </button>
-          <div v-if="!results.length" class="workbench__empty">{{ searched ? '平台未返回可用商品，请更换关键词或检查账号验证状态。' : '输入关键词后开始发现候选商品。' }}</div>
+          <div v-if="!results.length" class="workbench__empty">{{ searched ? '平台未返回可用商品，请检查输入内容、账号状态或平台验证。' : '选择商品搜索或店铺采集后开始发现候选商品。' }}</div>
           <button v-if="hasMore" class="workbench__btn opportunity__more" :disabled="loadingMore" @click="search(true)">{{ loadingMore ? '加载中' : '加载更多平台商品' }}</button>
         </div>
       </main>
@@ -210,9 +246,22 @@ onMounted(loadAccounts)
 
     <div v-else class="workbench__card opportunity__wizard workbench__section">
       <template v-if="step === 2">
-        <div class="opportunity__title-row"><h2>整理商品文案</h2><button class="workbench__btn" :disabled="loading" @click="polish">{{ loading ? '改写中' : 'AI 搬运润色' }}</button></div>
+        <div class="opportunity__title-row">
+          <h2>整理商品内容</h2>
+          <div class="workbench__actions">
+            <button class="workbench__btn" :disabled="loading" @click="polish">{{ loading ? '处理中' : 'AI 搬运润色' }}</button>
+            <button class="workbench__btn" :disabled="loading || draft.images.length >= 9" @click="generateImage">AI 生成商品图</button>
+          </div>
+        </div>
         <label class="workbench__field">商品标题<input v-model="draft.name" class="workbench__input" maxlength="120"></label>
         <label class="workbench__field">商品详情<textarea v-model="draft.description" class="workbench__textarea" maxlength="3000"></textarea></label>
+        <div class="opportunity__images">
+          <article v-for="(image, index) in draft.images" :key="image">
+            <img :src="image" alt="">
+            <button type="button" @click="draft.images.splice(index, 1)">移除</button>
+          </article>
+          <div v-if="!draft.images.length" class="workbench__empty">暂无商品图，可保留采集图片或使用 AI 生成。</div>
+        </div>
       </template>
       <template v-else-if="step === 3">
         <h2>配置发布参数</h2>
@@ -247,6 +296,7 @@ onMounted(loadAccounts)
 <style scoped>
 .opportunity__layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
 .opportunity__account { max-width: 180px; }
+.opportunity__mode { max-width: 130px; }
 .opportunity__result-meta { margin: 12px 0 -4px; color: #667085; font-size: 12px; }
 .opportunity__result { width: 100%; color: inherit; text-align: left; cursor: pointer; }
 .opportunity__result--active { border-color: #84adff; background: #f5f8ff; }
@@ -260,6 +310,10 @@ onMounted(loadAccounts)
 .opportunity__wizard { max-width: 980px; margin-right: auto; margin-left: auto; }
 .opportunity__wizard h2 { margin-top: 0; }
 .opportunity__title-row { display: flex; align-items: center; justify-content: space-between; }
+.opportunity__images { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 14px; }
+.opportunity__images article { overflow: hidden; border: 1px solid #e4e7ec; border-radius: 8px; background: #fff; }
+.opportunity__images img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; }
+.opportunity__images button { width: 100%; border: 0; border-top: 1px solid #e4e7ec; padding: 7px; color: #b42318; background: #fff; cursor: pointer; }
 .opportunity__wizard > .workbench__field { margin-bottom: 14px; }
 .opportunity__footer { justify-content: flex-end; margin-top: 18px; }
 .opportunity__summary { display: grid; grid-template-columns: 180px 1fr; gap: 18px; }

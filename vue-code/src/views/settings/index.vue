@@ -57,12 +57,15 @@ const similarityThresholdSaving = ref(false)
 const AI_API_KEY_SETTING = 'ai_api_key'
 const AI_BASE_URL_SETTING = 'ai_base_url'
 const AI_MODEL_SETTING = 'ai_model'
+const AI_IMAGE_MODEL_SETTING = 'ai_image_model'
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode'
 const DEFAULT_MODEL = 'deepseek-v3'
+const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
 
 const aiApiKey = ref('')
 const aiBaseUrl = ref(DEFAULT_BASE_URL)
 const aiModel = ref(DEFAULT_MODEL)
+const aiImageModel = ref(DEFAULT_IMAGE_MODEL)
 const aiApiKeySaving = ref(false)
 const showApiKey = ref(false)
 
@@ -170,10 +173,11 @@ onMounted(async () => {
 
 async function loadAIConfig() {
   try {
-    const [apiKeyRes, baseUrlRes, modelRes] = await Promise.all([
+    const [apiKeyRes, baseUrlRes, modelRes, imageModelRes] = await Promise.all([
       getSetting({ settingKey: AI_API_KEY_SETTING }),
       getSetting({ settingKey: AI_BASE_URL_SETTING }),
-      getSetting({ settingKey: AI_MODEL_SETTING })
+      getSetting({ settingKey: AI_MODEL_SETTING }),
+      getSetting({ settingKey: AI_IMAGE_MODEL_SETTING })
     ])
 
     if (apiKeyRes.code === 200 && apiKeyRes.data) {
@@ -184,6 +188,9 @@ async function loadAIConfig() {
     }
     if (modelRes.code === 200 && modelRes.data && modelRes.data.settingValue) {
       aiModel.value = modelRes.data.settingValue
+    }
+    if (imageModelRes.code === 200 && imageModelRes.data && imageModelRes.data.settingValue) {
+      aiImageModel.value = imageModelRes.data.settingValue
     }
   } catch (e) {
     console.error('获取AI配置失败:', e)
@@ -347,11 +354,15 @@ async function handleSaveAIConfig() {
     toast.warning('模型名称不能为空')
     return
   }
+  if (!aiImageModel.value.trim()) {
+    toast.warning('生图模型名称不能为空')
+    return
+  }
 
   aiApiKeySaving.value = true
   try {
-    // 保存三个配置
-    const [keyRes, urlRes, modelRes] = await Promise.all([
+    // 对话与商品图共用鉴权和Base URL，模型名称分别配置。
+    const [keyRes, urlRes, modelRes, imageModelRes] = await Promise.all([
       saveSetting({
         settingKey: AI_API_KEY_SETTING,
         settingValue: aiApiKey.value.trim(),
@@ -366,10 +377,15 @@ async function handleSaveAIConfig() {
         settingKey: AI_MODEL_SETTING,
         settingValue: aiModel.value.trim(),
         settingDesc: 'AI对话模型名称'
+      }),
+      saveSetting({
+        settingKey: AI_IMAGE_MODEL_SETTING,
+        settingValue: aiImageModel.value.trim(),
+        settingDesc: 'AI商品图生成模型名称'
       })
     ])
 
-    if (keyRes.code === 200 && urlRes.code === 200 && modelRes.code === 200) {
+    if (keyRes.code === 200 && urlRes.code === 200 && modelRes.code === 200 && imageModelRes.code === 200) {
       toast.success('AI 配置保存成功，已立即生效')
       // 刷新 AI 状态
       await loadAIStatus()
@@ -386,6 +402,7 @@ function handleResetAIConfig() {
   aiApiKey.value = ''
   aiBaseUrl.value = DEFAULT_BASE_URL
   aiModel.value = DEFAULT_MODEL
+  aiImageModel.value = DEFAULT_IMAGE_MODEL
 }
 
 async function handleSaveEmbeddingConfig() {
@@ -935,6 +952,18 @@ function handleBackupMenuEnter() {
                 placeholder="AI 对话模型名称"
                 :disabled="aiApiKeySaving"
               />
+            </div>
+
+            <div class="settings__field">
+              <label class="settings__label">商品图模型名称</label>
+              <input
+                v-model="aiImageModel"
+                type="text"
+                class="settings__input"
+                placeholder="OpenAI 兼容的图片生成模型"
+                :disabled="aiApiKeySaving"
+              />
+              <span class="settings__label-hint">商机发掘中的 AI 商品图使用该模型，生成后自动上传到闲鱼图片服务。</span>
             </div>
 
             <div class="settings__actions">

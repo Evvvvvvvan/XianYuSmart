@@ -102,6 +102,47 @@ class PlatformMarketplaceParser {
 
     record SearchPage(List<Map<String, Object>> items, boolean hasMore, long total) { }
 
+    SearchPage parseShopPageResponse(String response, int limit) {
+        Map<String, Object> data = map(readMap(response).get("data"));
+        List<?> cards = findList(data, Set.of("cardList"));
+        List<Map<String, Object>> result = new ArrayList<>();
+        Set<String> itemIds = new LinkedHashSet<>();
+        for (Object cardValue : cards) {
+            Map<String, Object> card = map(cardValue);
+            Map<String, Object> cardData = firstNonEmptyMap(card.get("cardData"), card);
+            Map<String, Object> detailParams = map(cardData.get("detailParams"));
+            String itemId = firstNonBlank(
+                    firstText(cardData, "id", "itemId"),
+                    firstText(detailParams, "itemId", "id"));
+            if (itemId.isBlank() || !itemIds.add(itemId)) {
+                continue;
+            }
+            Map<String, Object> priceInfo = map(cardData.get("priceInfo"));
+            Map<String, Object> picInfo = map(cardData.get("picInfo"));
+            String image = firstNonBlank(
+                    firstText(picInfo, "picUrl", "url"),
+                    firstText(detailParams, "picUrl", "picUrlNew"),
+                    firstText(cardData, "coverPic", "imageUrl", "mainPicUrl"));
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("itemId", itemId);
+            item.put("title", firstNonBlank(
+                    firstText(cardData, "title", "itemName"),
+                    firstText(detailParams, "title")));
+            item.put("sourceUrl", "https://www.goofish.com/item?id=" + itemId);
+            item.put("price", firstNonBlank(
+                    firstText(priceInfo, "price", "value"),
+                    firstText(detailParams, "soldPrice"),
+                    firstText(cardData, "price", "soldPrice")));
+            item.put("images", image.isBlank() ? List.of() : List.of(https(image)));
+            result.add(item);
+            if (result.size() >= limit) {
+                break;
+            }
+        }
+        long total = firstLong(data, "totalCount", "total", "numFound");
+        return new SearchPage(result, result.size() >= limit, total);
+    }
+
     Map<String, Object> parseItemDetailResponse(String response, String itemId) {
         Map<String, Object> data = map(readMap(response).get("data"));
         Map<String, Object> item = firstNonEmptyMap(data.get("itemDO"), data.get("item"), data);
@@ -290,5 +331,15 @@ class PlatformMarketplaceParser {
         } catch (Exception ignored) {
             return 0;
         }
+    }
+
+    private long firstLong(Map<String, Object> source, String... keys) {
+        for (String key : keys) {
+            long value = longValue(source.get(key));
+            if (value > 0) {
+                return value;
+            }
+        }
+        return 0;
     }
 }
