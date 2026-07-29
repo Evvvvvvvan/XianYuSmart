@@ -54,6 +54,7 @@ export function getMessageList(data: {
 
 // 根据会话ID获取上下文消息
 export function getContextMessages(data: {
+  xianyuAccountId: number;
   sid: string;
   limit?: number;
   offset?: number;
@@ -61,7 +62,24 @@ export function getContextMessages(data: {
   return request<ChatMessage[]>({
     url: '/msg/context',
     method: 'POST',
-    data: { sid: data.sid, limit: data.limit || 20, offset: data.offset || 0 }
+    data: {
+      xianyuAccountId: data.xianyuAccountId,
+      sid: data.sid,
+      limit: data.limit || 20,
+      offset: data.offset || 0
+    }
+  });
+}
+
+export function syncContextMessages(data: {
+  xianyuAccountId: number;
+  sid: string;
+  maxMessages?: number;
+}) {
+  return request<{ received: number; saved: number }>({
+    url: '/msg/context/sync',
+    method: 'POST',
+    data
   });
 }
 

@@ -992,11 +992,20 @@ public class WebSocketServiceImpl implements WebSocketService {
         }
     }
 
-    public void completePendingResponse(Long accountId, String mid, int code) {
+    public void completePendingResponse(Long accountId, String mid, int code, Map<String, Object> response) {
         XianyuWebSocketClient client = webSocketClients.get(accountId);
         if (client != null) {
-            client.completePendingResponse(mid, code);
+            client.completePendingResponse(mid, code, response);
         }
+    }
+
+    @Override
+    public java.util.List<Map<String, Object>> listConversationHistory(Long accountId, String cid, int maxMessages) {
+        XianyuWebSocketClient client = webSocketClients.get(accountId);
+        if (client == null || !client.isConnected()) {
+            throw new IllegalStateException("账号实时连接未建立，请先恢复连接");
+        }
+        return client.listConversationHistory(cid, maxMessages);
     }
     
     @Override

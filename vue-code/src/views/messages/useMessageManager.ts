@@ -15,7 +15,7 @@ export function useMessageManager() {
   const goodsIdFilter = ref('')
   const messageList = ref<ChatMessage[]>([])
   const currentPage = ref(1)
-  const pageSize = ref(20)
+  const pageSize = ref(500)
   const total = ref(0)
   const filterCurrentAccount = ref(false)
 

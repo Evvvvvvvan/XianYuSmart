@@ -50,6 +50,9 @@ public class XianyuWebSocketClient extends WebSocketClient {
 
     // 等待响应的Future（mid -> CompletableFuture<code>）
     private final ConcurrentHashMap<String, CompletableFuture<Integer>> pendingResponses = new ConcurrentHashMap<>();
+
+    // 历史消息查询需要读取完整响应体，按请求mid隔离并发会话。
+    private final ConcurrentHashMap<String, CompletableFuture<Map<String, Object>>> pendingPayloadResponses = new ConcurrentHashMap<>();
     
     // 注册成功回调
     private Runnable onRegistrationSuccess;
@@ -659,6 +662,105 @@ public class XianyuWebSocketClient extends WebSocketClient {
         if (future != null && !future.isDone()) {
             future.complete(code);
             log.debug("【账号{}】完成pendingResponse: mid={}, code={}", accountId, mid, code);
+        }
+    }
+
+    public void completePendingResponse(String mid, int code, Map<String, Object> response) {
+        completePendingResponse(mid, code);
+        CompletableFuture<Map<String, Object>> future = pendingPayloadResponses.remove(mid);
+        if (future != null && !future.isDone()) {
+            if (code == 200) {
+                future.complete(response);
+            } else {
+                future.completeExceptionally(new IllegalStateException("平台历史消息查询失败: " + code));
+            }
+        }
+    }
+
+    /**
+     * 按XianYuApis协议分页读取指定会话历史消息
+     */
+    public java.util.List<Map<String, Object>> listConversationHistory(String cid, int maxMessages) {
+        if (!isConnected()) {
+            throw new IllegalStateException("账号实时连接未建立，请先恢复连接");
+        }
+        String cleanCid = cid == null ? "" : cid.replace("@goofish", "").trim();
+        if (cleanCid.isEmpty()) {
+            throw new IllegalArgumentException("会话ID不能为空");
+        }
+        int safeMaximum = Math.max(20, Math.min(maxMessages, 500));
+        long cursor = 9007199254740991L;
+        java.util.List<Map<String, Object>> messages = new java.util.ArrayList<>();
+        boolean hasMore = true;
+        while (hasMore && messages.size() < safeMaximum) {
+            Map<String, Object> response = requestConversationHistoryPage(cleanCid, cursor);
+            Map<String, Object> body = map(response.get("body"));
+            Object modelsValue = body.get("userMessageModels");
+            if (modelsValue instanceof java.util.List<?> models) {
+                for (Object model : models) {
+                    if (model instanceof Map<?, ?> source) {
+                        Map<String, Object> normalized = new HashMap<>();
+                        source.forEach((key, value) -> normalized.put(String.valueOf(key), value));
+                        messages.add(normalized);
+                        if (messages.size() >= safeMaximum) {
+                            break;
+                        }
+                    }
+                }
+            }
+            Object hasMoreValue = body.get("hasMore");
+            hasMore = Boolean.TRUE.equals(hasMoreValue)
+                    || "1".equals(String.valueOf(hasMoreValue))
+                    || "true".equalsIgnoreCase(String.valueOf(hasMoreValue));
+            Long nextCursor = longValue(body.get("nextCursor"));
+            if (!hasMore || nextCursor == null || nextCursor == cursor) {
+                break;
+            }
+            cursor = nextCursor;
+        }
+        return messages;
+    }
+
+    private Map<String, Object> requestConversationHistoryPage(String cid, long cursor) {
+        String mid = generateMid();
+        Map<String, Object> request = new HashMap<>();
+        request.put("lwp", "/r/MessageManager/listUserMessages");
+        Map<String, String> headers = new HashMap<>();
+        headers.put("mid", mid);
+        if (sessionId != null) {
+            headers.put("sid", sessionId);
+        }
+        request.put("headers", headers);
+        request.put("body", java.util.List.of(cid + "@goofish", false, cursor, 20, false));
+
+        CompletableFuture<Map<String, Object>> future = new CompletableFuture<>();
+        pendingPayloadResponses.put(mid, future);
+        try {
+            send(objectMapper.writeValueAsString(request));
+            return future.get(10, TimeUnit.SECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            throw new IllegalStateException("平台历史消息查询超时");
+        } catch (Exception e) {
+            throw new IllegalStateException("平台历史消息查询失败: " + e.getMessage(), e);
+        } finally {
+            pendingPayloadResponses.remove(mid);
+        }
+    }
+
+    private Map<String, Object> map(Object value) {
+        if (!(value instanceof Map<?, ?> source)) {
+            return Map.of();
+        }
+        Map<String, Object> result = new HashMap<>();
+        source.forEach((key, child) -> result.put(String.valueOf(key), child));
+        return result;
+    }
+
+    private Long longValue(Object value) {
+        try {
+            return value == null ? null : Long.valueOf(String.valueOf(value));
+        } catch (Exception ignored) {
+            return null;
         }
     }
 

@@ -60,12 +60,17 @@ public class XianyuApiUtils {
      * @return URL参数Map
      */
     public static Map<String, String> buildStandardParams(String apiName, String timestamp, String sign) {
+        return buildStandardParams(apiName, timestamp, sign, "1.0");
+    }
+
+    public static Map<String, String> buildStandardParams(String apiName, String timestamp, String sign,
+                                                           String apiVersion) {
         Map<String, String> params = new HashMap<>();
         params.put("jsv", "2.7.2");
         params.put("appKey", APP_KEY);
         params.put("t", timestamp);
         params.put("sign", sign);
-        params.put("v", "1.0");
+        params.put("v", apiVersion);
         params.put("type", "originaljson");
         params.put("accountSite", "xianyu");
         params.put("dataType", "json");
@@ -204,7 +209,7 @@ public class XianyuApiUtils {
             String sign = XianyuSignUtils.generateSign(timestamp, token, dataJson);
 
             // 5. 构建URL参数
-            Map<String, String> params = buildStandardParams(apiName, timestamp, sign);
+            Map<String, String> params = buildStandardParams(apiName, timestamp, sign, apiPathVersion);
 
             // 6. 添加SPM参数（如果提供）
             if (spmCnt != null || spmPre != null) {

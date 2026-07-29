@@ -3,7 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { getAccountList } from '@/api/account'
 import { uploadImage } from '@/api/image'
 import { createPublishPlan, getResources, type MerchantResource } from '@/api/merchant'
-import { CHINA_PROVINCES, CHINA_REGIONS } from '@/data/china-regions'
+import PublishAddressFields from '@/components/PublishAddressFields.vue'
+import type { PublishAddress } from '@/data/publish-address'
 import type { Account } from '@/types'
 import { toast } from '@/utils/toast'
 import '@/styles/merchant-workbench.css'
@@ -24,12 +25,27 @@ const form = reactive({
   province: '北京市',
   city: '北京市',
   district: '',
+  divisionId: '',
+  gps: '',
+  poiId: '',
+  poiName: '',
   deliveryMethod: '线上交付',
   imagesText: ''
 })
 
-const cities = computed(() => CHINA_REGIONS[form.province] || [])
 const images = computed(() => form.imagesText.split('\n').map(value => value.trim()).filter(Boolean))
+const publishAddress = computed<PublishAddress>({
+  get: () => ({
+    province: form.province,
+    city: form.city,
+    district: form.district,
+    divisionId: form.divisionId,
+    gps: form.gps,
+    poiId: form.poiId,
+    poiName: form.poiName
+  }),
+  set: value => Object.assign(form, value)
+})
 
 const load = async () => {
   const [accountResult, materialResult] = await Promise.all([getAccountList(), getResources('MATERIAL', 1)])
@@ -76,7 +92,7 @@ const removeImage = (target: string) => {
 const next = () => {
   if (step.value === 1 && (!form.name.trim() || !form.description.trim())) return toast.error('请完善标题和详情')
   if (step.value === 2 && (!form.amount || !images.value.length)) return toast.error('请完善价格并添加图片')
-  if (step.value === 3 && !form.xianyuAccountId) return toast.error('请选择发布账号')
+  if (step.value === 3 && (!form.xianyuAccountId || !form.divisionId || !form.gps)) return toast.error('请选择发布账号和完整发布位置')
   step.value = Math.min(4, step.value + 1)
   maxStep.value = Math.max(maxStep.value, step.value)
 }
@@ -132,12 +148,10 @@ onMounted(load)
         <div class="publish__images"><button v-for="image in images.slice(0, 9)" :key="image" type="button" @click="removeImage(image)"><img :src="image" alt=""><span>移除</span></button></div>
       </template>
       <template v-else-if="step === 3">
-        <div class="publish__notice">实际发布位置会读取该闲鱼账号已保存的常用位置；本地行政区划用于整理素材信息，平台未返回有效位置时会停止发布并明确提示。</div>
+        <div class="publish__notice">所选省、市、区会直接用于平台发布校验，不再依赖账号是否保存过常用位置。</div>
         <div class="workbench__grid workbench__grid--two">
           <label class="workbench__field">发布账号<select v-model="form.xianyuAccountId" class="workbench__select"><option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option></select></label>
-          <label class="workbench__field">省份<select v-model="form.province" class="workbench__select" @change="form.city = cities[0] || ''"><option v-for="province in CHINA_PROVINCES" :key="province">{{ province }}</option></select></label>
-          <label class="workbench__field">城市<select v-model="form.city" class="workbench__select"><option v-for="city in cities" :key="city">{{ city }}</option></select></label>
-          <label class="workbench__field">区县/详细位置<input v-model="form.district" class="workbench__input" placeholder="按实际发布位置填写"></label>
+          <PublishAddressFields v-model="publishAddress" />
         </div>
       </template>
       <template v-else>

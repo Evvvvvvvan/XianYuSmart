@@ -22,6 +22,10 @@ class PlatformMarketplaceParser {
     }
 
     List<Map<String, Object>> parseSearchResponse(String response, int limit) {
+        return parseSearchPageResponse(response, limit, false).items();
+    }
+
+    SearchPage parseSearchPageResponse(String response, int limit, boolean allowEmpty) {
         Map<String, Object> root = readMap(response);
         Map<String, Object> data = map(root.get("data"));
         List<?> records = findList(data, Set.of("resultList", "cardList", "items"));
@@ -29,21 +33,40 @@ class PlatformMarketplaceParser {
         Set<String> itemIds = new LinkedHashSet<>();
         for (Object recordValue : records) {
             Map<String, Object> record = map(recordValue);
-            Map<String, Object> card = firstNonEmptyMap(record.get("cardData"), record.get("data"), record);
-            String itemId = firstText(card, "itemId", "id", "idleItemId");
+            // PC 搜索商品主体嵌套在 data.item.main，保留旧结构回退以兼容历史响应。
+            Map<String, Object> card = locateSearchCard(record);
+            Map<String, Object> exContent = map(card.get("exContent"));
+            Map<String, Object> detailParams = map(exContent.get("detailParams"));
+            Map<String, Object> clickArgs = map(map(card.get("clickParam")).get("args"));
+            String itemId = firstNonBlank(
+                    firstText(exContent, "itemId", "id", "idleItemId"),
+                    firstText(clickArgs, "item_id", "itemId", "id"),
+                    firstText(card, "itemId", "id", "idleItemId"));
             if (itemId.isBlank() || !itemIds.add(itemId)) {
                 continue;
             }
-            String title = nestedText(card, "titleSummary", "text");
+            String title = firstNonBlank(
+                    firstText(detailParams, "title", "desc"),
+                    firstText(exContent, "title", "desc"));
+            if (title.isBlank()) {
+                title = nestedText(card, "titleSummary", "text");
+            }
             if (title.isBlank()) {
                 title = firstText(card, "title", "desc");
             }
-            String image = nestedText(card, "mainPicInfo", "url");
+            String image = firstText(exContent, "picUrl", "mainPicUrl", "image");
+            if (image.isBlank()) {
+                image = nestedText(card, "mainPicInfo", "url");
+            }
             if (image.isBlank()) {
                 image = firstText(card, "mainPicUrl", "picUrl", "image");
             }
             Map<String, Object> priceInfo = map(card.get("priceInfo"));
-            String price = firstText(priceInfo, "price", "priceText", "value");
+            String price = firstNonBlank(
+                    firstText(clickArgs, "price", "displayPrice"),
+                    firstText(detailParams, "soldPrice", "price"),
+                    firstText(priceInfo, "price", "priceText", "value"),
+                    priceText(exContent.get("price")));
             Map<String, Object> user = map(card.get("user"));
 
             Map<String, Object> item = new LinkedHashMap<>();
@@ -52,17 +75,74 @@ class PlatformMarketplaceParser {
             item.put("sourceUrl", "https://www.goofish.com/item?id=" + itemId);
             item.put("price", price);
             item.put("images", image.isBlank() ? List.of() : List.of(https(image)));
-            item.put("sellerNick", firstText(user, "userNick", "nick", "nickname"));
-            item.put("sellerAvatar", https(firstText(user, "avatar", "logo")));
+            item.put("sellerNick", firstNonBlank(
+                    firstText(detailParams, "userNick", "userNickName", "nickname"),
+                    firstText(exContent, "userNickName", "userNick", "nickname"),
+                    firstText(user, "userNick", "nick", "nickname")));
+            item.put("sellerId", firstNonBlank(
+                    firstText(detailParams, "userId", "sellerId"),
+                    firstText(exContent, "userId", "sellerId"),
+                    firstText(user, "userId", "sellerId")));
+            item.put("sellerAvatar", https(firstNonBlank(
+                    firstText(exContent, "userAvatarUrl", "avatar"),
+                    firstText(user, "avatar", "logo"))));
             result.add(item);
             if (result.size() >= limit) {
                 break;
             }
         }
-        if (result.isEmpty()) {
+        if (result.isEmpty() && !allowEmpty) {
             throw new IllegalStateException("平台搜索没有返回商品，请检查关键词、账号状态或完成平台验证后重试");
         }
+        Map<String, Object> resultInfo = map(data.get("resultInfo"));
+        boolean hasMore = booleanValue(resultInfo.get("hasNextPage"));
+        long total = longValue(resultInfo.get("numFound"));
+        return new SearchPage(result, hasMore, total);
+    }
+
+    record SearchPage(List<Map<String, Object>> items, boolean hasMore, long total) { }
+
+    Map<String, Object> parseItemDetailResponse(String response, String itemId) {
+        Map<String, Object> data = map(readMap(response).get("data"));
+        Map<String, Object> item = firstNonEmptyMap(data.get("itemDO"), data.get("item"), data);
+        Map<String, Object> seller = firstNonEmptyMap(data.get("sellerDO"), item.get("sellerDO"), item.get("seller"));
+        List<?> imageInfos = findList(firstNonEmptyMap(data, item), Set.of("imageInfos", "images"));
+        List<String> images = new ArrayList<>();
+        for (Object imageValue : imageInfos) {
+            String image = imageValue instanceof Map<?, ?>
+                    ? firstText(map(imageValue), "url", "imageUrl", "picUrl")
+                    : text(imageValue);
+            if (!image.isBlank()) {
+                images.add(https(image));
+            }
+        }
+        String title = firstText(item, "title", "desc");
+        if (title.isBlank()) {
+            throw new IllegalStateException("平台商品详情缺少标题");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("itemId", itemId);
+        result.put("title", title);
+        result.put("description", firstText(item, "desc", "description"));
+        result.put("price", firstText(item, "soldPrice", "price", "originalPrice"));
+        result.put("images", images);
+        result.put("sourceUrl", "https://www.goofish.com/item?id=" + itemId);
+        result.put("sellerId", firstText(seller, "sellerId", "userId"));
+        result.put("sellerNick", firstText(seller, "nick", "userNick", "nickname"));
+        result.put("sellerAvatar", https(firstText(seller, "portraitUrl", "avatar", "logo")));
         return result;
+    }
+
+    private Map<String, Object> locateSearchCard(Map<String, Object> record) {
+        Map<String, Object> data = map(record.get("data"));
+        Map<String, Object> item = map(data.get("item"));
+        return firstNonEmptyMap(
+                map(item.get("main")),
+                map(data.get("main")),
+                record.get("cardData"),
+                item,
+                data,
+                record);
     }
 
     String extractPublishedItemId(String response) {
@@ -92,9 +172,9 @@ class PlatformMarketplaceParser {
             return Map.of();
         }
         Map<String, Object> current = map(source);
-        if (!firstText(current, "divisionId").isBlank()
-                && (!firstText(current, "prov", "province").isBlank()
-                || !firstText(current, "city").isBlank())) {
+        if (!firstText(current, "divisionId", "addressDivisionId", "adcode").isBlank()
+                && (!firstText(current, "prov", "province", "addressProv", "pname").isBlank()
+                || !firstText(current, "city", "addressCity", "cityname").isBlank())) {
             return current;
         }
         for (Object child : source.values()) {
@@ -141,6 +221,22 @@ class PlatformMarketplaceParser {
         return text(map(source.get(objectKey)).get(valueKey));
     }
 
+    private String priceText(Object value) {
+        if (value instanceof Map<?, ?>) {
+            return firstText(map(value), "value", "text", "price");
+        }
+        return text(value);
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
     private String firstText(Map<String, Object> source, String... keys) {
         for (String key : keys) {
             String value = text(source.get(key));
@@ -180,5 +276,19 @@ class PlatformMarketplaceParser {
 
     private String text(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    private boolean booleanValue(Object value) {
+        return Boolean.TRUE.equals(value)
+                || "1".equals(String.valueOf(value))
+                || "true".equalsIgnoreCase(String.valueOf(value));
+    }
+
+    private long longValue(Object value) {
+        try {
+            return value == null ? 0 : Long.parseLong(String.valueOf(value));
+        } catch (Exception ignored) {
+            return 0;
+        }
     }
 }

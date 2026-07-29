@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getAccountList } from '@/api/account'
-import { createPublishPlan, importOpportunities, searchOpportunities, type OpportunityCandidate } from '@/api/merchant'
-import { CHINA_PROVINCES, CHINA_REGIONS } from '@/data/china-regions'
+import { createPublishPlan, importOpportunities, polishOpportunity, searchOpportunities, type OpportunityCandidate } from '@/api/merchant'
+import PublishAddressFields from '@/components/PublishAddressFields.vue'
+import type { PublishAddress } from '@/data/publish-address'
 import type { Account } from '@/types'
 import { toast } from '@/utils/toast'
 import '@/styles/merchant-workbench.css'
@@ -11,12 +12,16 @@ const accounts = ref<Account[]>([])
 const accountId = ref<number>()
 const keyword = ref('')
 const loading = ref(false)
+const loadingMore = ref(false)
 const results = ref<OpportunityCandidate[]>([])
 const selectedIds = ref<string[]>([])
 const active = ref<OpportunityCandidate>()
 const step = ref(1)
 const maxStep = ref(1)
 const searched = ref(false)
+const pageNumber = ref(1)
+const hasMore = ref(false)
+const total = ref(0)
 const draft = reactive({
   name: '',
   description: '',
@@ -26,12 +31,27 @@ const draft = reactive({
   province: '北京市',
   city: '北京市',
   district: '',
+  divisionId: '',
+  gps: '',
+  poiId: '',
+  poiName: '',
   deliveryMethod: '线上交付',
   images: [] as string[]
 })
 
-const cities = computed(() => CHINA_REGIONS[draft.province] || [])
 const selectedCandidates = computed(() => results.value.filter(item => selectedIds.value.includes(item.itemId)))
+const publishAddress = computed<PublishAddress>({
+  get: () => ({
+    province: draft.province,
+    city: draft.city,
+    district: draft.district,
+    divisionId: draft.divisionId,
+    gps: draft.gps,
+    poiId: draft.poiId,
+    poiName: draft.poiName
+  }),
+  set: value => Object.assign(draft, value)
+})
 
 const loadAccounts = async () => {
   const response = await getAccountList()
@@ -39,18 +59,35 @@ const loadAccounts = async () => {
   accountId.value ||= accounts.value[0]?.id
 }
 
-const search = async () => {
+const search = async (append = false) => {
   if (!keyword.value.trim()) return toast.error('请输入商品关键词')
   if (!accountId.value) return toast.error('请选择搜索账号')
-  loading.value = true
+  if (append) loadingMore.value = true
+  else loading.value = true
   try {
-    const response = await searchOpportunities({ keyword: keyword.value, xianyuAccountId: accountId.value, limit: 30 })
-    results.value = response.data || []
+    const targetPage = append ? pageNumber.value + 1 : 1
+    const response = await searchOpportunities({
+      keyword: keyword.value,
+      xianyuAccountId: accountId.value,
+      pageNumber: targetPage,
+      limit: 30
+    })
+    const page = response.data
+    const pageItems = page?.items || []
+    results.value = append
+      ? [...results.value, ...pageItems.filter(item => !results.value.some(current => current.itemId === item.itemId))]
+      : pageItems
+    pageNumber.value = page?.pageNumber || targetPage
+    hasMore.value = Boolean(page?.hasMore)
+    total.value = Number(page?.total || results.value.length)
     searched.value = true
-    selectedIds.value = []
-    active.value = results.value[0]
+    if (!append) {
+      selectedIds.value = []
+      active.value = results.value[0]
+    }
   } finally {
     loading.value = false
+    loadingMore.value = false
   }
 }
 
@@ -63,20 +100,21 @@ const toggle = (item: OpportunityCandidate) => {
 
 const capture = async () => {
   if (!selectedCandidates.value.length) return toast.error('至少选择一个候选商品')
-  await importOpportunities({ candidates: selectedCandidates.value, xianyuAccountId: accountId.value })
+  const response = await importOpportunities({ candidates: selectedCandidates.value, xianyuAccountId: accountId.value })
   const item = selectedCandidates.value[0]!
+  const collected = response.data?.[0]?.data || item
   active.value = item
-  draft.name = item.title
-  draft.description = item.title
-  draft.amount = Number(item.price || 0)
-  draft.images = item.images || []
+  draft.name = String(collected.title || item.title)
+  draft.description = String(collected.description || collected.title || item.title)
+  draft.amount = Number(collected.price || item.price || 0)
+  draft.images = collected.images || item.images || []
   step.value = 2
   maxStep.value = 2
 }
 
 const next = () => {
   if (step.value === 2 && (!draft.name.trim() || !draft.description.trim())) return toast.error('标题和详情不能为空')
-  if (step.value === 3 && (!draft.amount || !draft.images.length)) return toast.error('请补充价格和至少一张图片')
+  if (step.value === 3 && (!draft.amount || !draft.images.length || !draft.divisionId || !draft.gps)) return toast.error('请补充价格、图片和完整发布位置')
   step.value = Math.min(4, step.value + 1)
   maxStep.value = Math.max(maxStep.value, step.value)
 }
@@ -102,6 +140,21 @@ const publish = async (dryRun = false) => {
   }
 }
 
+const polish = async () => {
+  if (!draft.name.trim()) return toast.error('请先选择并整理商品')
+  loading.value = true
+  try {
+    const response = await polishOpportunity({ title: draft.name, description: draft.description })
+    if (response.data) {
+      draft.name = response.data.title
+      draft.description = response.data.description
+      toast.success('AI文案改写完成')
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
 onMounted(loadAccounts)
 </script>
 
@@ -121,9 +174,10 @@ onMounted(loadAccounts)
           <select v-model="accountId" class="workbench__select opportunity__account">
             <option v-for="account in accounts" :key="account.id" :value="account.id">{{ account.accountNote || account.unb }}</option>
           </select>
-          <input v-model="keyword" class="workbench__input" placeholder="输入商品关键词，例如：华为 Mate 80" @keyup.enter="search">
-          <button class="workbench__btn workbench__btn--primary" :disabled="loading" @click="search">{{ loading ? '搜索中' : '开始搜索' }}</button>
+          <input v-model="keyword" class="workbench__input" placeholder="输入商品关键词，例如：华为 Mate 80" @keyup.enter="search(false)">
+          <button class="workbench__btn workbench__btn--primary" :disabled="loading" @click="search(false)">{{ loading ? '搜索中' : '开始搜索' }}</button>
         </div>
+        <div v-if="searched" class="opportunity__result-meta">平台共匹配 {{ total }} 件，当前已加载 {{ results.length }} 件</div>
         <div class="workbench__list workbench__section">
           <button v-for="item in results" :key="item.itemId" class="workbench__item opportunity__result" :class="{ 'opportunity__result--active': active?.itemId === item.itemId }" @click="toggle(item)">
             <input type="checkbox" :checked="selectedIds.includes(item.itemId)" @click.stop="toggle(item)">
@@ -139,6 +193,7 @@ onMounted(loadAccounts)
             <strong>¥ {{ item.price || '--' }}</strong>
           </button>
           <div v-if="!results.length" class="workbench__empty">{{ searched ? '平台未返回可用商品，请更换关键词或检查账号验证状态。' : '输入关键词后开始发现候选商品。' }}</div>
+          <button v-if="hasMore" class="workbench__btn opportunity__more" :disabled="loadingMore" @click="search(true)">{{ loadingMore ? '加载中' : '加载更多平台商品' }}</button>
         </div>
       </main>
       <aside class="workbench__card opportunity__preview">
@@ -155,7 +210,7 @@ onMounted(loadAccounts)
 
     <div v-else class="workbench__card opportunity__wizard workbench__section">
       <template v-if="step === 2">
-        <h2>整理商品文案</h2>
+        <div class="opportunity__title-row"><h2>整理商品文案</h2><button class="workbench__btn" :disabled="loading" @click="polish">{{ loading ? '改写中' : 'AI 搬运润色' }}</button></div>
         <label class="workbench__field">商品标题<input v-model="draft.name" class="workbench__input" maxlength="120"></label>
         <label class="workbench__field">商品详情<textarea v-model="draft.description" class="workbench__textarea" maxlength="3000"></textarea></label>
       </template>
@@ -166,9 +221,7 @@ onMounted(loadAccounts)
           <label class="workbench__field">库存<input v-model.number="draft.stock" class="workbench__input" type="number" min="1"></label>
           <label class="workbench__field">素材分类<input v-model="draft.category" class="workbench__input"><small>仅用于站内整理，真实类目由闲鱼发布接口识别。</small></label>
           <label class="workbench__field">交付方式<select v-model="draft.deliveryMethod" class="workbench__select"><option>线上交付</option><option>快递发货</option><option>当面交易</option></select></label>
-          <label class="workbench__field">省份<select v-model="draft.province" class="workbench__select" @change="draft.city = cities[0] || ''"><option v-for="province in CHINA_PROVINCES" :key="province">{{ province }}</option></select></label>
-          <label class="workbench__field">城市<select v-model="draft.city" class="workbench__select"><option v-for="city in cities" :key="city">{{ city }}</option></select></label>
-          <label class="workbench__field">区县/详细位置<input v-model="draft.district" class="workbench__input" placeholder="站内素材备注，发布使用账号常用位置"></label>
+          <PublishAddressFields v-model="publishAddress" />
           <label class="workbench__field">图片地址（每行一张）<textarea :value="draft.images.join('\n')" class="workbench__textarea" @input="draft.images = ($event.target as HTMLTextAreaElement).value.split('\n').map(v => v.trim()).filter(Boolean)"></textarea></label>
         </div>
       </template>
@@ -194,6 +247,7 @@ onMounted(loadAccounts)
 <style scoped>
 .opportunity__layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; }
 .opportunity__account { max-width: 180px; }
+.opportunity__result-meta { margin: 12px 0 -4px; color: #667085; font-size: 12px; }
 .opportunity__result { width: 100%; color: inherit; text-align: left; cursor: pointer; }
 .opportunity__result--active { border-color: #84adff; background: #f5f8ff; }
 .opportunity__preview { position: sticky; top: 16px; align-self: start; }
@@ -202,8 +256,10 @@ onMounted(loadAccounts)
 .opportunity__preview > strong { color: #d92d20; font-size: 22px; }
 .opportunity__preview > p { color: #667085; font-size: 12px; }
 .opportunity__preview > button { width: 100%; }
+.opportunity__more { width: 100%; justify-content: center; }
 .opportunity__wizard { max-width: 980px; margin-right: auto; margin-left: auto; }
 .opportunity__wizard h2 { margin-top: 0; }
+.opportunity__title-row { display: flex; align-items: center; justify-content: space-between; }
 .opportunity__wizard > .workbench__field { margin-bottom: 14px; }
 .opportunity__footer { justify-content: flex-end; margin-top: 18px; }
 .opportunity__summary { display: grid; grid-template-columns: 180px 1fr; gap: 18px; }

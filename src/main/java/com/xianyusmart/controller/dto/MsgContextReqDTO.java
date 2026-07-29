@@ -7,6 +7,11 @@ import lombok.Data;
  */
 @Data
 public class MsgContextReqDTO {
+
+    /**
+     * 闲鱼账号ID
+     */
+    private Long xianyuAccountId;
     
     /**
      * 会话ID
@@ -22,4 +27,9 @@ public class MsgContextReqDTO {
      * 偏移量（默认0）
      */
     private Integer offset;
+
+    /**
+     * 单次同步历史消息上限
+     */
+    private Integer maxMessages;
 }

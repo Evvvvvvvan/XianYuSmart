@@ -60,6 +60,17 @@ public class MsgController {
         }
     }
 
+    @PostMapping("/context/sync")
+    public ResultObject<?> syncContextMessages(@RequestBody MsgContextReqDTO reqDTO) {
+        try {
+            return chatMessageService.syncContextMessages(reqDTO);
+        } catch (Exception e) {
+            log.error("同步会话历史消息失败: accountId={}, sid={}",
+                    reqDTO.getXianyuAccountId(), reqDTO.getSid(), e);
+            return ResultObject.failed("同步会话历史消息失败: " + e.getMessage());
+        }
+    }
+
     @PostMapping("/conversation-profiles")
     public ResultObject<?> getConversationProfiles(@RequestBody java.util.Map<String, Object> request) {
         try {

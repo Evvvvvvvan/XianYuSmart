@@ -1,5 +1,8 @@
 package com.xianyusmart.service;
 
+import java.util.List;
+import java.util.Map;
+
 /**
  * WebSocket服务接口
  */
@@ -95,4 +98,9 @@ public interface WebSocketService {
      * 发送图片消息并等待服务端响应确认
      */
     boolean sendImageMessageWithResult(Long accountId, String cid, String toId, String imageUrl, int width, int height);
+
+    /**
+     * 分页读取指定会话的历史消息
+     */
+    List<Map<String, Object>> listConversationHistory(Long accountId, String cid, int maxMessages);
 }

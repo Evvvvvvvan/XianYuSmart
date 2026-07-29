@@ -102,9 +102,18 @@ public class MerchantOperationsController {
     }
 
     @PostMapping("/opportunities/search")
-    public ResultObject<List<Map<String, Object>>> searchOpportunities(@RequestBody Map<String, Object> request) {
+    public ResultObject<Map<String, Object>> searchOpportunities(@RequestBody Map<String, Object> request) {
         try {
             return ResultObject.success(operationsService.searchOpportunities(request));
+        } catch (Exception e) {
+            return ResultObject.failed(e.getMessage());
+        }
+    }
+
+    @PostMapping("/opportunities/polish")
+    public ResultObject<Map<String, Object>> polishOpportunity(@RequestBody Map<String, Object> request) {
+        try {
+            return ResultObject.success(operationsService.polishOpportunity(request));
         } catch (Exception e) {
             return ResultObject.failed(e.getMessage());
         }

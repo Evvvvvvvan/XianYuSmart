@@ -6,11 +6,23 @@ export interface OpportunityCandidate {
   itemId: string
   title: string
   sourceUrl: string
+  description?: string
   images?: string[]
   price?: string | number
+  sellerId?: string
+  sellerNick?: string
+  sellerAvatar?: string
   opportunityScore: number
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH'
   matchReason: string
+}
+
+export interface OpportunitySearchPage {
+  items: OpportunityCandidate[]
+  pageNumber: number
+  pageSize: number
+  hasMore: boolean
+  total: number
 }
 
 export interface MerchantResource {
@@ -111,12 +123,25 @@ export function settleDistribution(id: number) {
   return request<void>({ url: `/merchant/distributions/${id}/settle`, method: 'POST' })
 }
 
-export function searchOpportunities(data: { keyword: string; xianyuAccountId?: number; limit?: number }) {
-  return request<OpportunityCandidate[]>({ url: '/merchant/opportunities/search', method: 'POST', data })
+export function searchOpportunities(data: {
+  keyword: string
+  xianyuAccountId?: number
+  pageNumber?: number
+  limit?: number
+}) {
+  return request<OpportunitySearchPage>({ url: '/merchant/opportunities/search', method: 'POST', data })
 }
 
 export function importOpportunities(data: { candidates: OpportunityCandidate[]; xianyuAccountId?: number }) {
   return request<MerchantResource[]>({ url: '/merchant/opportunities/import', method: 'POST', data })
+}
+
+export function polishOpportunity(data: { title: string; description: string }) {
+  return request<{ title: string; description: string }>({
+    url: '/merchant/opportunities/polish',
+    method: 'POST',
+    data
+  })
 }
 
 export function createPublishPlan(data: {
@@ -130,6 +155,10 @@ export function createPublishPlan(data: {
   province?: string
   city?: string
   district?: string
+  divisionId?: string
+  gps?: string
+  poiId?: string
+  poiName?: string
   deliveryMethod?: string
   dryRun?: boolean
 }) {

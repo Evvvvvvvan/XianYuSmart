@@ -48,4 +48,9 @@ public interface ChatMessageService {
      * @return 消息列表
      */
     ResultObject<?> getContextMessages(MsgContextReqDTO reqDTO);
+
+    /**
+     * 从平台同步指定会话历史消息
+     */
+    ResultObject<?> syncContextMessages(MsgContextReqDTO reqDTO);
 }

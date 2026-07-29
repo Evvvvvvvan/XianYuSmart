@@ -139,8 +139,9 @@ public interface XianyuChatMessageMapper {
      * @return 消息列表
      */
     @Select("SELECT * FROM xianyu_chat_message " +
-            "WHERE s_id = #{sId} " +
+            "WHERE xianyu_account_id = #{accountId} AND s_id = #{sId} " +
             "ORDER BY message_time DESC " +
             "LIMIT #{limit} OFFSET #{offset}")
-    List<XianyuChatMessage> findRecentBySId(@Param("sId") String sId, @Param("limit") int limit, @Param("offset") int offset);
+    List<XianyuChatMessage> findRecentBySId(@Param("accountId") Long accountId, @Param("sId") String sId,
+                                            @Param("limit") int limit, @Param("offset") int offset);
 }

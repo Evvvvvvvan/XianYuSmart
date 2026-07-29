@@ -167,6 +167,18 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>vue-code/src/data</directory>
+                <targetPath>data</targetPath>
+                <includes>
+                    <include>china-division.json</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

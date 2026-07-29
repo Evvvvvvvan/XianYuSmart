@@ -151,7 +151,7 @@ public class WebSocketMessageRouter {
                 if (mid != null) {
                     int codeValue = Integer.parseInt(code.toString());
                     ((com.xianyusmart.service.impl.WebSocketServiceImpl) webSocketService)
-                        .completePendingResponse(accountIdLong, mid.toString(), codeValue);
+                        .completePendingResponse(accountIdLong, mid.toString(), codeValue, messageData);
                 }
             }
         } catch (Exception e) {

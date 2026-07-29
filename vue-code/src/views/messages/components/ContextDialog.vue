@@ -81,7 +81,13 @@ const loadContext = async (append = false) => {
     const limit = 20
     const offset = append ? messages.value.length : 0
     
-    const res = await getContextMessages({ sid: props.sid, limit, offset })
+    if (!props.xianyuAccountId) return
+    const res = await getContextMessages({
+      xianyuAccountId: props.xianyuAccountId,
+      sid: props.sid,
+      limit,
+      offset
+    })
     const msgList = res?.data || []
     const newMessages = Array.isArray(msgList) ? msgList : []
     
@@ -149,7 +155,13 @@ const stopRefresh = () => {
 const refreshMessages = async () => {
   if (!props.sid) return
   try {
-    const res = await getContextMessages({ sid: props.sid, limit: 20, offset: 0 })
+    if (!props.xianyuAccountId) return
+    const res = await getContextMessages({
+      xianyuAccountId: props.xianyuAccountId,
+      sid: props.sid,
+      limit: 20,
+      offset: 0
+    })
     const msgList = res?.data || []
     const newMessages = Array.isArray(msgList) ? msgList.reverse() : []
     if (newMessages.length !== messages.value.length || JSON.stringify(newMessages) !== JSON.stringify(messages.value)) {

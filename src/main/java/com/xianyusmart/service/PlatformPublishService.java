@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +37,7 @@ public class PlatformPublishService {
     private final XianyuApiCallUtils apiCallUtils;
     private final ImageUploadService imageUploadService;
     private final PlatformMarketplaceParser responseParser;
+    private final PublishAddressCatalog addressCatalog;
 
     public PlatformPublishService(PlaywrightManager playwrightManager,
                                   AccountService accountService,
@@ -50,6 +50,7 @@ public class PlatformPublishService {
         this.apiCallUtils = apiCallUtils;
         this.imageUploadService = imageUploadService;
         this.responseParser = new PlatformMarketplaceParser(objectMapper);
+        this.addressCatalog = new PublishAddressCatalog(objectMapper);
     }
 
     public Map<String, Object> publish(MerchantResource material, Long accountId) {
@@ -201,53 +202,40 @@ public class PlatformPublishService {
 
     public Map<String, Object> collect(String sourceUrl, Long accountId) {
         validatePlatformUrl(sourceUrl);
-        try (BrowserContext context = playwrightManager.createContext()) {
-            if (accountId != null) {
-                String cookieText = accountService.getCookieByAccountId(accountId);
-                if (cookieText != null && !cookieText.isBlank()) {
-                    addCookies(context, cookieText);
-                }
-            }
-            Page page = context.newPage();
-            page.navigate(sourceUrl, new Page.NavigateOptions().setWaitUntil(WaitUntilState.DOMCONTENTLOADED).setTimeout(60000));
-            page.waitForTimeout(2000);
-            String bodyText = page.locator("body").innerText();
-            if (bodyText.contains("异常流量") || bodyText.contains("滑块验证")) {
-                throw new IllegalStateException("商品采集触发平台验证，请稍后重试");
-            }
-            Map<String, Object> result = new HashMap<>();
-            String title = firstText(page, "h1,[class*='title']");
-            if (title.isBlank()) {
-                title = attribute(page, "meta[property='og:title']", "content");
-            }
-            String description = attribute(page, "meta[name='description']", "content");
-            LinkedHashSet<String> images = new LinkedHashSet<>();
-            String mainImage = attribute(page, "meta[property='og:image']", "content");
-            if (!mainImage.isBlank()) {
-                images.add(mainImage);
-            }
-            for (Locator image : page.locator("img").all()) {
-                String src = image.getAttribute("src");
-                if (src != null && src.startsWith("https://")) {
-                    images.add(src);
-                }
-                if (images.size() >= 9) {
-                    break;
-                }
-            }
-            result.put("title", title.isBlank() ? "采集商品" : title);
-            result.put("description", description);
-            result.put("images", new ArrayList<>(images));
-            result.put("sourceUrl", page.url());
-            Matcher matcher = GOODS_ID_PATTERN.matcher(page.url());
-            if (matcher.find()) {
-                result.put("itemId", matcher.group(1));
-            }
-            return result;
+        if (accountId == null) {
+            throw new IllegalArgumentException("请选择用于采集的账号");
         }
+        Matcher matcher = GOODS_ID_PATTERN.matcher(sourceUrl);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("闲鱼商品链接缺少商品ID");
+        }
+        String itemId = matcher.group(1);
+        String cookieText = accountService.getCookieByAccountId(accountId);
+        if (cookieText == null || cookieText.isBlank()) {
+            throw new IllegalStateException("账号Cookie不可用");
+        }
+        // 商品采集复用 XianYuApis 的签名商品详情接口，避免页面结构变化导致采集失效。
+        XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
+                accountId,
+                "mtop.taobao.idle.pc.detail",
+                Map.of("itemId", itemId),
+                cookieText,
+                null,
+                Map.of(
+                        "spm_cnt", "a21ybx.im.0.0",
+                        "spm_pre", "a21ybx.item.want.1"
+                ));
+        if (!result.isSuccess()) {
+            throw new IllegalStateException("平台商品详情获取失败: " + result.getErrorMessage());
+        }
+        return responseParser.parseItemDetailResponse(result.getResponse(), itemId);
     }
 
     public List<Map<String, Object>> search(String keyword, Long accountId, int limit) {
+        return search(keyword, accountId, 1, limit).items();
+    }
+
+    public PlatformSearchResult search(String keyword, Long accountId, int pageNumber, int limit) {
         if (keyword == null || keyword.isBlank()) {
             throw new IllegalArgumentException("请输入商品关键词");
         }
@@ -258,8 +246,34 @@ public class PlatformPublishService {
         if (cookieText == null || cookieText.isBlank()) {
             throw new IllegalStateException("账号Cookie不可用");
         }
+        int safePageNumber = Math.max(1, pageNumber);
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        Map<String, Object> data = buildSearchRequest(keyword, safePageNumber, safeLimit);
+        XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
+                accountId,
+                "mtop.taobao.idlemtopsearch.pc.search",
+                data,
+                cookieText,
+                null,
+                Map.of(
+                        "spm_cnt", "a21ybx.search.0.0",
+                        "spm_pre", "a21ybx.home.searchInput.0"
+                ));
+        if (!result.isSuccess()) {
+            throw new IllegalStateException("平台搜索失败: " + result.getErrorMessage());
+        }
+        PlatformMarketplaceParser.SearchPage page = responseParser.parseSearchPageResponse(
+                result.getResponse(), safeLimit, safePageNumber > 1);
+        return new PlatformSearchResult(page.items(), safePageNumber, safeLimit, page.hasMore(), page.total());
+    }
+
+    static Map<String, Object> buildSearchRequest(String keyword, int limit) {
+        return buildSearchRequest(keyword, 1, limit);
+    }
+
+    static Map<String, Object> buildSearchRequest(String keyword, int pageNumber, int limit) {
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("pageNumber", 1);
+        data.put("pageNumber", Math.max(1, pageNumber));
         data.put("keyword", keyword.trim());
         data.put("fromFilter", false);
         data.put("rowsPerPage", Math.max(1, Math.min(limit, 50)));
@@ -267,16 +281,16 @@ public class PlatformPublishService {
         data.put("sortField", "");
         data.put("customDistance", "");
         data.put("gps", "");
-        data.put("propValueStr", Map.of("searchFilter", ""));
+        data.put("propValueStr", Map.of());
         data.put("customGps", "");
         data.put("searchReqFromPage", "pcSearch");
-        XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
-                accountId, "mtop.taobao.idlemtopsearch.pc.search", data, cookieText);
-        if (!result.isSuccess()) {
-            throw new IllegalStateException("平台搜索失败: " + result.getErrorMessage());
-        }
-        return responseParser.parseSearchResponse(result.getResponse(), Math.max(1, Math.min(limit, 50)));
+        data.put("extraFilterValue", "{}");
+        data.put("userPositionJson", "{}");
+        return data;
     }
+
+    public record PlatformSearchResult(List<Map<String, Object>> items, int pageNumber, int pageSize,
+                                       boolean hasMore, long total) { }
 
     private Map<String, Object> recommendCategory(Long accountId, String cookieText, String title,
                                                    String description, List<String> images) {
@@ -335,8 +349,38 @@ public class PlatformPublishService {
         Map<String, Object> requested = new LinkedHashMap<>();
         requested.putAll(data);
         requested.putAll(address);
+        if (text(requested.get("divisionId")).isBlank()) {
+            requested.putAll(addressCatalog.resolve(requested));
+        }
         if (!text(requested.get("divisionId")).isBlank()) {
-            return normalizeAddress(requested);
+            Map<String, Object> normalized = normalizeAddress(requested);
+            String gps = text(normalized.get("gps"));
+            if (gps.isBlank()) {
+                return normalized;
+            }
+            // 使用当前账号 Cookie 将本地区划坐标转换为平台认可的发布地址。
+            XianyuApiCallUtils.ApiCallResult locationResult = apiCallUtils.callApiWithRetry(
+                    accountId,
+                    "mtop.taobao.idle.local.poi.get",
+                    "1.0",
+                    buildAddressLookupRequest(gps),
+                    cookieText,
+                    Map.of("eagleeye-userdata", "spm-cnt=a21ybx"),
+                    Map.of(
+                            "spm_cnt", "a21ybx.publish.0.0",
+                            "spm_pre", "a21ybx.item.sidebar.1.38262218ame5nr"
+                    )
+            );
+            if (locationResult.isSuccess()) {
+                Map<String, Object> platformAddress =
+                        responseParser.extractDefaultAddress(locationResult.getResponse());
+                if (!platformAddress.isEmpty()) {
+                    return normalizeAddress(platformAddress);
+                }
+            }
+            log.warn("平台定位补全未返回地址，使用本地行政区划: accountId={}, divisionId={}",
+                    accountId, normalized.get("divisionId"));
+            return normalized;
         }
         XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
                 accountId, "mtop.idle.pc.idleitem.preget", Map.of(), cookieText);
@@ -350,9 +394,24 @@ public class PlatformPublishService {
         return normalizeAddress(platformAddress);
     }
 
+    static Map<String, Object> buildAddressLookupRequest(String gps) {
+        String[] coordinates = gps == null ? new String[0] : gps.split(",", 2);
+        if (coordinates.length != 2) {
+            throw new IllegalArgumentException("发布位置坐标格式无效");
+        }
+        try {
+            return Map.of(
+                    "longitude", Double.parseDouble(coordinates[0].trim()),
+                    "latitude", Double.parseDouble(coordinates[1].trim())
+            );
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("发布位置坐标格式无效", e);
+        }
+    }
+
     private Map<String, Object> normalizeAddress(Map<String, Object> address) {
         Map<String, Object> result = new LinkedHashMap<>();
-        String gps = firstValue(address, "gps");
+        String gps = firstValue(address, "gps", "addressGps", "location");
         if (gps.isBlank()) {
             String longitude = firstValue(address, "longitude");
             String latitude = firstValue(address, "latitude");
@@ -360,13 +419,13 @@ public class PlatformPublishService {
                 gps = longitude + "," + latitude;
             }
         }
-        result.put("prov", firstValue(address, "prov", "province"));
-        result.put("city", firstValue(address, "city"));
-        result.put("area", firstValue(address, "area", "district"));
-        result.put("divisionId", numberValue(address.get("divisionId")));
+        result.put("prov", firstValue(address, "prov", "province", "addressProv", "pname"));
+        result.put("city", firstValue(address, "city", "addressCity", "cityname"));
+        result.put("area", firstValue(address, "area", "district", "addressArea", "adname"));
+        result.put("divisionId", numberValue(firstValue(address, "divisionId", "addressDivisionId", "adcode")));
         result.put("gps", gps);
-        result.put("poiId", firstValue(address, "poiId"));
-        result.put("poiName", firstValue(address, "poiName", "poi", "detail"));
+        result.put("poiId", firstValue(address, "poiId", "addressPoiId"));
+        result.put("poiName", firstValue(address, "poiName", "poi", "detail", "addressPoiName", "addressText"));
         return result;
     }
 
@@ -515,20 +574,6 @@ public class PlatformPublishService {
                 || !(host.equals("goofish.com") || host.endsWith(".goofish.com"))) {
             throw new IllegalArgumentException("仅支持HTTPS闲鱼商品地址");
         }
-    }
-
-    private String firstText(Page page, String selector) {
-        Locator locator = page.locator(selector).first();
-        return locator.count() == 0 ? "" : locator.innerText().trim();
-    }
-
-    private String attribute(Page page, String selector, String name) {
-        Locator locator = page.locator(selector).first();
-        if (locator.count() == 0) {
-            return "";
-        }
-        String value = locator.getAttribute(name);
-        return value == null ? "" : value.trim();
     }
 
     private void addCookies(BrowserContext context, String cookieText) {

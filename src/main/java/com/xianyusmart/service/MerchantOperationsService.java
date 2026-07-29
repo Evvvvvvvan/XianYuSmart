@@ -68,6 +68,7 @@ public class MerchantOperationsService {
     private final OpportunityAnalysisService opportunityAnalysisService;
     private final WorkflowDefinitionService workflowDefinitionService;
     private final OperationLogService operationLogService;
+    private final AIService aiService;
     private final ObjectMapper objectMapper;
 
     public MerchantOperationsService(MerchantResourceMapper resourceMapper,
@@ -82,6 +83,7 @@ public class MerchantOperationsService {
                                      OpportunityAnalysisService opportunityAnalysisService,
                                      WorkflowDefinitionService workflowDefinitionService,
                                      OperationLogService operationLogService,
+                                     AIService aiService,
                                      ObjectMapper objectMapper) {
         this.resourceMapper = resourceMapper;
         this.taskMapper = taskMapper;
@@ -95,6 +97,7 @@ public class MerchantOperationsService {
         this.opportunityAnalysisService = opportunityAnalysisService;
         this.workflowDefinitionService = workflowDefinitionService;
         this.operationLogService = operationLogService;
+        this.aiService = aiService;
         this.objectMapper = objectMapper;
     }
 
@@ -163,7 +166,7 @@ public class MerchantOperationsService {
         return toResponse(resourceMapper.selectById(resource.getId()));
     }
 
-    public List<Map<String, Object>> searchOpportunities(Map<String, Object> request) {
+    public Map<String, Object> searchOpportunities(Map<String, Object> request) {
         String keyword = text(request.get("keyword"));
         if (keyword.isBlank()) {
             throw new IllegalArgumentException("请输入商机关键词");
@@ -171,7 +174,48 @@ public class MerchantOperationsService {
         Long accountId = longValue(request.get("xianyuAccountId"));
         validateOwnedAccount(accountId);
         int limit = Math.max(1, Math.min(intValue(request.get("limit"), 20), 50));
-        return opportunityAnalysisService.rank(keyword, platformPublishService.search(keyword, accountId, limit));
+        int pageNumber = Math.max(1, intValue(request.get("pageNumber"), 1));
+        PlatformPublishService.PlatformSearchResult page = platformPublishService.search(
+                keyword, accountId, pageNumber, limit);
+        return Map.of(
+                "items", opportunityAnalysisService.rank(keyword, page.items()),
+                "pageNumber", page.pageNumber(),
+                "pageSize", page.pageSize(),
+                "hasMore", page.hasMore(),
+                "total", page.total()
+        );
+    }
+
+    public Map<String, Object> polishOpportunity(Map<String, Object> request) {
+        String title = text(request.get("title"));
+        String description = text(request.get("description"));
+        if (title.isBlank()) {
+            throw new IllegalArgumentException("商品标题不能为空");
+        }
+        String prompt = """
+                作为闲鱼商品运营助手，在不虚构品牌、成色、配置、售后和价格的前提下改写商品文案。
+                只返回JSON，格式为 {"title":"不超过60字","description":"清晰分段的商品详情"}。
+                原标题：%s
+                原详情：%s
+                """.formatted(title, description.isBlank() ? title : description);
+        String content = aiService.simpleChat(prompt);
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("AI服务未配置或暂时不可用");
+        }
+        try {
+            int start = content.indexOf('{');
+            int end = content.lastIndexOf('}');
+            Map<String, Object> polished = objectMapper.readValue(
+                    start >= 0 && end > start ? content.substring(start, end + 1) : content,
+                    new TypeReference<>() { });
+            return Map.of(
+                    "title", text(polished.get("title")).isBlank() ? title : text(polished.get("title")),
+                    "description", text(polished.get("description")).isBlank()
+                            ? (description.isBlank() ? title : description) : text(polished.get("description"))
+            );
+        } catch (Exception e) {
+            throw new IllegalStateException("AI返回内容无法解析，请重试");
+        }
     }
 
     @Transactional
@@ -191,10 +235,23 @@ public class MerchantOperationsService {
                 continue;
             }
             Map<String, Object> candidate = normalizeMap(candidateValue);
+            String sourceUrl = text(candidate.get("sourceUrl"));
+            if (!sourceUrl.isBlank()) {
+                // 入库前通过签名详情接口补齐描述和图片，保证后续润色、发布使用完整商品数据。
+                candidate.putAll(platformPublishService.collect(sourceUrl, accountId));
+            }
             String itemId = text(candidate.get("itemId"));
             MerchantResource existing = itemId.isBlank() ? null
                     : resourceMapper.selectByTenantTypeAndGoodsId(tenantId, "SUPPLY", itemId);
-            MerchantResource supply = existing == null ? createSupply(candidate, accountId) : existing;
+            MerchantResource supply;
+            if (existing == null) {
+                supply = createSupply(candidate, accountId);
+            } else {
+                existing.setName(text(candidate.get("title")));
+                existing.setDataJson(writeJson(candidate));
+                resourceMapper.updateById(existing);
+                supply = existing;
+            }
             imported.add(toResponse(supply));
         }
         return imported;
