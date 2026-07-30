@@ -31,6 +31,8 @@ COPY --from=frontend-build /app/vue-code/../src/main/resources/static src/main/r
 
 # 复制后端源码
 COPY src/ src/
+# 行政区划数据由Maven作为后端资源打包。
+COPY vue-code/src/data/ vue-code/src/data/
 
 # 构建 JAR并执行测试
 RUN --mount=type=cache,target=/root/.m2/repository ./mvnw clean package
