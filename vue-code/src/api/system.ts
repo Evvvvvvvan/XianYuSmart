@@ -6,6 +6,7 @@ export interface CurrentUser {
   username: string
   role: UserRole
   permissions: string[]
+  menuLayout?: string
   lastLoginTime: string
 }
 

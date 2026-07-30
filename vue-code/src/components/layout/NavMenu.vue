@@ -2,137 +2,114 @@
 /**
  * 导航菜单组件 - 电脑端侧边栏和手机端抽屉共用
  */
-import { computed } from 'vue'
-import { hasPermission, isPlatformAdmin } from '@/utils/permission'
+import { computed, markRaw, type Component } from 'vue'
+import { hasPermission, isPlatformAdmin, permissionState } from '@/utils/permission'
+import { MENU_GROUPS, normalizeMenuLayout, type MenuIcon, type MenuItemDefinition } from '@/config/menu'
+import IconAlert from '@/components/icons/IconAlert.vue'
+import IconChart from '@/components/icons/IconChart.vue'
+import IconClipboard from '@/components/icons/IconClipboard.vue'
+import IconKey from '@/components/icons/IconKey.vue'
+import IconLink from '@/components/icons/IconLink.vue'
+import IconLog from '@/components/icons/IconLog.vue'
+import IconMessage from '@/components/icons/IconMessage.vue'
+import IconPackage from '@/components/icons/IconPackage.vue'
+import IconPlus from '@/components/icons/IconPlus.vue'
+import IconRobot from '@/components/icons/IconRobot.vue'
+import IconSearch from '@/components/icons/IconSearch.vue'
+import IconSend from '@/components/icons/IconSend.vue'
+import IconShield from '@/components/icons/IconShield.vue'
+import IconShoppingBag from '@/components/icons/IconShoppingBag.vue'
+import IconText from '@/components/icons/IconText.vue'
+import IconTooling from '@/components/icons/IconTooling.vue'
+import IconTruck from '@/components/icons/IconTruck.vue'
+import IconUser from '@/components/icons/IconUser.vue'
+import IconUsers from '@/components/icons/IconUsers.vue'
+
+interface VisibleMenuItem extends MenuItemDefinition {
+  iconComponent: Component
+}
+
+interface VisibleMenuGroup {
+  id: string
+  label: string
+  items: VisibleMenuItem[]
+}
 
 const emit = defineEmits<{
   select: [index: string]
 }>()
 
+const iconComponents: Record<MenuIcon, Component> = {
+  alert: markRaw(IconAlert),
+  chart: markRaw(IconChart),
+  clipboard: markRaw(IconClipboard),
+  dashboard: markRaw(IconChart),
+  goods: markRaw(IconShoppingBag),
+  key: markRaw(IconKey),
+  link: markRaw(IconLink),
+  log: markRaw(IconLog),
+  message: markRaw(IconMessage),
+  package: markRaw(IconPackage),
+  plus: markRaw(IconPlus),
+  robot: markRaw(IconRobot),
+  search: markRaw(IconSearch),
+  send: markRaw(IconSend),
+  shield: markRaw(IconShield),
+  text: markRaw(IconText),
+  tooling: markRaw(IconTooling),
+  truck: markRaw(IconTruck),
+  user: markRaw(IconUser),
+  users: markRaw(IconUsers)
+}
+
+const menuGroupMap = new Map(MENU_GROUPS.map(group => [group.id, group]))
+
+const visibleGroups = computed<VisibleMenuGroup[]>(() => {
+  const layout = normalizeMenuLayout(permissionState.value?.menuLayout)
+  return layout.groups.flatMap(groupLayout => {
+    const definition = menuGroupMap.get(groupLayout.id)
+    if (!definition) return []
+
+    const items = groupLayout.items.flatMap(itemId => {
+      const item = definition.items.find(menuItem => menuItem.id === itemId)
+      if (!item || item.adminOnly && !isPlatformAdmin.value
+        || item.permission && !hasPermission(item.permission)) {
+        return []
+      }
+      return [{ ...item, iconComponent: iconComponents[item.icon] }]
+    })
+    return items.length ? [{ id: definition.id, label: definition.label, items }] : []
+  })
+})
+
 const onSelect = (index: string) => {
   emit('select', index)
 }
-
-const hasAutomationMenu = computed(() => [
-  'menu:kami', 'menu:fixed-delivery', 'menu:auto-delivery', 'menu:orders'
-].some(hasPermission))
-
-const hasAccountMenu = computed(() => ['menu:accounts', 'menu:connection'].some(hasPermission))
-
-const hasProductMenu = computed(() => ['menu:goods', 'menu:operations'].some(hasPermission))
-
-const hasCustomerMenu = computed(() => ['menu:messages', 'menu:buyers', 'menu:auto-reply'].some(hasPermission))
-
-const hasSystemMenu = computed(() => isPlatformAdmin.value || [
-  'menu:operation-log', 'menu:health', 'menu:settings'
-].some(hasPermission))
 </script>
 
 <template>
-  <nav class="nav-menu">
-    <router-link v-if="hasPermission('menu:dashboard')" to="/dashboard" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/dashboard')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-      <span>面板</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:dashboard')" to="/data-panel" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/data-panel')">
-      <span class="nav-menu-symbol">▥</span>
-      <span>数据看板</span>
-    </router-link>
-
-    <div v-if="hasAccountMenu" class="nav-menu-divider"><span class="nav-menu-divider-text">账号与连接</span></div>
-
-    <router-link v-if="hasPermission('menu:accounts')" to="/accounts" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/accounts')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span>闲鱼账号</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:connection')" to="/connection" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/connection')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-      <span>连接管理</span>
-    </router-link>
-
-    <div v-if="hasProductMenu" class="nav-menu-divider"><span class="nav-menu-divider-text">商品与获客</span></div>
-
-    <router-link v-if="hasPermission('menu:goods')" to="/goods" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/goods')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
-      <span>商品管理</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:goods')" to="/product-publish" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/product-publish')">
-      <span class="nav-menu-symbol">＋</span>
-      <span>商品发布</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:operations')" to="/operations" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/operations')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h7v7H3z"/><path d="M14 3h7v7h-7z"/><path d="M3 14h7v7H3z"/><path d="M14 14h7v7h-7z"/></svg>
-      <span>运营中心</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:operations')" to="/opportunities" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/opportunities')">
-      <span class="nav-menu-symbol">⌕</span>
-      <span>商机发掘</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:operations')" to="/price-comparison" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/price-comparison')">
-      <span class="nav-menu-symbol">≋</span>
-      <span>全站比价</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:operations')" to="/supplies" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/supplies')">
-      <span class="nav-menu-symbol">▣</span>
-      <span>货源库</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:operations')" to="/workflows" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/workflows')">
-      <span class="nav-menu-symbol">◇</span>
-      <span>工作流</span>
-    </router-link>
-
-    <div v-if="hasAutomationMenu" class="nav-menu-divider"><span class="nav-menu-divider-text">成交履约</span></div>
-
-    <router-link v-if="hasPermission('menu:kami')" to="/kami-config" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/kami-config')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-      <span>卡密仓库</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:fixed-delivery')" to="/fixed-delivery-templates" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/fixed-delivery-templates')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      <span>固定内容模板</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:auto-delivery')" to="/auto-delivery" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/auto-delivery')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-      <span>自动发货</span>
-    </router-link>
+  <nav class="nav-menu" aria-label="主导航">
     <!-- pending-orders hidden -->
-    <router-link v-if="hasPermission('menu:orders')" to="/orders" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/orders')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      <span>订单与评价</span>
-    </router-link>
-    <div v-if="hasCustomerMenu" class="nav-menu-divider"><span class="nav-menu-divider-text">客户运营</span></div>
-
-    <router-link v-if="hasPermission('menu:messages')" to="/messages" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/messages')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      <span>消息管理</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:buyers')" to="/buyers" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/buyers')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-      <span>买家管理</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:auto-reply')" to="/auto-reply" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/auto-reply')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2L15 22l-4-9-9-4L22 2z"/></svg>
-      <span>自动回复</span>
-    </router-link>
-
-    <div v-if="hasSystemMenu" class="nav-menu-divider"><span class="nav-menu-divider-text">系统</span></div>
-
-    <router-link v-if="hasPermission('menu:operation-log')" to="/operation-log" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/operation-log')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-      <span>操作日志</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:health')" to="/operations-health" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/operations-health')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16l4-5 3 3 5-7"/></svg>
-      <span>通知与诊断</span>
-    </router-link>
-    <router-link v-if="hasPermission('menu:settings')" to="/settings" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/settings')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.32l.06.07a2 2 0 0 1-2.83 2.83l-.07-.06a1.65 1.65 0 0 0-1.32-.33 1.65 1.65 0 0 0-1 1.14V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.32.33l-.07.06a2 2 0 0 1-2.83-2.83l.06-.07A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.14-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.32l-.06-.07a2 2 0 0 1 2.83-2.83l.07.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.14V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.14 1.65 1.65 0 0 0 1.32-.33l.07-.06a2 2 0 0 1 2.83 2.83l-.06.07A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.14 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.14 1z"/></svg>
-      <span>系统设置</span>
-    </router-link>
-    <router-link v-if="isPlatformAdmin" to="/admin/users" class="nav-menu-item" active-class="nav-menu-item--active" @click="onSelect('/admin/users')">
-      <svg style="width:18px;height:18px;margin-right:8px;flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6"/><path d="M23 11h-6"/></svg>
-      <span>账号与权限</span>
-    </router-link>
+    <TransitionGroup name="nav-group" tag="div" class="nav-menu-groups">
+      <section v-for="group in visibleGroups" :key="group.id" class="nav-menu-group">
+        <div class="nav-menu-group-title">{{ group.label }}</div>
+        <TransitionGroup name="nav-item" tag="div" class="nav-menu-list">
+          <router-link
+            v-for="item in group.items"
+            :key="item.id"
+            :to="item.path"
+            class="nav-menu-item"
+            active-class="nav-menu-item--active"
+            @click="onSelect(item.path)"
+          >
+            <span class="nav-menu-icon">
+              <component :is="item.iconComponent" />
+            </span>
+            <span class="nav-menu-label">{{ item.label }}</span>
+          </router-link>
+        </TransitionGroup>
+      </section>
+    </TransitionGroup>
   </nav>
 </template>
 
@@ -140,67 +117,146 @@ const hasSystemMenu = computed(() => isPlatformAdmin.value || [
 .nav-menu {
   border-right: none;
   background: transparent;
+  padding: 2px 10px 18px;
+}
+
+.nav-menu-groups {
   display: flex;
   flex-direction: column;
+  gap: 11px;
+}
+
+.nav-menu-group {
+  min-width: 0;
+}
+
+.nav-menu-group-title {
+  padding: 0 12px 5px;
+  color: #98a2b3;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: .06em;
+}
+
+.nav-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .nav-menu-item {
+  position: relative;
   display: flex;
   align-items: center;
-  margin: 1px 16px;
-  border-radius: 6px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 8px;
   color: #667085;
-  transition: all 0.2s;
   text-decoration: none;
-  height: 40px;
-  line-height: 40px;
-  padding: 0 12px;
-  font-size: 14px;
+  transition: color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.nav-menu-item::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: -4px;
+  width: 3px;
+  border-radius: 3px;
+  background: #155eef;
+  content: '';
+  opacity: 0;
+  transform: scaleY(.45);
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .nav-menu-item:hover {
-  background: #f2f4f7;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   color: #344054;
+  background: #f2f4f7;
 }
 
 .nav-menu-item--active {
-  background: #eef4ff !important;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   color: #155eef;
-  box-shadow: none;
+  background: #eef4ff;
+  box-shadow: inset 0 0 0 1px rgba(21, 94, 239, .04);
   font-weight: 600;
 }
 
-.nav-menu-symbol {
-  width: 18px;
-  margin-right: 8px;
-  flex-shrink: 0;
-  color: currentColor;
-  text-align: center;
-  font-size: 17px;
+.nav-menu-item--active::before {
+  opacity: 1;
+  transform: scaleY(1);
 }
 
-.nav-menu-divider {
+.nav-menu-icon {
   display: flex;
   align-items: center;
-  margin: 8px 16px 4px;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  border-radius: 7px;
+  color: #667085;
+  flex-shrink: 0;
+  transition: color 180ms ease, background-color 180ms ease;
 }
 
-.nav-menu-divider::before,
-.nav-menu-divider::after {
-  content: '';
-  flex: 1;
-  height: 0.5px;
-  background: #e4e7ec;
+.nav-menu-icon :deep(svg) {
+  width: 17px;
+  height: 17px;
 }
 
-.nav-menu-divider-text {
-  padding: 0 8px;
-  font-size: 12px;
-  color: #98a2b3;
+.nav-menu-item:hover .nav-menu-icon {
+  color: #344054;
+  background: rgba(255, 255, 255, .7);
+}
+
+.nav-menu-item--active .nav-menu-icon {
+  color: #155eef;
+  background: rgba(255, 255, 255, .82);
+}
+
+.nav-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.nav-group-move,
+.nav-item-move {
+  transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.nav-group-enter-active,
+.nav-group-leave-active,
+.nav-item-enter-active,
+.nav-item-leave-active {
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.nav-group-enter-from,
+.nav-group-leave-to,
+.nav-item-enter-from,
+.nav-item-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-menu-item,
+  .nav-menu-item::before,
+  .nav-menu-icon,
+  .nav-group-move,
+  .nav-item-move,
+  .nav-group-enter-active,
+  .nav-group-leave-active,
+  .nav-item-enter-active,
+  .nav-item-leave-active {
+    transition: none;
+  }
 }
 </style>

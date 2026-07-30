@@ -327,11 +327,11 @@ onUnmounted(() => {
 
 /* ========== 桌面端: 固定侧边栏 ========== */
 .sidebar {
-  background: var(--glass-bg);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  border-right: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow);
+  background: #fcfcfd;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-right: 1px solid #eaecf0;
+  box-shadow: 2px 0 10px rgba(16, 24, 40, .025);
   transition: width 0.3s ease;
   overflow-y: auto;
   overflow-x: hidden;
@@ -346,9 +346,9 @@ onUnmounted(() => {
 .logo {
   display: flex;
   align-items: center;
-  padding: 20px 24px;
+  padding: 18px 20px 16px;
   border-bottom: none;
-  gap: 12px;
+  gap: 10px;
 }
 
 .logo-icon {
@@ -356,8 +356,8 @@ onUnmounted(() => {
   height: 32px;
   background: #155eef;
   border: 1px solid #155eef;
-  box-shadow: none;
-  border-radius: 6px;
+  box-shadow: 0 4px 10px rgba(21, 94, 239, .18);
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -578,11 +578,11 @@ main::-webkit-scrollbar {
 .drawer-menu {
   width: 280px;
   max-width: 80vw;
-  background: var(--glass-bg-float);
+  background: #fff;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  border-right: 1px solid var(--glass-border);
-  box-shadow: var(--glass-shadow-float);
+  border-right: 1px solid #eaecf0;
+  box-shadow: 12px 0 32px rgba(16, 24, 40, .14);
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -595,7 +595,7 @@ main::-webkit-scrollbar {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 0.5px solid var(--apple-sep);
+  border-bottom: 1px solid #eaecf0;
   flex-shrink: 0;
   background: transparent;
 }
@@ -608,12 +608,12 @@ main::-webkit-scrollbar {
 .drawer-close-btn {
   width: 32px;
   height: 32px;
-  background: var(--glass-bg-deep);
-  border: 1px solid var(--glass-border-in);
-  border-radius: 6px;
+  background: #f9fafb;
+  border: 1px solid #e4e7ec;
+  border-radius: 8px;
   color: var(--apple-text2);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
-  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   font-size: 18px;
   display: flex;
   align-items: center;
@@ -626,9 +626,9 @@ main::-webkit-scrollbar {
 
 .drawer-close-btn:hover,
 .drawer-close-btn:active {
-  background: var(--glass-bg);
-  border-color: var(--glass-border);
-  color: var(--apple-text);
+  background: #f2f4f7;
+  border-color: #d0d5dd;
+  color: #344054;
   outline: none;
 }
 
@@ -656,12 +656,12 @@ main::-webkit-scrollbar {
 /* 抽屉动画 */
 .drawer-enter-active,
 .drawer-leave-active {
-  transition: opacity 0.3s ease;
+  transition: opacity 240ms ease;
 }
 
 .drawer-enter-active .drawer-menu,
 .drawer-leave-active .drawer-menu {
-  transition: transform 0.3s ease;
+  transition: transform 240ms cubic-bezier(.2, .8, .2, 1);
 }
 
 .drawer-enter-from,
@@ -675,6 +675,15 @@ main::-webkit-scrollbar {
 
 .drawer-leave-to .drawer-menu {
   transform: translateX(-100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-enter-active,
+  .drawer-leave-active,
+  .drawer-enter-active .drawer-menu,
+  .drawer-leave-active .drawer-menu {
+    transition: none;
+  }
 }
 
 /* ========== 响应式适配 ========== */
