@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/system")
 public class SystemController {
 
-    @Value("${app.version:2.0.2}")
+    @Value("${app.version:2.0.3}")
     private String currentVersion;
 
     @Autowired
