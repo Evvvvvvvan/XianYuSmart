@@ -387,6 +387,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             cookies.add(new Cookie(entry.getKey(), entry.getValue())
                     .setDomain(".goofish.com").setPath("/"));
+            cookies.add(new Cookie(entry.getKey(), entry.getValue())
+                    .setDomain(".taobao.com").setPath("/"));
         }
         return cookies;
     }
