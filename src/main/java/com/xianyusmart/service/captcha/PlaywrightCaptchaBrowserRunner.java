@@ -41,8 +41,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private static final List<String> COOKIE_URLS = List.of(
             "https://www.goofish.com/im",
             "https://passport.goofish.com",
-            "https://h5api.m.goofish.com",
-            "https://www.taobao.com");
+            "https://h5api.m.goofish.com");
     private static final List<SelectorPair> SLIDER_SELECTORS = List.of(
             new SelectorPair(".nc_scale", ".btn_slide"),
             new SelectorPair(".nc_scale", "[id^='nc_'][id$='_n1z']"),
@@ -169,7 +168,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
             reportProgress(progress, "COLLECTING_COOKIE", "正在回收更新后的Cookie", 0);
             page.waitForTimeout(800);
-            String refreshedCookie = buildCookieText(context.cookies(COOKIE_URLS));
+            String refreshedCookie = buildCookieText(context.cookies(COOKIE_URLS), cookieText);
             if (refreshedCookie.isBlank()) {
                 return new RunResult(Outcome.FAILED, null, "验证完成但浏览器未返回Cookie");
             }
@@ -388,20 +387,26 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             cookies.add(new Cookie(entry.getKey(), entry.getValue())
                     .setDomain(".goofish.com").setPath("/"));
-            cookies.add(new Cookie(entry.getKey(), entry.getValue())
-                    .setDomain(".taobao.com").setPath("/"));
         }
         return cookies;
     }
 
-    private String buildCookieText(List<Cookie> cookies) {
-        Map<String, String> cookieMap = new LinkedHashMap<>();
+    private String buildCookieText(List<Cookie> cookies, String originalCookieText) {
+        Map<String, String> originalCookieMap = XianyuSignUtils.parseCookies(originalCookieText);
+        Map<String, String> cookieMap = new LinkedHashMap<>(originalCookieMap);
         for (Cookie cookie : cookies) {
             if (cookie.name == null || cookie.name.isBlank()
-                    || cookie.value == null || cookie.value.isBlank()) {
+                    || cookie.value == null || cookie.value.isBlank()
+                    || cookie.domain == null
+                    || !isDomain(cookie.domain.replaceFirst("^\\.", ""), "goofish.com")) {
                 continue;
             }
-            cookieMap.put(cookie.name, cookie.value);
+            String originalValue = originalCookieMap.get(cookie.name);
+            String selectedValue = cookieMap.get(cookie.name);
+            // 浏览器产生的新值优先，避免旧域同名Cookie覆盖滑块验证结果。
+            if (originalValue == null || !cookie.value.equals(originalValue) || selectedValue == null) {
+                cookieMap.put(cookie.name, cookie.value);
+            }
         }
         return XianyuSignUtils.formatCookies(cookieMap);
     }
