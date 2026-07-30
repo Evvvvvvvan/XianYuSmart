@@ -81,7 +81,7 @@ onMounted(load)
         <ol class="automation__steps">
           <li>使用常用浏览器打开闲鱼消息页并完成平台验证。</li>
           <li>验证成功后回到连接管理，更新该账号 Cookie。</li>
-          <li>系统会立即刷新凭证并重连，不会自动模拟滑块或绕过平台检测。</li>
+          <li>可选择全自动拖动、本机人工拖动或粘贴 Cookie，验证完成后系统会刷新凭证并重连。</li>
         </ol>
         <div class="workbench__actions">
           <button class="workbench__btn workbench__btn--primary" :disabled="!selectedAccount" @click="openVerification">打开闲鱼验证页</button>

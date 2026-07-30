@@ -4,6 +4,8 @@ import com.xianyusmart.common.ResultObject;
 import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.controller.dto.UpdateCookieReqDTO;
 import com.xianyusmart.controller.dto.UpdateCookieRespDTO;
+import com.xianyusmart.mapper.XianyuAccountMapper;
+import com.xianyusmart.service.CaptchaSolveService;
 import com.xianyusmart.service.CookieRefreshService;
 import com.xianyusmart.service.WebSocketService;
 import lombok.Data;
@@ -40,6 +42,12 @@ public class WebSocketController {
     @Autowired
     private com.xianyusmart.service.OperationLogService operationLogService;
 
+    @Autowired
+    private CaptchaSolveService captchaSolveService;
+
+    @Autowired
+    private XianyuAccountMapper xianyuAccountMapper;
+
     /**
      * 启动WebSocket连接
      */
@@ -75,16 +83,14 @@ public class WebSocketController {
             }
             
         } catch (com.xianyusmart.exception.CaptchaRequiredException e) {
-            log.warn("⚠️ 需要滑块验证: accountId={}, url={}", reqDTO.getXianyuAccountId(), e.getCaptchaUrl());
+            log.warn("⚠️ 账号需要滑块验证: accountId={}", reqDTO.getXianyuAccountId());
             CaptchaInfoDTO captchaInfo = new CaptchaInfoDTO();
             captchaInfo.setNeedCaptcha(true);
-            captchaInfo.setCaptchaUrl(e.getCaptchaUrl());
-            captchaInfo.setMessage("检测到账号需要完成滑块验证。请完成验证后更新Cookie，点击启动连接会自动更新Token，滑块校验生效会延迟，稍等片刻会自动连接。");
+            captchaInfo.setMessage("检测到账号需要完成滑块验证，可选择自动拖动、人工拖动或粘贴Cookie。");
             
             log.info("📋 滑块验证信息:");
             log.info("   - 账号ID: {}", reqDTO.getXianyuAccountId());
-            log.info("   - 验证URL: {}", e.getCaptchaUrl());
-            log.info("   - 提示: 请访问 https://www.goofish.com/im 完成验证后手动更新Cookie和Token");
+            log.info("   - 提示: 请选择滑块验证方式");
             
             ResultObject<CaptchaInfoDTO> result = new ResultObject<>(1001, "需要滑块验证", captchaInfo);
             return result;
@@ -453,6 +459,61 @@ public class WebSocketController {
     }
 
     /**
+     * 启动滑块验证任务
+     */
+    @PostMapping("/captcha/solve")
+    public ResultObject<CaptchaSolveService.TaskView> solveCaptcha(@RequestBody CaptchaSolveReqDTO reqDTO) {
+        try {
+            if (reqDTO == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("账号ID不能为空");
+            }
+            if (reqDTO.getMode() == null) {
+                return ResultObject.failed("验证方式不能为空");
+            }
+            // 账号查询受租户拦截器约束，避免跨租户启动浏览器任务。
+            if (xianyuAccountMapper.selectById(reqDTO.getXianyuAccountId()) == null) {
+                return ResultObject.failed("账号不存在");
+            }
+            return ResultObject.success(captchaSolveService.start(
+                    reqDTO.getXianyuAccountId(), reqDTO.getMode()));
+        } catch (Exception e) {
+            log.warn("启动滑块验证任务失败: accountId={}, type={}",
+                    reqDTO == null ? null : reqDTO.getXianyuAccountId(),
+                    e.getClass().getSimpleName());
+            String message = e instanceof IllegalArgumentException || e instanceof IllegalStateException
+                    ? e.getMessage()
+                    : "滑块验证任务启动失败";
+            return ResultObject.failed(message == null ? "滑块验证任务启动失败" : message);
+        }
+    }
+
+    /**
+     * 获取滑块验证任务状态
+     */
+    @PostMapping("/captcha/status")
+    public ResultObject<CaptchaSolveService.TaskView> getCaptchaStatus(@RequestBody CaptchaStatusReqDTO reqDTO) {
+        try {
+            if (reqDTO == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("账号ID不能为空");
+            }
+            // 状态查询沿用账号归属校验，只返回脱敏任务视图。
+            if (xianyuAccountMapper.selectById(reqDTO.getXianyuAccountId()) == null) {
+                return ResultObject.failed("账号不存在");
+            }
+            CaptchaSolveService.TaskView status = captchaSolveService.getStatus(reqDTO.getXianyuAccountId());
+            if (status == null) {
+                return ResultObject.failed("未找到滑块验证任务");
+            }
+            return ResultObject.success(status);
+        } catch (Exception e) {
+            log.warn("查询滑块验证任务失败: accountId={}, type={}",
+                    reqDTO == null ? null : reqDTO.getXianyuAccountId(),
+                    e.getClass().getSimpleName());
+            return ResultObject.failed("滑块验证状态查询失败");
+        }
+    }
+
+    /**
      * 更新Cookie
      */
     @PostMapping("/updateCookie")
@@ -772,6 +833,23 @@ public class WebSocketController {
     @Data
     public static class ClearCaptchaWaitReqDTO {
         private Long xianyuAccountId;  // 账号ID
+    }
+
+    /**
+     * 启动滑块验证任务请求DTO
+     */
+    @Data
+    public static class CaptchaSolveReqDTO {
+        private Long xianyuAccountId;
+        private CaptchaSolveService.Mode mode;
+    }
+
+    /**
+     * 滑块验证任务状态请求DTO
+     */
+    @Data
+    public static class CaptchaStatusReqDTO {
+        private Long xianyuAccountId;
     }
 
     /**

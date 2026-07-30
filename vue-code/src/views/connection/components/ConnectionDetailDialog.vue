@@ -244,12 +244,15 @@ const handleQRUpdateSuccess = async () => {
   await loadConnectionStatus();
 };
 
-// 滑块验证确认回调
-const handleCaptchaConfirm = () => {
-  window.open('https://www.goofish.com/im', '_blank');
-  addLog('✅ 已打开闲鱼IM页面');
-  addLog('📌 完成验证后，请点击"❓ 如何获取？"按钮查看教程');
-  showInfo('请在闲鱼IM页面完成验证，然后使用帮助按钮获取Cookie和Token');
+// 滑块验证使用现有Cookie更新入口
+const handleCaptchaCookie = () => {
+  showManualUpdateCookieDialog.value = true;
+};
+
+// 滑块验证成功后刷新连接状态
+const handleCaptchaSolveSuccess = async () => {
+  addLog('滑块验证完成，连接凭证已刷新');
+  await loadConnectionStatus();
 };
 
 // 关闭对话框
@@ -498,7 +501,9 @@ onBeforeUnmount(() => {
     <!-- 滑块验证引导对话框 -->
     <CaptchaGuideDialog
       v-model="showCaptchaGuideDialog"
-      @confirm="handleCaptchaConfirm"
+      :account-id="accountId || 0"
+      @cookie="handleCaptchaCookie"
+      @success="handleCaptchaSolveSuccess"
     />
         </div>
       </div>

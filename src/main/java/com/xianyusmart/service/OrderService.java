@@ -20,6 +20,11 @@ public interface OrderService {
      * @return 操作结果
      */
     String confirmShipment(Long accountId, String orderId);
+
+    /**
+     * 小刀订单免拼发货
+     */
+    boolean freeShippingBargain(Long accountId, String orderId, Long itemId, Long buyerId);
     
     /**
      * 调用闲鱼API确认发货

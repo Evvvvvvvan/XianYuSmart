@@ -383,8 +383,8 @@ public class WebSocketTokenServiceImpl implements WebSocketTokenService {
 
                             updateAccountStatusToCaptchaRequired(accountId);
 
-                            log.warn("【账号{}】检测到滑块验证，URL: {}", accountId, captchaUrl);
-                            log.warn("【账号{}】需要人工完成滑块验证，请访问: http://localhost:8080/websocket-manual-captcha.html", accountId);
+                            log.warn("【账号{}】检测到滑块验证，已保存待处理地址", accountId);
+                            log.warn("【账号{}】请在连接管理中选择滑块验证方式", accountId);
                             log.warn("【账号{}】账号状态已更新为-2（需要验证）", accountId);
 
                             throw new CaptchaRequiredException(captchaUrl);
@@ -769,6 +769,17 @@ public class WebSocketTokenServiceImpl implements WebSocketTokenService {
         pendingCaptchaAccounts.remove(accountId);
         captchaTimestamps.remove(accountId);
         log.info("【账号{}】验证等待状态已清除", accountId);
+    }
+
+    @Override
+    public String getPendingCaptchaUrl(Long accountId) {
+        Long createdAt = captchaTimestamps.get(accountId);
+        if (createdAt == null || System.currentTimeMillis() - createdAt > CAPTCHA_TIMEOUT) {
+            pendingCaptchaAccounts.remove(accountId);
+            captchaTimestamps.remove(accountId);
+            return null;
+        }
+        return pendingCaptchaAccounts.get(accountId);
     }
 
     /**

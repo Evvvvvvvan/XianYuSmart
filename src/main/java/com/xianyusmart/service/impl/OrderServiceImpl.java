@@ -73,6 +73,59 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    public boolean freeShippingBargain(Long accountId, String orderId, Long itemId, Long buyerId) {
+        try {
+            if (accountId == null || orderId == null || orderId.isBlank()
+                    || itemId == null || buyerId == null) {
+                return false;
+            }
+
+            String cookieStr = accountService.getCookieByAccountId(accountId);
+            if (cookieStr == null || cookieStr.isBlank()) {
+                log.warn("【账号{}】小刀订单免拼失败，未找到Cookie: orderId={}", accountId, orderId);
+                return false;
+            }
+
+            Map<String, Object> dataMap = new HashMap<>();
+            dataMap.put("bizOrderId", orderId);
+            dataMap.put("itemId", itemId);
+            dataMap.put("buyerId", buyerId);
+
+            XianyuApiCallUtils.ApiCallResult result = xianyuApiCallUtils.callApiWithRetry(
+                    accountId,
+                    "mtop.idle.groupon.activity.seller.freeshipping",
+                    dataMap,
+                    cookieStr
+            );
+            if (result.isSuccess()) {
+                log.info("【账号{}】小刀订单免拼成功: orderId={}", accountId, orderId);
+                return true;
+            }
+            if (isBargainAlreadyDelivered(result)) {
+                log.info("【账号{}】小刀订单已完成免拼发货: orderId={}", accountId, orderId);
+                return true;
+            }
+
+            log.warn("【账号{}】小刀订单免拼失败: orderId={}", accountId, orderId);
+            return false;
+        } catch (Exception e) {
+            log.error("【账号{}】小刀订单免拼异常: orderId={}", accountId, orderId);
+            return false;
+        }
+    }
+
+    private boolean isBargainAlreadyDelivered(XianyuApiCallUtils.ApiCallResult result) {
+        String errorMessage = result.getErrorMessage();
+        String response = result.getResponse();
+        return (errorMessage != null
+                && (errorMessage.contains("ORDER_ALREADY_DELIVERY")
+                || errorMessage.contains("已发货成功")))
+                || (response != null
+                && (response.contains("ORDER_ALREADY_DELIVERY")
+                || response.contains("已发货成功")));
+    }
+
+    @Override
     public String consignDummyDelivery(Long accountId, String orderId, String tradeText, List<String> imageUrls) {
         try {
             log.info("【账号{}】开始调用闲鱼新发货API(虚拟发货): orderId={}", accountId, orderId);

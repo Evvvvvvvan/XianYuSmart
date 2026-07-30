@@ -77,6 +77,43 @@ export function clearCaptchaWait(accountId: number) {
   });
 }
 
+export type CaptchaSolveMode = 'AUTO' | 'MANUAL_BROWSER';
+
+export type CaptchaSolveStatus =
+  | 'PENDING'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'TIMEOUT'
+  | 'UNSUPPORTED';
+
+export interface CaptchaTaskStatus {
+  xianyuAccountId: number;
+  mode: CaptchaSolveMode;
+  status: CaptchaSolveStatus;
+  message: string;
+  startedAt: number;
+  finishedAt?: number;
+}
+
+// 启动服务端滑块验证任务
+export function solveCaptcha(accountId: number, mode: CaptchaSolveMode) {
+  return request<CaptchaTaskStatus>({
+    url: '/websocket/captcha/solve',
+    method: 'POST',
+    data: { xianyuAccountId: accountId, mode }
+  });
+}
+
+// 查询滑块验证任务状态
+export function getCaptchaStatus(accountId: number) {
+  return request<CaptchaTaskStatus>({
+    url: '/websocket/captcha/status',
+    method: 'POST',
+    data: { xianyuAccountId: accountId }
+  });
+}
+
 // 刷新Token响应
 export interface RefreshTokenResponse {
   mh5tkRefreshed: boolean;    // _m_h5_tk是否刷新成功

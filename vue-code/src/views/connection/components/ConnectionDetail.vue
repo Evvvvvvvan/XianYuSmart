@@ -146,9 +146,12 @@ const handleQRUpdateSuccess = async () => {
   await loadConnectionStatus()
 }
 
-const handleCaptchaConfirm = () => {
-  window.open('https://www.goofish.com/im', '_blank')
-  showInfo('请在闲鱼页面完成验证，再手动更新Cookie')
+const handleCaptchaCookie = () => {
+  showManualUpdateCookieDialog.value = true
+}
+
+const handleCaptchaSolveSuccess = async () => {
+  await Promise.all([loadConnectionStatus(), loadOperationLogs()])
 }
 
 const getCookieStatusText = (status?: number) => {
@@ -359,7 +362,9 @@ onBeforeUnmount(() => {
     />
     <CaptchaGuideDialog
       v-model="showCaptchaGuideDialog"
-      @confirm="handleCaptchaConfirm"
+      :account-id="accountId || 0"
+      @cookie="handleCaptchaCookie"
+      @success="handleCaptchaSolveSuccess"
     />
   </div>
 </template>

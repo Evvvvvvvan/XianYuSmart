@@ -35,6 +35,11 @@ public interface WebSocketTokenService {
      * 清除验证等待状态
      */
     void clearCaptchaWait(Long accountId);
+
+    /**
+     * 获取当前账号待处理的滑块验证地址
+     */
+    String getPendingCaptchaUrl(Long accountId);
     
     /**
      * 刷新WebSocket token
