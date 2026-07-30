@@ -24,4 +24,7 @@ public interface CaptchaBrowserRunner {
 
     RunResult run(Long accountId, CaptchaSolveService.Mode mode,
                   String captchaUrl, String cookieText, Consumer<ProgressUpdate> progress);
+
+    default void cancel(Long accountId) {
+    }
 }

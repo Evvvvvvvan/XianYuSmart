@@ -16,12 +16,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.awt.GraphicsEnvironment;
+import java.lang.reflect.Field;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -35,6 +38,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private static final long TASK_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(5);
     private static final int MAX_AUTO_ATTEMPTS = 5;
+    private final Map<Long, BrowserProcessSession> activeBrowserSessions = new ConcurrentHashMap<>();
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                     + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -127,9 +131,17 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
 
         boolean automatic = mode == CaptchaSolveService.Mode.AUTO;
+        BrowserProcessSession processSession = new BrowserProcessSession();
+        if (activeBrowserSessions.putIfAbsent(accountId, processSession) != null) {
+            return new RunResult(Outcome.FAILED, null, "该账号已有浏览器验证任务");
+        }
+        if (Thread.currentThread().isInterrupted()) {
+            activeBrowserSessions.remove(accountId, processSession);
+            return new RunResult(Outcome.FAILED, null, "滑块验证已取消");
+        }
         reportProgress(progress, "STARTING_BROWSER", "正在启动浏览器", 0);
         try (Playwright playwright = Playwright.create();
-             Browser browser = playwright.chromium().launch(
+             Browser browser = chromiumAfterProcessAttached(playwright, processSession).launch(
                      new BrowserType.LaunchOptions()
                              .setHeadless(automatic)
                              .setArgs(List.of(
@@ -181,7 +193,23 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                         "浏览器窗口无法显示，请改用粘贴Cookie");
             }
             return new RunResult(Outcome.FAILED, null, "浏览器滑块验证失败");
+        } finally {
+            activeBrowserSessions.remove(accountId, processSession);
         }
+    }
+
+    @Override
+    public void cancel(Long accountId) {
+        BrowserProcessSession processSession = activeBrowserSessions.get(accountId);
+        if (processSession != null) {
+            processSession.cancel();
+        }
+    }
+
+    private BrowserType chromiumAfterProcessAttached(
+            Playwright playwright, BrowserProcessSession processSession) {
+        processSession.attach(playwright);
+        return playwright.chromium();
     }
 
     void applyFingerprint(BrowserContext context) {
@@ -437,6 +465,57 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private boolean hasValue(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private static final class BrowserProcessSession {
+
+        private boolean cancelled;
+        private ProcessHandle driverProcess;
+
+        private synchronized void attach(Playwright playwright) {
+            driverProcess = extractDriverProcess(playwright);
+            if (cancelled) {
+                terminateProcessTree(driverProcess);
+                throw new CancellationException("滑块验证已取消");
+            }
+        }
+
+        private synchronized void cancel() {
+            cancelled = true;
+            if (driverProcess != null) {
+                terminateProcessTree(driverProcess);
+            }
+        }
+
+        private static ProcessHandle extractDriverProcess(Playwright playwright) {
+            try {
+                Field field = playwright.getClass().getDeclaredField("driverProcess");
+                if (!field.trySetAccessible()) {
+                    throw new IllegalStateException("无法访问Playwright驱动进程");
+                }
+                Process process = (Process) field.get(playwright);
+                if (process == null) {
+                    throw new IllegalStateException("Playwright驱动进程未启动");
+                }
+                return process.toHandle();
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("无法绑定Playwright驱动进程", e);
+            }
+        }
+
+        private static void terminateProcessTree(ProcessHandle root) {
+            List<ProcessHandle> descendants = root.descendants().toList();
+            for (int index = descendants.size() - 1; index >= 0; index--) {
+                ProcessHandle process = descendants.get(index);
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                }
+            }
+            // 先终止浏览器子进程，再终止当前任务的驱动进程，避免残留进程。
+            if (root.isAlive()) {
+                root.destroyForcibly();
+            }
+        }
     }
 
     record SliderTarget(Locator track, Locator handle) {

@@ -146,6 +146,7 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                     if (browserFuture != null) {
                         browserFuture.cancel(true);
                     }
+                    cancelBrowser(control.accountId);
                     FutureTask<Void> future = control.future;
                     if (future != null) {
                         future.cancel(true);
@@ -329,6 +330,7 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                 if (browserFuture != null) {
                     browserFuture.cancel(true);
                 }
+                cancelBrowser(control.accountId);
                 FutureTask<Void> future = control.future;
                 if (future != null) {
                     future.cancel(true);
@@ -341,6 +343,15 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
         }
         if (!control.started.get()) {
             cleanupControl(control);
+        }
+    }
+
+    private void cancelBrowser(Long accountId) {
+        try {
+            captchaBrowserRunner.cancel(accountId);
+        } catch (Exception e) {
+            log.warn("【账号{}】终止滑块浏览器进程失败: {}", accountId,
+                    e.getClass().getSimpleName());
         }
     }
 
