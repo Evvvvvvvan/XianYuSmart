@@ -3,8 +3,8 @@ package com.xianyusmart.service.captcha;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
+import com.microsoft.playwright.ElementHandle;
 import com.microsoft.playwright.Frame;
-import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.BoundingBox;
@@ -223,9 +223,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             try {
                 for (SelectorPair selectors : SLIDER_SELECTORS) {
-                    Locator track = frame.locator(selectors.track()).first();
-                    Locator handle = frame.locator(selectors.handle()).first();
-                    if (track.count() > 0 && handle.count() > 0
+                    ElementHandle track = frame.querySelector(selectors.track());
+                    ElementHandle handle = frame.querySelector(selectors.handle());
+                    if (track != null && handle != null
                             && track.isVisible() && handle.isVisible()
                             && track.boundingBox() != null && handle.boundingBox() != null) {
                         return new SliderTarget(track, handle);
@@ -393,8 +393,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             try {
                 for (String selector : SUCCESS_SELECTORS) {
-                    Locator success = frame.locator(selector);
-                    if (success.count() > 0 && success.first().isVisible()) {
+                    ElementHandle success = frame.querySelector(selector);
+                    if (success != null && success.isVisible()) {
                         return true;
                     }
                 }
@@ -518,7 +518,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
     }
 
-    record SliderTarget(Locator track, Locator handle) {
+    record SliderTarget(ElementHandle track, ElementHandle handle) {
     }
 
     private record SelectorPair(String track, String handle) {
