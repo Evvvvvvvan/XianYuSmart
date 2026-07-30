@@ -85,14 +85,20 @@ export type CaptchaSolveStatus =
   | 'SUCCEEDED'
   | 'FAILED'
   | 'TIMEOUT'
-  | 'UNSUPPORTED';
+  | 'UNSUPPORTED'
+  | 'CANCELLED';
 
 export interface CaptchaTaskStatus {
   xianyuAccountId: number;
   mode: CaptchaSolveMode;
   status: CaptchaSolveStatus;
   message: string;
+  phase: string;
+  attempt: number;
+  maxAttempts: number;
   startedAt: number;
+  updatedAt: number;
+  deadlineAt: number;
   finishedAt?: number;
 }
 
@@ -109,6 +115,16 @@ export function solveCaptcha(accountId: number, mode: CaptchaSolveMode) {
 export function getCaptchaStatus(accountId: number) {
   return request<CaptchaTaskStatus>({
     url: '/websocket/captcha/status',
+    method: 'POST',
+    data: { xianyuAccountId: accountId },
+    silent: true
+  });
+}
+
+// 取消服务端滑块验证任务
+export function cancelCaptcha(accountId: number) {
+  return request<CaptchaTaskStatus>({
+    url: '/websocket/captcha/cancel',
     method: 'POST',
     data: { xianyuAccountId: accountId }
   });

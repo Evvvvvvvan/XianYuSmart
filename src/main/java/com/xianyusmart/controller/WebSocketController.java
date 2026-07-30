@@ -514,6 +514,32 @@ public class WebSocketController {
     }
 
     /**
+     * 取消滑块验证任务
+     */
+    @PostMapping("/captcha/cancel")
+    public ResultObject<CaptchaSolveService.TaskView> cancelCaptcha(@RequestBody CaptchaStatusReqDTO reqDTO) {
+        try {
+            if (reqDTO == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("账号ID不能为空");
+            }
+            // 取消前校验账号归属，避免跨租户操作浏览器任务。
+            if (xianyuAccountMapper.selectById(reqDTO.getXianyuAccountId()) == null) {
+                return ResultObject.failed("账号不存在");
+            }
+            CaptchaSolveService.TaskView status = captchaSolveService.cancel(reqDTO.getXianyuAccountId());
+            if (status == null) {
+                return ResultObject.failed("未找到滑块验证任务");
+            }
+            return ResultObject.success(status);
+        } catch (Exception e) {
+            log.warn("取消滑块验证任务失败: accountId={}, type={}",
+                    reqDTO == null ? null : reqDTO.getXianyuAccountId(),
+                    e.getClass().getSimpleName());
+            return ResultObject.failed("滑块验证任务取消失败");
+        }
+    }
+
+    /**
      * 更新Cookie
      */
     @PostMapping("/updateCookie")

@@ -24,6 +24,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 /**
  * Java Playwright滑块浏览器执行器
@@ -115,7 +116,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     @Override
     public RunResult run(Long accountId, CaptchaSolveService.Mode mode,
-                         String captchaUrl, String cookieText) {
+                         String captchaUrl, String cookieText,
+                         Consumer<ProgressUpdate> progress) {
+        reportProgress(progress, "CHECKING_ENVIRONMENT", "正在检查浏览器运行环境", 0);
         if (!isAllowedCaptchaUrl(captchaUrl)) {
             return new RunResult(Outcome.FAILED, null, "验证地址不受支持");
         }
@@ -125,6 +128,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
 
         boolean automatic = mode == CaptchaSolveService.Mode.AUTO;
+        reportProgress(progress, "STARTING_BROWSER", "正在启动浏览器", 0);
         try (Playwright playwright = Playwright.create();
              Browser browser = playwright.chromium().launch(
                      new BrowserType.LaunchOptions()
@@ -146,6 +150,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             context.addCookies(buildBrowserCookies(cookieText));
 
+            reportProgress(progress, "OPENING_PAGE", "正在打开滑块验证页面", 0);
             Page page = context.newPage();
             page.navigate(captchaUrl, new Page.NavigateOptions()
                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
@@ -156,12 +161,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
             long deadline = System.currentTimeMillis() + TASK_TIMEOUT_MS;
             RunResult verificationResult = automatic
-                    ? runAutomatic(page, deadline)
-                    : waitForManual(page, deadline);
+                    ? runAutomatic(page, deadline, progress)
+                    : waitForManual(page, deadline, progress);
             if (verificationResult.outcome() != Outcome.SOLVED) {
                 return verificationResult;
             }
 
+            reportProgress(progress, "COLLECTING_COOKIE", "正在回收更新后的Cookie", 0);
             page.waitForTimeout(800);
             String refreshedCookie = buildCookieText(context.cookies(COOKIE_URLS));
             if (refreshedCookie.isBlank()) {
@@ -229,10 +235,12 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         return host.equals(rootDomain) || host.endsWith("." + rootDomain);
     }
 
-    private RunResult runAutomatic(Page page, long deadline) {
+    RunResult runAutomatic(Page page, long deadline, Consumer<ProgressUpdate> progress) {
         boolean captchaSeen = false;
         for (int attempt = 1; attempt <= MAX_AUTO_ATTEMPTS
                 && System.currentTimeMillis() < deadline; attempt++) {
+            reportProgress(progress, "FINDING_SLIDER",
+                    "第" + attempt + "次：正在识别滑块", attempt);
             SliderTarget target = waitForSlider(page, Math.min(deadline, System.currentTimeMillis() + 12_000));
             if (target == null) {
                 if (hasSuccessSignal(page) || (captchaSeen && !isCaptchaVisible(page))) {
@@ -242,10 +250,14 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             captchaSeen = true;
 
+            reportProgress(progress, "DRAGGING_SLIDER",
+                    "第" + attempt + "次：正在拖动滑块", attempt);
             if (!dragSlider(page, target, attempt)) {
                 page.waitForTimeout(500);
                 continue;
             }
+            reportProgress(progress, "WAITING_RESULT",
+                    "第" + attempt + "次：正在等待验证结果", attempt);
             if (waitForCaptchaGone(page, Math.min(deadline, System.currentTimeMillis() + 10_000))) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
@@ -257,7 +269,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         return new RunResult(Outcome.FAILED, null, "自动拖动未通过验证");
     }
 
-    private RunResult waitForManual(Page page, long deadline) {
+    private RunResult waitForManual(Page page, long deadline, Consumer<ProgressUpdate> progress) {
+        reportProgress(progress, "WAITING_MANUAL", "浏览器已打开，请人工完成滑块", 0);
         boolean captchaSeen = false;
         while (System.currentTimeMillis() < deadline) {
             SliderTarget target = findSlider(page);
@@ -269,6 +282,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             page.waitForTimeout(500);
         }
         return new RunResult(Outcome.TIMEOUT, null, "人工滑块验证超时");
+    }
+
+    private void reportProgress(Consumer<ProgressUpdate> progress, String phase,
+                                String message, int attempt) {
+        if (progress != null) {
+            progress.accept(new ProgressUpdate(phase, message, attempt, MAX_AUTO_ATTEMPTS));
+        }
     }
 
     private SliderTarget waitForSlider(Page page, long deadline) {

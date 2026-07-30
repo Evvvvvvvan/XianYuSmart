@@ -120,6 +120,12 @@ public class AsyncConfig {
         return scheduledExecutor(4, "xys-websocket-");
     }
 
+    @Bean(name = "captchaTaskScheduler", destroyMethod = "shutdown")
+    public ScheduledExecutorService captchaTaskScheduler() {
+        // 验证超时使用独立线程，避免WebSocket阻塞任务延迟终止信号。
+        return scheduledExecutor(1, "xys-captcha-timeout-");
+    }
+
     @Bean(name = "autoReplyScheduler", destroyMethod = "shutdown")
     public ScheduledExecutorService autoReplyScheduler() {
         return scheduledExecutor(2, "xys-reply-");

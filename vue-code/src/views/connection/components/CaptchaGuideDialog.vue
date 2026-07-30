@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
+  cancelCaptcha,
   getCaptchaStatus,
   solveCaptcha,
   type CaptchaSolveMode,
@@ -21,17 +22,71 @@ interface Emits {
 
 type CaptchaOption = CaptchaSolveMode | 'COOKIE';
 
+const statusLabels: Record<string, string> = {
+  PENDING: '等待执行',
+  RUNNING: '正在验证',
+  SUCCEEDED: '验证成功',
+  FAILED: '验证失败',
+  TIMEOUT: '验证超时',
+  UNSUPPORTED: '环境不支持',
+  CANCELLED: '已取消'
+};
+const phaseLabels: Record<string, string> = {
+  QUEUED: '任务排队',
+  CHECKING_ENVIRONMENT: '检查浏览器环境',
+  STARTING_BROWSER: '启动浏览器',
+  OPENING_PAGE: '打开验证页面',
+  FINDING_SLIDER: '识别滑块',
+  DRAGGING_SLIDER: '拖动滑块',
+  WAITING_RESULT: '等待验证结果',
+  WAITING_BROWSER: '等待浏览器响应',
+  WAITING_MANUAL: '等待人工拖动',
+  COLLECTING_COOKIE: '回收 Cookie',
+  UPDATING_COOKIE: '更新 Cookie 并重连'
+};
+
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const selectedMode = ref<CaptchaOption>('AUTO');
 const taskStatus = ref<CaptchaTaskStatus | null>(null);
 const loading = ref(false);
+const cancelling = ref(false);
+const pollError = ref('');
+const now = ref(Date.now());
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let clockTimer: ReturnType<typeof setInterval> | null = null;
 
-const running = computed(() =>
-  loading.value
-  || taskStatus.value?.status === 'PENDING'
+const taskRunning = computed(() =>
+  taskStatus.value?.status === 'PENDING'
   || taskStatus.value?.status === 'RUNNING'
+);
+const running = computed(() => loading.value || taskRunning.value);
+
+const elapsedSeconds = computed(() => {
+  if (!taskStatus.value) return 0;
+  const end = taskStatus.value.finishedAt || now.value;
+  return Math.max(0, Math.floor((end - taskStatus.value.startedAt) / 1000));
+});
+
+const remainingSeconds = computed(() => {
+  if (!taskStatus.value || !taskRunning.value) return 0;
+  return Math.max(0, Math.ceil((taskStatus.value.deadlineAt - now.value) / 1000));
+});
+
+const updatedSecondsAgo = computed(() => {
+  if (!taskStatus.value) return 0;
+  return Math.max(0, Math.floor((now.value - taskStatus.value.updatedAt) / 1000));
+});
+
+const attemptText = computed(() => {
+  if (!taskStatus.value?.attempt) return '';
+  return `第 ${taskStatus.value.attempt}/${taskStatus.value.maxAttempts} 次`;
+});
+const statusText = computed(() =>
+  taskStatus.value ? statusLabels[taskStatus.value.status] || taskStatus.value.status : ''
+);
+const phaseText = computed(() =>
+  taskStatus.value ? phaseLabels[taskStatus.value.phase] || taskStatus.value.phase : ''
 );
 
 const actionText = computed(() => {
@@ -44,11 +99,16 @@ const actionText = computed(() => {
 watch(() => props.modelValue, (visible) => {
   if (!visible) {
     clearPolling();
+    stopClock();
     return;
   }
   selectedMode.value = 'AUTO';
   taskStatus.value = null;
   loading.value = false;
+  cancelling.value = false;
+  pollError.value = '';
+  startClock();
+  void resumeActiveTask();
 });
 
 const handleClose = () => {
@@ -76,6 +136,7 @@ const handleAction = async () => {
     if (!response.data) {
       throw new Error('滑块验证任务状态为空');
     }
+    pollError.value = '';
     handleTaskStatus(response.data);
   } catch (error: any) {
     showError(error.message || '滑块验证任务启动失败');
@@ -91,24 +152,26 @@ const pollStatus = async () => {
       throw new Error(response.msg || '滑块验证状态查询失败');
     }
     if (response.data) {
+      pollError.value = '';
       handleTaskStatus(response.data);
     }
   } catch (error: any) {
-    clearPolling();
     const message = error.message || '滑块验证状态查询失败';
-    if (taskStatus.value) {
-      taskStatus.value = {
-        ...taskStatus.value,
-        status: 'FAILED',
-        message
-      };
+    if (message === '未找到滑块验证任务') {
+      pollError.value = '';
+      return;
     }
-    showError(message);
+    if (!pollError.value) {
+      showError(message);
+    }
+    pollError.value = message;
+    schedulePolling();
   }
 };
 
 const handleTaskStatus = (status: CaptchaTaskStatus) => {
   taskStatus.value = status;
+  selectedMode.value = status.mode;
   clearPolling();
   if (status.status === 'SUCCEEDED') {
     showSuccess(status.message || '滑块验证完成，连接已恢复');
@@ -122,8 +185,66 @@ const handleTaskStatus = (status: CaptchaTaskStatus) => {
     showError(status.message || '滑块验证未完成');
     return;
   }
-  pollTimer = setTimeout(pollStatus, 2000);
+  if (status.status === 'CANCELLED') {
+    showSuccess(status.message || '滑块验证已取消');
+    return;
+  }
+  schedulePolling();
 };
+
+const handleCancel = async () => {
+  if (!props.accountId || !taskRunning.value || cancelling.value) return;
+  cancelling.value = true;
+  try {
+    const response = await cancelCaptcha(props.accountId);
+    if (response.code !== 0 && response.code !== 200) {
+      throw new Error(response.msg || '滑块验证任务取消失败');
+    }
+    if (!response.data) {
+      throw new Error('滑块验证任务状态为空');
+    }
+    pollError.value = '';
+    handleTaskStatus(response.data);
+  } catch (error: any) {
+    showError(error.message || '滑块验证任务取消失败');
+  } finally {
+    cancelling.value = false;
+  }
+};
+
+async function resumeActiveTask() {
+  if (!props.accountId) return;
+  try {
+    const response = await getCaptchaStatus(props.accountId);
+    if ((response.code === 0 || response.code === 200)
+        && response.data
+        && (response.data.status === 'PENDING' || response.data.status === 'RUNNING')) {
+      pollError.value = '';
+      handleTaskStatus(response.data);
+    }
+  } catch (error: any) {
+    const message = error.message || '滑块验证状态查询失败';
+    if (message === '未找到滑块验证任务') {
+      pollError.value = '';
+      return;
+    }
+    if (!pollError.value) {
+      showError(message);
+    }
+    pollError.value = message;
+    clearPolling();
+    if (props.modelValue && !taskRunning.value) {
+      pollTimer = setTimeout(resumeActiveTask, 2000);
+    }
+  }
+}
+
+function schedulePolling() {
+  clearPolling();
+  if (taskRunning.value && props.modelValue) {
+    pollTimer = setTimeout(pollStatus, 2000);
+  }
+}
 
 function clearPolling() {
   if (pollTimer) {
@@ -132,7 +253,25 @@ function clearPolling() {
   }
 }
 
-onBeforeUnmount(clearPolling);
+function startClock() {
+  stopClock();
+  now.value = Date.now();
+  clockTimer = setInterval(() => {
+    now.value = Date.now();
+  }, 1000);
+}
+
+function stopClock() {
+  if (clockTimer) {
+    clearInterval(clockTimer);
+    clockTimer = null;
+  }
+}
+
+onBeforeUnmount(() => {
+  clearPolling();
+  stopClock();
+});
 </script>
 
 <template>
@@ -173,14 +312,31 @@ onBeforeUnmount(clearPolling);
               </label>
             </div>
             <div v-if="taskStatus" class="captcha-status" :data-status="taskStatus.status">
-              <span>{{ taskStatus.status }}</span>
+              <span>{{ statusText }}</span>
               <p>{{ taskStatus.message }}</p>
+              <div class="captcha-progress">
+                <span>阶段：{{ phaseText }}</span>
+                <span v-if="attemptText">{{ attemptText }}</span>
+                <span>已用时：{{ elapsedSeconds }} 秒</span>
+                <span v-if="taskRunning">剩余：{{ remainingSeconds }} 秒</span>
+                <span>状态更新：{{ updatedSecondsAgo }} 秒前</span>
+              </div>
+              <p v-if="pollError" class="captcha-poll-error">
+                状态查询暂时失败，正在继续重试：{{ pollError }}
+              </p>
             </div>
             <p class="captcha-tip">人工浏览器仅支持可显示桌面的本地环境；服务器无界面时可改用粘贴 Cookie。</p>
           </div>
 
           <div class="modal-footer">
-            <button class="btn btn-secondary" type="button" @click="handleClose">取消</button>
+            <button
+              class="btn btn-secondary"
+              type="button"
+              :disabled="cancelling"
+              @click="taskRunning ? handleCancel() : handleClose()"
+            >
+              {{ taskRunning ? (cancelling ? '正在终止' : '终止验证') : '取消' }}
+            </button>
             <button class="btn btn-primary" type="button" :disabled="running" @click="handleAction">
               {{ actionText }}
             </button>
@@ -312,6 +468,23 @@ onBeforeUnmount(clearPolling);
   margin: 4px 0 0;
   color: #475569;
   font-size: 13px;
+}
+
+.captcha-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 8px;
+}
+
+.captcha-progress span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.captcha-status .captcha-poll-error {
+  color: #dc2626;
 }
 
 .captcha-tip {

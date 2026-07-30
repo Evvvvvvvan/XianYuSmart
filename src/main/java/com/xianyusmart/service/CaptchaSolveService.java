@@ -16,14 +16,18 @@ public interface CaptchaSolveService {
         SUCCEEDED,
         FAILED,
         TIMEOUT,
-        UNSUPPORTED
+        UNSUPPORTED,
+        CANCELLED
     }
 
     record TaskView(Long xianyuAccountId, Mode mode, Status status,
-                    String message, long startedAt, Long finishedAt) {
+                    String message, String phase, int attempt, int maxAttempts,
+                    long startedAt, long updatedAt, long deadlineAt, Long finishedAt) {
     }
 
     TaskView start(Long accountId, Mode mode);
 
     TaskView getStatus(Long accountId);
+
+    TaskView cancel(Long accountId);
 }

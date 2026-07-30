@@ -34,7 +34,7 @@
 
 ### 可中断任务
 
-`CaptchaSolveServiceImpl` 使用 `FutureTask` 保存每个账号的执行句柄，并复用现有调度器注册 5 分钟超时任务。
+`CaptchaSolveServiceImpl` 使用 `FutureTask` 保存每个账号的执行句柄，并使用独立调度器注册 5 分钟超时任务，避免 WebSocket 阻塞业务延迟终止信号。
 
 - 超时任务先把当前任务原子更新为 `TIMEOUT`，再调用 `Future.cancel(true)`。
 - Playwright 1.40 的 `PipeTransport.poll()` 对线程中断会抛出异常，因此阻塞的同步调用可以退出。

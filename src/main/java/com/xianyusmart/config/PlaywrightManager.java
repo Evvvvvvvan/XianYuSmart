@@ -158,6 +158,10 @@ public class PlaywrightManager {
 
     public void cleanTempFiles() {
         try {
+            if (isInitialized()) {
+                log.debug("Playwright浏览器运行中，跳过临时文件清理");
+                return;
+            }
             Path tmpDir = Paths.get(System.getProperty("java.io.tmpdir"));
             long now = System.currentTimeMillis();
             long thresholdMs = TimeUnit.HOURS.toMillis(1);
@@ -174,18 +178,19 @@ public class PlaywrightManager {
                     .forEach(path -> {
                         try {
                             File file = path.toFile();
+                            long fileAge = now - file.lastModified();
+                            if (fileAge <= thresholdMs) {
+                                return;
+                            }
                             if (file.isDirectory()) {
                                 long dirSize = deleteDirectory(file);
                                 deletedCount[0]++;
                                 deletedSize[0] += dirSize;
                             } else {
-                                long fileAge = now - file.lastModified();
-                                if (fileAge > thresholdMs) {
-                                    long fileSize = file.length();
-                                    if (file.delete()) {
-                                        deletedCount[0]++;
-                                        deletedSize[0] += fileSize;
-                                    }
+                                long fileSize = file.length();
+                                if (file.delete()) {
+                                    deletedCount[0]++;
+                                    deletedSize[0] += fileSize;
                                 }
                             }
                         } catch (Exception ignored) {

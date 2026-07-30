@@ -4,7 +4,7 @@
 
 **Goal:** 修复生产滑块任务永久 `RUNNING`，提供可中断硬超时、主动取消和不间断的真实阶段进度。
 
-**Architecture:** 保留现有 Java Playwright 执行器和轮询接口。修复临时目录清理后，在 `CaptchaSolveServiceImpl` 中用 `FutureTask`、现有调度器和任务标识控制生命周期；Playwright 进度通过回调写入任务状态，独立心跳在浏览器阻塞时继续更新时间和原因。前端每 2 秒同步服务端状态、每秒刷新时间，并提供取消入口。
+**Architecture:** 保留现有 Java Playwright 执行器和轮询接口。修复临时目录清理后，在 `CaptchaSolveServiceImpl` 中用 `FutureTask`、独立超时调度器和任务标识控制生命周期；Playwright 进度通过回调写入任务状态，独立心跳在浏览器阻塞时继续更新时间和原因。前端每 2 秒同步服务端状态、每秒刷新时间，并提供取消入口。
 
 **Tech Stack:** Java 21、Spring Boot 3.5、Playwright Java 1.40、JUnit 5、Mockito、Vue 3、TypeScript、Vite。
 
@@ -14,6 +14,8 @@
 
 - Modify: `src/main/java/com/xianyusmart/config/PlaywrightManager.java`
   - 防止活跃或未过期 Playwright 临时目录被清理。
+- Modify: `src/main/java/com/xianyusmart/config/AsyncConfig.java`
+  - 提供不受 WebSocket 阻塞任务影响的验证码超时调度器。
 - Modify: `src/main/java/com/xianyusmart/service/CaptchaSolveService.java`
   - 增加 `CANCELLED`、进度字段和取消方法。
 - Modify: `src/main/java/com/xianyusmart/service/captcha/CaptchaBrowserRunner.java`
@@ -145,7 +147,7 @@ record TaskView(Long xianyuAccountId, Mode mode, Status status,
 TaskView cancel(Long accountId);
 ```
 
-- [ ] **Step 4: 用 FutureTask 和现有调度器管理任务**
+- [ ] **Step 4: 用 FutureTask 和独立调度器管理任务**
 
 ```java
 FutureTask<Void> future = new FutureTask<>(() -> {
