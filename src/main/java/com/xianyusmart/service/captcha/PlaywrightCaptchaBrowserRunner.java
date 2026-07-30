@@ -75,10 +75,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             ".slider-track",
             ".baxia-slider-track",
             "[class*='track']");
+    // 仅匹配滑块状态类，避免把静态成功文案误判为已通过。
     private static final List<String> SUCCESS_SELECTORS = List.of(
-            ".nc-lang-cnt[data-nc-lang='_yesTEXT']",
-            "[class*='verify-success']",
-            "text=验证通过");
+            ".nc_ok",
+            "#nc_1_n1z.success",
+            ".nc_wrapper .icon-success",
+            "#baxia-dialog .icon-success",
+            ".slide-verify .verify-success");
     private static final String FINGERPRINT_SCRIPT = """
             (() => {
               try {
