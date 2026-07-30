@@ -5,6 +5,7 @@ import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.ElementHandle;
 import com.microsoft.playwright.Frame;
+import com.microsoft.playwright.JSHandle;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.BoundingBox;
@@ -46,49 +47,153 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             "https://www.goofish.com/im",
             "https://passport.goofish.com",
             "https://h5api.m.goofish.com");
-    private static final List<SelectorPair> SLIDER_SELECTORS = List.of(
-            new SelectorPair(".nc_scale", ".btn_slide"),
-            new SelectorPair(".nc_scale", "[id^='nc_'][id$='_n1z']"),
-            new SelectorPair("#nc_1_wrapper", "#nc_1_n1z"),
-            new SelectorPair(".baxia-slider-track", ".baxia-slider-btn"),
-            new SelectorPair("[class*='slider-track']",
-                    "[class*='slider-button'], [class*='slider-btn'], [class*='slider-handle']"));
+    private static final List<String> SLIDER_HANDLE_SELECTORS = List.of(
+            "#nc_1_n1z",
+            ".btn_slide",
+            ".nc_iconfont",
+            ".slide-btn",
+            "#nc_1_n1t",
+            "[data-role='slider']",
+            "#nc_1_n1z .icon",
+            ".btn_slide > i",
+            "#aliyunCaptcha-sliding-slider",
+            "#nc_1_n1z[style]",
+            ".J_MIDDLEWARE_FRAME .btn_slide",
+            "span.nc_iconfont",
+            "#baxia-dialog .btn_slide",
+            "div[role='button'][class*='slide']",
+            "div[draggable='true'][class*='slide']",
+            "[class*='slider-button'], [class*='slider-btn'], [class*='slider-handle']");
+    private static final List<String> SLIDER_TRACK_SELECTORS = List.of(
+            ".nc_scale",
+            ".scale_text",
+            ".slide-track",
+            "#nc_1__scale",
+            ".nc-lang",
+            ".nc_wrapper",
+            ".slide-verify-track",
+            ".slider-track",
+            ".baxia-slider-track",
+            "[class*='track']");
     private static final List<String> SUCCESS_SELECTORS = List.of(
             ".nc-lang-cnt[data-nc-lang='_yesTEXT']",
             "[class*='verify-success']",
             "text=验证通过");
     private static final String FINGERPRINT_SCRIPT = """
             (() => {
-              const define = (target, name, value) => {
-                try {
-                  Object.defineProperty(target, name, {
-                    configurable: true,
-                    get: () => value
-                  });
-                } catch (ignored) {
-                }
-              };
-              define(Navigator.prototype, 'webdriver', undefined);
-              define(Navigator.prototype, 'plugins', [1, 2, 3, 4, 5]);
-              define(Navigator.prototype, 'languages', ['zh-CN', 'zh']);
-              define(Navigator.prototype, 'hardwareConcurrency', 8);
-              define(Navigator.prototype, 'deviceMemory', 8);
-              if (!window.chrome) {
-                Object.defineProperty(window, 'chrome', {
+              try {
+              try {
+                delete Object.getPrototypeOf(navigator).webdriver;
+                Object.defineProperty(navigator, 'webdriver', {
                   configurable: true,
-                  value: { runtime: {} }
+                  get: () => undefined
                 });
-              } else if (!window.chrome.runtime) {
-                window.chrome.runtime = {};
+                Object.defineProperty(Navigator.prototype, 'webdriver', {
+                  configurable: true,
+                  get: () => undefined
+                });
+              } catch (ignored) {
               }
-              if (navigator.permissions && navigator.permissions.query) {
-                const originalQuery = navigator.permissions.query.bind(navigator.permissions);
-                navigator.permissions.query = parameters => {
-                  if (parameters && parameters.name === 'notifications') {
-                    return Promise.resolve({ state: Notification.permission });
+              if (!window.chrome) {
+                window.chrome = {};
+              }
+              if (!window.chrome.runtime) {
+                window.chrome.runtime = {
+                  OnInstalledReason: {
+                    INSTALL: 'install',
+                    UPDATE: 'update',
+                    CHROME_UPDATE: 'chrome_update',
+                    SHARED_MODULE_UPDATE: 'shared_module_update'
+                  },
+                  OnRestartRequiredReason: {
+                    APP_UPDATE: 'app_update',
+                    OS_UPDATE: 'os_update',
+                    PERIODIC: 'periodic'
+                  },
+                  PlatformArch: {
+                    ARM: 'arm',
+                    X86_32: 'x86-32',
+                    X86_64: 'x86-64'
+                  },
+                  PlatformOs: {
+                    MAC: 'mac',
+                    WIN: 'win',
+                    ANDROID: 'android',
+                    CROS: 'cros',
+                    LINUX: 'linux',
+                    OPENBSD: 'openbsd'
                   }
-                  return originalQuery(parameters);
                 };
+              }
+              if (!window.chrome.csi) {
+                window.chrome.csi = () => ({
+                  startE: Date.now(),
+                  onloadT: Date.now(),
+                  pageT: 0,
+                  tran: 15
+                });
+              }
+              if (!window.chrome.loadTimes) {
+                window.chrome.loadTimes = () => ({
+                  commitLoadTime: Date.now() / 1000 - 5,
+                  connectionInfo: 'h2',
+                  finishDocumentLoadTime: Date.now() / 1000 - 3,
+                  finishLoadTime: Date.now() / 1000 - 2,
+                  firstPaintAfterLoadTime: 0,
+                  firstPaintTime: Date.now() / 1000 - 4,
+                  navigationType: 'Other',
+                  npnNegotiatedProtocol: 'h2',
+                  requestTime: Date.now() / 1000 - 6,
+                  startLoadTime: Date.now() / 1000 - 6,
+                  wasAlternateProtocolAvailable: false,
+                  wasFetchedViaSpdy: true,
+                  wasNpnNegotiated: true
+                });
+              }
+              const fakePlugin = (name, filename, description) => {
+                const plugin = { name, filename, description, length: 1 };
+                plugin[0] = {
+                  type: 'application/pdf',
+                  suffixes: 'pdf',
+                  description: 'Portable Document Format'
+                };
+                plugin.item = index => plugin[index] || null;
+                plugin.namedItem = value => plugin[0] && plugin[0].name === value
+                  ? plugin[0] : null;
+                return plugin;
+              };
+              const plugins = [
+                fakePlugin('PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                fakePlugin('Chrome PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                fakePlugin('Chromium PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                fakePlugin('Microsoft Edge PDF Viewer', 'internal-pdf-viewer', 'Portable Document Format'),
+                fakePlugin('WebKit built-in PDF', 'internal-pdf-viewer', 'Portable Document Format')
+              ];
+              plugins.item = index => plugins[index] || null;
+              plugins.namedItem = name => plugins.find(plugin => plugin.name === name) || null;
+              plugins.refresh = () => {};
+              Object.defineProperty(navigator, 'plugins', {
+                configurable: true,
+                get: () => plugins
+              });
+              Object.defineProperty(navigator, 'languages', {
+                configurable: true,
+                get: () => ['zh-CN', 'zh', 'en-US', 'en']
+              });
+              Object.defineProperty(navigator, 'hardwareConcurrency', {
+                configurable: true,
+                get: () => 8
+              });
+              Object.defineProperty(navigator, 'deviceMemory', {
+                configurable: true,
+                get: () => 8
+              });
+              if (window.Notification && navigator.permissions && navigator.permissions.query) {
+                const originalQuery = navigator.permissions.query.bind(navigator.permissions);
+                navigator.permissions.query = parameters => parameters
+                  && parameters.name === 'notifications'
+                  ? Promise.resolve({ state: Notification.permission, onchange: null })
+                  : originalQuery(parameters);
               }
               const patchWebGL = prototype => {
                 if (!prototype || !prototype.getParameter) {
@@ -96,11 +201,11 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 }
                 const originalGetParameter = prototype.getParameter;
                 prototype.getParameter = function(parameter) {
-                  if (parameter === 37445) {
-                    return 'Intel Inc.';
+                  if (parameter === 0x9245) {
+                    return 'Google Inc. (NVIDIA)';
                   }
-                  if (parameter === 37446) {
-                    return 'Intel Iris OpenGL Engine';
+                  if (parameter === 0x9246) {
+                    return 'ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 Direct3D11 vs_5_0 ps_5_0)';
                   }
                   return originalGetParameter.call(this, parameter);
                 };
@@ -111,10 +216,65 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 delete window.__playwright__binding__;
                 delete window.__pwInitScripts;
                 delete window.__webdriver_script_fn;
-                delete window.cdc_adoQpoasnfa76pfcZLmcfl_Array;
+                Object.keys(window)
+                  .filter(key => key.startsWith('cdc_'))
+                  .forEach(key => delete window[key]);
+              } catch (ignored) {
+              }
               } catch (ignored) {
               }
             })();
+            """;
+    private static final String SLIDER_HEURISTIC_SCRIPT = """
+            () => {
+              const containers = [];
+              [
+                '#nc_1',
+                '.nc_wrapper',
+                '#baxia-dialog',
+                '.J_MIDDLEWARE_FRAME',
+                '.slide-verify',
+                '.nc-container',
+                '[class*="aliyunCaptcha"]',
+                '[class*="captcha"]',
+                '[class*="slider"]'
+              ].forEach(selector => document.querySelectorAll(selector)
+                .forEach(container => containers.push(container)));
+              const candidates = [];
+              const elements = new Set();
+              containers.forEach(container => container
+                .querySelectorAll('div, span, a, button, i, em')
+                .forEach(element => elements.add(element)));
+              elements.forEach(element => {
+                const box = element.getBoundingClientRect();
+                if (box.width < 24 || box.width > 60 || box.height < 24 || box.height > 60
+                    || box.bottom <= 0 || box.right <= 0) {
+                  return;
+                }
+                const style = window.getComputedStyle(element);
+                if (style.visibility === 'hidden' || style.display === 'none') {
+                  return;
+                }
+                const draggable = style.cursor === 'pointer' || style.cursor === 'move'
+                  || style.cursor === 'grab' || element.draggable
+                  || element.getAttribute('draggable') === 'true';
+                const text = (element.innerText || '').trim();
+                const identity = `${element.id || ''} ${element.className || ''}`;
+                if (!draggable || text.length > 5 || /close|refresh|reload/i.test(identity)) {
+                  return;
+                }
+                let score = 5;
+                if (Math.abs(box.width - box.height) < 8) {
+                  score += 3;
+                }
+                if (style.position === 'absolute' || style.position === 'relative') {
+                  score += 2;
+                }
+                candidates.push({ element, score });
+              });
+              candidates.sort((left, right) => right.score - left.score);
+              return candidates.length ? candidates[0].element : null;
+            }
             """;
 
     @Override
@@ -146,10 +306,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             Browser browser = chromiumAfterProcessAttached(playwright, processSession).launch(
                      new BrowserType.LaunchOptions()
                              .setHeadless(automatic)
+                             .setIgnoreDefaultArgs(List.of("--enable-automation"))
                              .setArgs(List.of(
                                      "--disable-blink-features=AutomationControlled",
                                      "--disable-infobars",
-                                     "--disable-dev-shm-usage")));
+                                     "--disable-dev-shm-usage",
+                                     "--no-first-run",
+                                     "--no-default-browser-check")));
             BrowserContext context = browser.newContext(
                      new Browser.NewContextOptions()
                              .setUserAgent(USER_AGENT)
@@ -229,25 +392,82 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     SliderTarget findSlider(Page page) {
-        for (Frame frame : page.frames()) {
+        List<Frame> frames = page.frames();
+        // 先检查全部frame的明确标识，避免主页面普通按钮遮蔽验证码iframe。
+        for (Frame frame : frames) {
             if (frame.isDetached()) {
                 continue;
             }
             try {
-                for (SelectorPair selectors : SLIDER_SELECTORS) {
-                    ElementHandle track = frame.querySelector(selectors.track());
-                    ElementHandle handle = frame.querySelector(selectors.handle());
-                    if (track != null && handle != null
-                            && track.isVisible() && handle.isVisible()
-                            && track.boundingBox() != null && handle.boundingBox() != null) {
-                        return new SliderTarget(track, handle);
-                    }
+                ElementHandle handle = findVisibleElement(frame, SLIDER_HANDLE_SELECTORS);
+                if (handle != null) {
+                    ElementHandle track = findVisibleElement(frame, SLIDER_TRACK_SELECTORS);
+                    return new SliderTarget(track, handle);
+                }
+            } catch (Exception ignored) {
+                // iframe刷新期间继续检查其余上下文。
+            }
+        }
+        for (Frame frame : frames) {
+            if (frame.isDetached()) {
+                continue;
+            }
+            try {
+                SliderTarget target = findSliderByHeuristic(frame);
+                if (target != null) {
+                    return target;
                 }
             } catch (Exception ignored) {
                 // iframe刷新期间继续检查其余上下文。
             }
         }
         return null;
+    }
+
+    private ElementHandle findVisibleElement(Frame frame, List<String> selectors) {
+        for (String selector : selectors) {
+            ElementHandle element = frame.querySelector(selector);
+            if (element == null) {
+                continue;
+            }
+            if (element.isVisible() && element.boundingBox() != null) {
+                return element;
+            }
+            element.dispose();
+        }
+        return null;
+    }
+
+    private SliderTarget findSliderByHeuristic(Frame frame) {
+        JSHandle result = frame.evaluateHandle(SLIDER_HEURISTIC_SCRIPT);
+        ElementHandle element = result.asElement();
+        BoundingBox handleBox = element == null ? null : element.boundingBox();
+        if (element == null || !element.isVisible() || handleBox == null) {
+            result.dispose();
+            return null;
+        }
+        ElementHandle track = findVisibleElement(frame, SLIDER_TRACK_SELECTORS);
+        BoundingBox trackBox = track == null ? null : track.boundingBox();
+        if (!isRelatedSliderTrack(trackBox, handleBox)) {
+            if (track != null) {
+                track.dispose();
+            }
+            result.dispose();
+            return null;
+        }
+        return new SliderTarget(track, element);
+    }
+
+    private boolean isRelatedSliderTrack(BoundingBox track, BoundingBox handle) {
+        if (track == null || handle == null || track.width < 150) {
+            return false;
+        }
+        double handleCenterX = handle.x + handle.width / 2;
+        boolean horizontal = handleCenterX >= track.x - handle.width
+                && handleCenterX <= track.x + track.width + handle.width;
+        boolean vertical = handle.y < track.y + track.height + handle.height
+                && handle.y + handle.height > track.y - handle.height;
+        return horizontal && vertical;
     }
 
     static boolean isAllowedCaptchaUrl(String value) {
@@ -312,10 +532,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         reportProgress(progress, "WAITING_MANUAL", "浏览器已打开，请人工完成滑块", 0);
         boolean captchaSeen = false;
         while (System.currentTimeMillis() < deadline) {
+            if (hasSuccessSignal(page)) {
+                return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
+            }
             SliderTarget target = findSlider(page);
             if (target != null) {
                 captchaSeen = true;
-            } else if (captchaSeen || hasSuccessSignal(page)) {
+            } else if (captchaSeen) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
             page.waitForTimeout(500);
@@ -332,12 +555,12 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private SliderTarget waitForSlider(Page page, long deadline) {
         while (System.currentTimeMillis() < deadline) {
+            if (hasSuccessSignal(page)) {
+                return null;
+            }
             SliderTarget target = findSlider(page);
             if (target != null) {
                 return target;
-            }
-            if (hasSuccessSignal(page)) {
-                return null;
             }
             page.waitForTimeout(250);
         }
@@ -345,15 +568,17 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     private boolean dragSlider(Page page, SliderTarget target, int attempt) {
-        BoundingBox trackBox = target.track().boundingBox();
         BoundingBox handleBox = target.handle().boundingBox();
-        if (trackBox == null || handleBox == null) {
+        if (handleBox == null) {
             return false;
         }
 
         double startX = handleBox.x + handleBox.width / 2;
         double startY = handleBox.y + handleBox.height / 2;
-        double distance = calculateDistance(trackBox.width, handleBox.width);
+        BoundingBox trackBox = target.track() == null ? null : target.track().boundingBox();
+        double distance = trackBox == null
+                ? 300
+                : calculateDistance(trackBox.width, handleBox.width);
         double overshoot = ThreadLocalRandom.current().nextDouble(3, 8);
         int steps = ThreadLocalRandom.current().nextInt(28, 39);
 
@@ -386,7 +611,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private boolean waitForCaptchaGone(Page page, long deadline) {
         while (System.currentTimeMillis() < deadline) {
-            if (!isCaptchaVisible(page) || hasSuccessSignal(page)) {
+            if (hasSuccessSignal(page) || !isCaptchaVisible(page)) {
                 return true;
             }
             page.waitForTimeout(300);
@@ -533,6 +758,4 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     record SliderTarget(ElementHandle track, ElementHandle handle) {
     }
 
-    private record SelectorPair(String track, String handle) {
-    }
 }
