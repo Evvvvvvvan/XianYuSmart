@@ -41,7 +41,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private final Map<Long, BrowserProcessSession> activeBrowserSessions = new ConcurrentHashMap<>();
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+                    + "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
     private static final List<String> COOKIE_URLS = List.of(
             "https://www.goofish.com/im",
             "https://passport.goofish.com",
@@ -140,20 +140,22 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             return new RunResult(Outcome.FAILED, null, "滑块验证已取消");
         }
         reportProgress(progress, "STARTING_BROWSER", "正在启动浏览器", 0);
-        try (Playwright playwright = Playwright.create();
-             Browser browser = chromiumAfterProcessAttached(playwright, processSession).launch(
+        Playwright playwright = null;
+        try {
+            playwright = Playwright.create();
+            Browser browser = chromiumAfterProcessAttached(playwright, processSession).launch(
                      new BrowserType.LaunchOptions()
                              .setHeadless(automatic)
                              .setArgs(List.of(
                                      "--disable-blink-features=AutomationControlled",
                                      "--disable-infobars",
                                      "--disable-dev-shm-usage")));
-             BrowserContext context = browser.newContext(
+            BrowserContext context = browser.newContext(
                      new Browser.NewContextOptions()
                              .setUserAgent(USER_AGENT)
                              .setLocale("zh-CN")
                              .setTimezoneId("Asia/Shanghai")
-                             .setViewportSize(1365, 768))) {
+                             .setViewportSize(1365, 768));
             context.setDefaultTimeout(10_000);
             if (automatic) {
                 // 自动模式在页面脚本执行前统一浏览器指纹，避免同一上下文暴露互相矛盾的特征。
@@ -194,6 +196,16 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             return new RunResult(Outcome.FAILED, null, "浏览器滑块验证失败");
         } finally {
+            // 先终止独立进程再关闭管道，避免关闭阻塞并回收Playwright传输线程。
+            processSession.terminate();
+            if (playwright != null) {
+                try {
+                    playwright.close();
+                } catch (Exception e) {
+                    log.debug("【账号{}】Playwright传输管道关闭失败: {}",
+                            accountId, e.getClass().getSimpleName());
+                }
+            }
             activeBrowserSessions.remove(accountId, processSession);
         }
     }
@@ -202,7 +214,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     public void cancel(Long accountId) {
         BrowserProcessSession processSession = activeBrowserSessions.get(accountId);
         if (processSession != null) {
-            processSession.cancel();
+            processSession.terminate();
         }
     }
 
@@ -480,7 +492,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
         }
 
-        private synchronized void cancel() {
+        private synchronized void terminate() {
             cancelled = true;
             if (driverProcess != null) {
                 terminateProcessTree(driverProcess);
