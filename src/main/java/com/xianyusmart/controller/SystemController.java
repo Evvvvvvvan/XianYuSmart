@@ -8,6 +8,7 @@ import com.xianyusmart.entity.SysUser;
 import com.xianyusmart.exception.BusinessException;
 import com.xianyusmart.service.AuthService;
 import com.xianyusmart.service.PlatformPermissionService;
+import com.xianyusmart.service.SysSettingService;
 import com.xianyusmart.service.SystemUpdateService;
 import com.xianyusmart.service.bo.ChangePasswordReqBO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -26,6 +27,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api/system")
 public class SystemController {
 
+    private static final String MENU_LAYOUT_SETTING_KEY = "menu_layout";
+
     @Value("${app.version:2.0.3}")
     private String currentVersion;
 
@@ -37,6 +40,9 @@ public class SystemController {
 
     @Autowired
     private PlatformPermissionService permissionService;
+
+    @Autowired
+    private SysSettingService sysSettingService;
 
     /**
      * 获取当前用户信息
@@ -56,6 +62,8 @@ public class SystemController {
             respDTO.setUsername(user.getUsername());
             respDTO.setRole(user.getRole());
             respDTO.setPermissions(permissionService.getPermissionCodes(user.getId()));
+            // 菜单布局随当前用户返回，避免导航额外请求导致顺序闪动。
+            respDTO.setMenuLayout(sysSettingService.getSettingValue(MENU_LAYOUT_SETTING_KEY));
             respDTO.setLastLoginTime(user.getLastLoginTime());
             return ResultObject.success(respDTO);
         } catch (Exception e) {

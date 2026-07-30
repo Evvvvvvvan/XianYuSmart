@@ -26,6 +26,10 @@ export function hasPermission(code: string) {
   return isPlatformAdmin.value || permissionState.value?.permissions?.includes(code) === true
 }
 
+export function updateMenuLayout(menuLayout: string) {
+  if (permissionState.value) permissionState.value.menuLayout = menuLayout
+}
+
 const menuPaths: Array<[string, string]> = [
   ['menu:dashboard', '/dashboard'],
   ['menu:accounts', '/accounts'],

@@ -13,5 +13,6 @@ public class CurrentUserRespDTO {
     private String username;
     private String role;
     private List<String> permissions;
+    private String menuLayout;
     private String lastLoginTime;
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, markRaw } from 'vue'
+import { computed, ref, onMounted, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser, changePassword } from '@/api/system'
 import { logout } from '@/api/auth'
@@ -9,12 +9,24 @@ import { getBackupModules, exportBackup, importBackup, getLogDates, downloadLog,
 import { toast } from '@/utils/toast'
 import { showConfirm } from '@/utils/confirm'
 import { clearAuthToken } from '@/utils/request'
+import { hasPermission, permissionState, updateMenuLayout } from '@/utils/permission'
+import {
+  MENU_GROUPS,
+  MENU_LAYOUT_SETTING_KEY,
+  createDefaultMenuLayout,
+  moveMenuGroup,
+  moveMenuItem,
+  normalizeMenuLayout,
+  serializeMenuLayout,
+  type MenuItemDefinition
+} from '@/config/menu'
 import IconUser from '@/components/icons/IconUser.vue'
 import IconRobot from '@/components/icons/IconRobot.vue'
 import IconChat from '@/components/icons/IconChat.vue'
 import IconMail from '@/components/icons/IconMail.vue'
 import IconBackup from '@/components/icons/IconBackup.vue'
 import IconInfo from '@/components/icons/IconInfo.vue'
+import IconTooling from '@/components/icons/IconTooling.vue'
 
 const router = useRouter()
 
@@ -116,9 +128,30 @@ const aiStatus = ref({
   model: ''
 })
 
+// 菜单排序配置
+const menuLayout = ref(normalizeMenuLayout(permissionState.value?.menuLayout))
+const menuLayoutSaving = ref(false)
+const draggedGroupId = ref('')
+const draggedItemGroupId = ref('')
+const draggedItemId = ref('')
+const lastGroupTargetId = ref('')
+const lastItemTargetKey = ref('')
+const canSaveMenuLayout = computed(() => hasPermission('action:system-write'))
+const menuGroupDefinitionMap = new Map(MENU_GROUPS.map(group => [group.id, group]))
+const editableMenuGroups = computed<Array<{ id: string; label: string; items: MenuItemDefinition[] }>>(() => menuLayout.value.groups.flatMap(groupLayout => {
+  const definition = menuGroupDefinitionMap.get(groupLayout.id)
+  if (!definition) return []
+  const items = groupLayout.items.flatMap(itemId => {
+    const item = definition.items.find(menuItem => menuItem.id === itemId)
+    return item ? [item] : []
+  })
+  return [{ id: definition.id, label: definition.label, items }]
+}))
+
 // 菜单配置
 const menuItems = [
   { key: 'account', label: '系统账号', icon: markRaw(IconUser) },
+  { key: 'menu', label: '菜单管理', icon: markRaw(IconTooling) },
   { key: 'ai', label: 'AI 服务配置', icon: markRaw(IconRobot) },
   { key: 'prompt', label: 'AI客服配置', icon: markRaw(IconChat) },
   { key: 'email', label: '邮箱通知', icon: markRaw(IconMail) },
@@ -133,6 +166,7 @@ onMounted(async () => {
     if (res.code === 200 && res.data) {
       username.value = res.data.username || ''
       lastLoginTime.value = res.data.lastLoginTime || ''
+      menuLayout.value = normalizeMenuLayout(res.data.menuLayout)
     }
   } catch (e) {
     console.error('获取用户信息失败:', e)
@@ -754,6 +788,103 @@ function handleBackupMenuEnter() {
   loadBackupModules()
   loadLogDates()
 }
+
+function handleGroupDragStart(event: DragEvent, groupId: string) {
+  draggedGroupId.value = groupId
+  draggedItemGroupId.value = ''
+  draggedItemId.value = ''
+  lastGroupTargetId.value = groupId
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', `group:${groupId}`)
+  }
+}
+
+function handleGroupDragEnter(targetId: string) {
+  const sourceId = draggedGroupId.value
+  if (!sourceId || sourceId === targetId || lastGroupTargetId.value === targetId) return
+  lastGroupTargetId.value = targetId
+  menuLayout.value = moveMenuGroup(menuLayout.value, sourceId, targetId)
+}
+
+function handleItemDragStart(event: DragEvent, groupId: string, itemId: string) {
+  draggedGroupId.value = ''
+  draggedItemGroupId.value = groupId
+  draggedItemId.value = itemId
+  lastItemTargetKey.value = `${groupId}:${itemId}`
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', `item:${groupId}:${itemId}`)
+  }
+}
+
+function handleItemDragEnter(groupId: string, targetId: string) {
+  if (draggedGroupId.value) {
+    handleGroupDragEnter(groupId)
+    return
+  }
+  const targetKey = `${groupId}:${targetId}`
+  if (!draggedItemId.value || draggedItemGroupId.value !== groupId
+    || draggedItemId.value === targetId || lastItemTargetKey.value === targetKey) {
+    return
+  }
+  lastItemTargetKey.value = targetKey
+  menuLayout.value = moveMenuItem(menuLayout.value, groupId, draggedItemId.value, targetId)
+}
+
+function clearMenuDragState() {
+  draggedGroupId.value = ''
+  draggedItemGroupId.value = ''
+  draggedItemId.value = ''
+  lastGroupTargetId.value = ''
+  lastItemTargetKey.value = ''
+}
+
+function moveGroupByOffset(groupId: string, offset: number) {
+  const groupIndex = menuLayout.value.groups.findIndex(group => group.id === groupId)
+  const target = menuLayout.value.groups[groupIndex + offset]
+  if (target) menuLayout.value = moveMenuGroup(menuLayout.value, groupId, target.id)
+}
+
+function moveItemByOffset(groupId: string, itemId: string, offset: number) {
+  const group = menuLayout.value.groups.find(groupLayout => groupLayout.id === groupId)
+  const itemIndex = group?.items.indexOf(itemId) ?? -1
+  const targetId = group?.items[itemIndex + offset]
+  if (targetId) menuLayout.value = moveMenuItem(menuLayout.value, groupId, itemId, targetId)
+}
+
+function restoreDefaultMenuLayout() {
+  menuLayout.value = createDefaultMenuLayout()
+  toast.info('已恢复默认排序草稿，保存后生效')
+}
+
+async function saveMenuLayout() {
+  if (!canSaveMenuLayout.value) {
+    toast.warning('当前账号没有修改系统设置的权限')
+    return
+  }
+  menuLayoutSaving.value = true
+  try {
+    const settingValue = serializeMenuLayout(menuLayout.value)
+    const response = await saveSetting({
+      settingKey: MENU_LAYOUT_SETTING_KEY,
+      settingValue,
+      settingDesc: '租户菜单布局'
+    })
+    if (response.code === 200) {
+      updateMenuLayout(settingValue)
+      menuLayout.value = normalizeMenuLayout(settingValue)
+      toast.success('菜单排序已保存')
+    } else {
+      toast.error(response.msg || '菜单排序保存失败')
+    }
+  } catch (e) {
+    console.error('保存菜单排序失败:', e)
+    toast.error('菜单排序保存失败')
+  } finally {
+    menuLayoutSaving.value = false
+  }
+}
 </script>
 
 <template>
@@ -1298,6 +1429,114 @@ function handleBackupMenuEnter() {
         </div>
       </div>
 
+      <!-- 菜单管理 -->
+      <div v-if="activeMenu === 'menu'" class="settings__panel">
+        <div class="settings__panel-title">菜单管理</div>
+        <p class="settings__desc">拖动模块或模块内菜单调整顺序，保存后当前租户的所有终端同步生效。</p>
+        <div v-if="!canSaveMenuLayout" class="settings__menu-sort-notice">当前账号可查看排序，但没有保存系统设置的权限。</div>
+
+        <TransitionGroup name="menu-sort" tag="div" class="settings__menu-sort-groups">
+          <section
+            v-for="(group, groupIndex) in editableMenuGroups"
+            :key="group.id"
+            class="settings__menu-sort-group"
+            :class="{ 'settings__menu-sort-group--dragging': draggedGroupId === group.id }"
+            @dragenter.prevent="handleGroupDragEnter(group.id)"
+            @dragover.prevent
+            @drop.prevent="clearMenuDragState"
+          >
+            <div class="settings__menu-sort-group-header">
+              <button
+                type="button"
+                class="settings__menu-sort-handle"
+                draggable="true"
+                :aria-label="`拖动${group.label}模块`"
+                @dragstart="handleGroupDragStart($event, group.id)"
+                @dragend="clearMenuDragState"
+              >
+                <span></span><span></span><span></span><span></span><span></span><span></span>
+              </button>
+              <div class="settings__menu-sort-group-name">
+                <strong>{{ group.label }}</strong>
+                <small>{{ group.items.length }} 个菜单</small>
+              </div>
+              <div class="settings__menu-sort-controls">
+                <button
+                  type="button"
+                  :disabled="groupIndex === 0"
+                  :aria-label="`${group.label}上移`"
+                  @click.stop="moveGroupByOffset(group.id, -1)"
+                >↑</button>
+                <button
+                  type="button"
+                  :disabled="groupIndex === editableMenuGroups.length - 1"
+                  :aria-label="`${group.label}下移`"
+                  @click.stop="moveGroupByOffset(group.id, 1)"
+                >↓</button>
+              </div>
+            </div>
+
+            <TransitionGroup name="menu-sort" tag="div" class="settings__menu-sort-items">
+              <div
+                v-for="(item, itemIndex) in group.items"
+                :key="item.id"
+                class="settings__menu-sort-item"
+                :class="{ 'settings__menu-sort-item--dragging': draggedItemGroupId === group.id && draggedItemId === item.id }"
+                @dragenter.stop.prevent="handleItemDragEnter(group.id, item.id)"
+                @dragover.stop.prevent
+                @drop.stop.prevent="clearMenuDragState"
+              >
+                <button
+                  type="button"
+                  class="settings__menu-sort-handle settings__menu-sort-handle--item"
+                  draggable="true"
+                  :aria-label="`拖动${item.label}菜单`"
+                  @dragstart.stop="handleItemDragStart($event, group.id, item.id)"
+                  @dragend.stop="clearMenuDragState"
+                >
+                  <span></span><span></span><span></span><span></span><span></span><span></span>
+                </button>
+                <span class="settings__menu-sort-item-name">{{ item.label }}</span>
+                <span class="settings__menu-sort-item-path">{{ item.path }}</span>
+                <div class="settings__menu-sort-controls settings__menu-sort-controls--item">
+                  <button
+                    type="button"
+                    :disabled="itemIndex === 0"
+                    :aria-label="`${item.label}上移`"
+                    @click.stop="moveItemByOffset(group.id, item.id, -1)"
+                  >↑</button>
+                  <button
+                    type="button"
+                    :disabled="itemIndex === group.items.length - 1"
+                    :aria-label="`${item.label}下移`"
+                    @click.stop="moveItemByOffset(group.id, item.id, 1)"
+                  >↓</button>
+                </div>
+              </div>
+            </TransitionGroup>
+          </section>
+        </TransitionGroup>
+
+        <div class="settings__actions settings__menu-sort-actions">
+          <button
+            type="button"
+            class="settings__btn settings__btn--secondary"
+            :disabled="menuLayoutSaving"
+            @click="restoreDefaultMenuLayout"
+          >
+            恢复默认
+          </button>
+          <button
+            type="button"
+            class="settings__btn settings__btn--primary"
+            :disabled="menuLayoutSaving || !canSaveMenuLayout"
+            @click="saveMenuLayout"
+          >
+            {{ menuLayoutSaving ? '保存中...' : '保存排序' }}
+          </button>
+        </div>
+      </div>
+
       <!-- 备份与恢复 -->
       <div v-if="activeMenu === 'backup'" class="settings__panel">
         <div class="settings__panel-title">备份与恢复</div>
@@ -1835,6 +2074,211 @@ function handleBackupMenuEnter() {
   opacity: 0.5;
 }
 
+/* 菜单排序 */
+.settings__menu-sort-notice {
+  padding: 10px 12px;
+  border: 1px solid #fedf89;
+  border-radius: 8px;
+  color: #93370d;
+  background: #fffaeb;
+  font-size: 13px;
+}
+
+.settings__menu-sort-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings__menu-sort-group {
+  overflow: hidden;
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, .04);
+  transition: border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+}
+
+.settings__menu-sort-group:hover {
+  border-color: #d0d5dd;
+  box-shadow: 0 4px 12px rgba(16, 24, 40, .06);
+}
+
+.settings__menu-sort-group--dragging {
+  border-color: #84adff;
+  opacity: .52;
+  box-shadow: 0 8px 24px rgba(21, 94, 239, .12);
+}
+
+.settings__menu-sort-group-header {
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  padding: 0 12px;
+  border-bottom: 1px solid #f2f4f7;
+  background: #f9fafb;
+}
+
+.settings__menu-sort-handle {
+  display: grid;
+  grid-template-columns: repeat(2, 3px);
+  gap: 3px;
+  width: 30px;
+  height: 30px;
+  padding: 8px;
+  border: 0;
+  border-radius: 7px;
+  color: #98a2b3;
+  background: transparent;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.settings__menu-sort-handle:active {
+  cursor: grabbing;
+}
+
+.settings__menu-sort-handle:hover,
+.settings__menu-sort-handle:focus-visible {
+  background: #eef4ff;
+  outline: none;
+}
+
+.settings__menu-sort-handle span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.settings__menu-sort-group-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-left: 8px;
+  line-height: 1.35;
+}
+
+.settings__menu-sort-group-name strong {
+  color: #344054;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings__menu-sort-group-name small {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.settings__menu-sort-controls {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.settings__menu-sort-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e4e7ec;
+  border-radius: 7px;
+  color: #667085;
+  background: #fff;
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
+}
+
+.settings__menu-sort-controls button:hover:not(:disabled),
+.settings__menu-sort-controls button:focus-visible {
+  border-color: #84adff;
+  color: #155eef;
+  background: #eef4ff;
+  outline: none;
+}
+
+.settings__menu-sort-controls button:disabled {
+  opacity: .32;
+  cursor: not-allowed;
+}
+
+.settings__menu-sort-items {
+  padding: 6px;
+}
+
+.settings__menu-sort-item {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 7px;
+  border-radius: 8px;
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.settings__menu-sort-item:hover {
+  background: #f9fafb;
+}
+
+.settings__menu-sort-item--dragging {
+  background: #eef4ff;
+  opacity: .5;
+}
+
+.settings__menu-sort-handle--item {
+  width: 28px;
+  height: 28px;
+  padding: 7px;
+}
+
+.settings__menu-sort-item-name {
+  min-width: 110px;
+  margin-left: 7px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings__menu-sort-item-path {
+  min-width: 0;
+  overflow: hidden;
+  margin-left: 16px;
+  color: #98a2b3;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings__menu-sort-controls--item {
+  margin-left: auto;
+  padding-left: 12px;
+}
+
+.settings__menu-sort-actions {
+  position: sticky;
+  bottom: -24px;
+  z-index: 2;
+  margin: 4px -24px -24px;
+  padding: 14px 24px;
+  border-top: 1px solid #e4e7ec;
+  background: rgba(255, 255, 255, .94);
+  backdrop-filter: blur(12px);
+}
+
+.menu-sort-move {
+  transition: transform 220ms cubic-bezier(.2, .8, .2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings__menu-sort-group,
+  .settings__menu-sort-item,
+  .settings__menu-sort-controls button,
+  .menu-sort-move {
+    transition: none;
+  }
+}
+
 /* Actions */
 .settings__actions {
   display: flex;
@@ -2020,6 +2464,12 @@ function handleBackupMenuEnter() {
     padding: 16px;
   }
 
+  .settings__menu-sort-actions {
+    bottom: -16px;
+    margin: 4px -16px -16px;
+    padding: 12px 16px;
+  }
+
   .settings__qrcode {
     max-width: 250px;
   }
@@ -2039,6 +2489,22 @@ function handleBackupMenuEnter() {
 
   .settings__btn {
     width: 100%;
+  }
+
+  .settings__menu-sort-group-header {
+    padding: 0 8px;
+  }
+
+  .settings__menu-sort-item-path {
+    display: none;
+  }
+
+  .settings__menu-sort-item-name {
+    min-width: 0;
+  }
+
+  .settings__menu-sort-actions {
+    flex-direction: row;
   }
 
   .settings__qrcode {
