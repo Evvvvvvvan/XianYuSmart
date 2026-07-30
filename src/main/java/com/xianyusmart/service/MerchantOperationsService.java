@@ -134,8 +134,8 @@ public class MerchantOperationsService {
         if (request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("资源名称不能为空");
         }
-        if (request.getName().trim().length() > 200) {
-            throw new IllegalArgumentException("资源名称不能超过200个字符");
+        if (request.getName().trim().length() > 512) {
+            throw new IllegalArgumentException("资源名称不能超过512个字符");
         }
         validateOwnedAccount(request.getXianyuAccountId());
         if ("WORKFLOW".equals(request.getResourceType())) {
@@ -320,7 +320,7 @@ public class MerchantOperationsService {
             if (existing == null) {
                 supply = createSupply(candidate, accountId);
             } else {
-                existing.setName(text(candidate.get("title")));
+                existing.setName(limitName(text(candidate.get("title"))));
                 existing.setDataJson(writeJson(candidate));
                 resourceMapper.updateById(existing);
                 supply = existing;
@@ -653,7 +653,7 @@ public class MerchantOperationsService {
                 MerchantResource supply = new MerchantResource();
                 supply.setTenantId(task.getTenantId());
                 supply.setResourceType("SUPPLY");
-                supply.setName(text(candidate.get("title")));
+                supply.setName(limitName(text(candidate.get("title"))));
                 supply.setStatus(1);
                 supply.setXianyuAccountId(rule.getXianyuAccountId());
                 supply.setXyGoodsId(itemId);
@@ -825,7 +825,7 @@ public class MerchantOperationsService {
         if (!sourceUrl.isBlank()) {
             Map<String, Object> collected = platformPublishService.collect(sourceUrl, supply.getXianyuAccountId());
             data.putAll(collected);
-            supply.setName(text(collected.get("title")));
+            supply.setName(limitName(text(collected.get("title"))));
             String itemId = text(collected.get("itemId"));
             if (!itemId.isBlank()) {
                 supply.setXyGoodsId(itemId);
@@ -850,7 +850,7 @@ public class MerchantOperationsService {
         data.put("description", item.getDetailInfo());
         data.put("images", collectImages(item));
         data.put("detailUrl", item.getDetailUrl());
-        supply.setName(item.getTitle());
+        supply.setName(limitName(item.getTitle() == null ? "" : item.getTitle().trim()));
         supply.setDataJson(writeJson(data));
         if (item.getSoldPrice() != null) {
             supply.setAmount(decimalValue(item.getSoldPrice(), supply.getAmount()));
@@ -990,7 +990,7 @@ public class MerchantOperationsService {
         MerchantResource supply = new MerchantResource();
         supply.setTenantId(requireTenantId());
         supply.setResourceType("SUPPLY");
-        supply.setName(text(candidate.get("title")).isBlank() ? "待完善货源" : text(candidate.get("title")));
+        supply.setName(limitName(text(candidate.get("title"))).isBlank() ? "待完善货源" : limitName(text(candidate.get("title"))));
         supply.setStatus(1);
         supply.setXianyuAccountId(accountId);
         supply.setXyGoodsId(blankToNull(text(candidate.get("itemId"))));
@@ -1159,6 +1159,13 @@ public class MerchantOperationsService {
 
     private String text(Object value) {
         return value == null ? "" : String.valueOf(value).trim();
+    }
+
+    /**
+     * merchant_resource.name 上限 512 字符，外部平台返回的商品标题可能超长，入库前统一截断。
+     */
+    private String limitName(String value) {
+        return value.length() > 512 ? value.substring(0, 512) : value;
     }
 
     private int intValue(Object value, int defaultValue) {
