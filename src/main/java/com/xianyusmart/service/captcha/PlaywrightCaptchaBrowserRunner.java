@@ -41,6 +41,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private static final long TASK_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(5);
     private static final int MAX_AUTO_ATTEMPTS = 5;
+    private static final String GOOFISH_HOME_URL = "https://www.goofish.com";
+    private static final String COOKIE_EXPIRED_MESSAGE =
+            "Cookie Session已过期，请重新扫码登录后再连接";
     private final Map<Long, BrowserProcessSession> activeBrowserSessions = new ConcurrentHashMap<>();
     private static final String USER_AGENT_TEMPLATE =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -84,17 +87,29 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             ".nc_wrapper .icon-success",
             "#baxia-dialog .icon-success",
             ".slide-verify .verify-success");
-    private static final List<String> RETRY_SELECTORS = List.of(
-            ".nc_error",
-            ".errloading",
-            "#nc_1_refresh1",
-            ".fail",
-            ".nc-lang-cnt");
     private static final List<String> FAILURE_SELECTORS = List.of(
             ".nc_error",
             ".errloading",
             "#nc_1_refresh1",
             ".fail");
+    private static final String MESSAGE_ENTRY_SCRIPT = """
+            () => {
+              const candidates = Array.from(document.querySelectorAll(
+                '[class*="sidebar-item-wrap"], a[href*="/im"], [role="button"]'
+              ));
+              const target = candidates.find(element => {
+                const text = (element.textContent || '').replace(/\\s+/g, '').trim();
+                const href = element.getAttribute('href') || '';
+                return href.includes('/im') || text === '消息'
+                  || (text.includes('消息') && text.length <= 8);
+              });
+              if (!target) {
+                return false;
+              }
+              target.click();
+              return true;
+            }
+            """;
     private static final String FINGERPRINT_SCRIPT = """
             (() => {
               try {
@@ -345,14 +360,17 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
             long deadline = System.currentTimeMillis() + TASK_TIMEOUT_MS;
             RunResult verificationResult = automatic
-                    ? runAutomatic(page, deadline, progress)
+                    ? runAutomatic(context, page, deadline, progress)
                     : waitForManual(page, deadline, progress);
             if (verificationResult.outcome() != Outcome.SOLVED) {
                 return verificationResult;
             }
 
             reportProgress(progress, "COLLECTING_COOKIE", "正在回收更新后的Cookie", 0);
-            page.waitForTimeout(800);
+            List<Page> activePages = context.pages();
+            if (!activePages.isEmpty()) {
+                activePages.get(activePages.size() - 1).waitForTimeout(800);
+            }
             String refreshedCookie = buildCookieText(context.cookies(COOKIE_URLS), cookieText);
             if (refreshedCookie.isBlank()) {
                 return new RunResult(Outcome.FAILED, null, "验证完成但浏览器未返回Cookie");
@@ -524,7 +542,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         return host.equals(rootDomain) || host.endsWith("." + rootDomain);
     }
 
-    RunResult runAutomatic(Page page, long deadline, Consumer<ProgressUpdate> progress) {
+    RunResult runAutomatic(BrowserContext context, Page page, long deadline,
+                           Consumer<ProgressUpdate> progress) {
         boolean captchaSeen = false;
         for (int attempt = 1; attempt <= MAX_AUTO_ATTEMPTS
                 && System.currentTimeMillis() < deadline; attempt++) {
@@ -532,6 +551,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                     "第" + attempt + "次：正在识别滑块", attempt);
             SliderTarget target = waitForSlider(page, Math.min(deadline, System.currentTimeMillis() + 12_000));
             if (target == null) {
+                if (isLoginPage(page)) {
+                    return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
+                }
                 if (hasSuccessSignal(page) || (captchaSeen && !isCaptchaVisible(page))) {
                     return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
                 }
@@ -548,7 +570,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             reportProgress(progress, "WAITING_RESULT",
                     "第" + attempt + "次：正在等待验证结果", attempt);
             if (waitForCaptchaGone(page, Math.min(deadline, System.currentTimeMillis() + 10_000))) {
+                if (isLoginPage(page)) {
+                    return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
+                }
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
+            }
+            if (isLoginPage(page)) {
+                return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
             }
             if (attempt < MAX_AUTO_ATTEMPTS) {
                 String failureReason = failureReason(page);
@@ -557,8 +585,15 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                         : "第" + attempt + "次未通过：" + failureReason + "，正在重置滑块";
                 reportProgress(progress, "RETRYING_SLIDER",
                         retryMessage, attempt);
-                resetSliderAfterFailure(page);
-                page.waitForTimeout(ThreadLocalRandom.current().nextInt(1_500, 2_501));
+                reportProgress(progress, "RESETTING_SESSION",
+                        "第" + attempt + "次：正在从首页重新打开消息页", attempt);
+                // 同页重试会累积平台失败态，从首页重新进入消息页生成新验证会话。
+                ReopenResult reopenResult = reopenFromHome(context, page, deadline);
+                if (reopenResult.page() == null) {
+                    return new RunResult(Outcome.FAILED, null, reopenResult.message());
+                }
+                page = reopenResult.page();
+                captchaSeen = false;
             }
         }
         if (System.currentTimeMillis() >= deadline) {
@@ -571,6 +606,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         reportProgress(progress, "WAITING_MANUAL", "浏览器已打开，请人工完成滑块", 0);
         boolean captchaSeen = false;
         while (System.currentTimeMillis() < deadline) {
+            if (isLoginPage(page)) {
+                return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
+            }
             if (hasSuccessSignal(page)) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
@@ -753,24 +791,120 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
     }
 
-    private boolean resetSliderAfterFailure(Page page) {
-        for (Frame frame : page.frames()) {
-            if (frame.isDetached()) {
-                continue;
+    private ReopenResult reopenFromHome(BrowserContext context, Page currentPage, long deadline) {
+        try {
+            try {
+                currentPage.evaluate("""
+                        () => {
+                          try { localStorage.clear(); } catch (ignored) {}
+                          try { sessionStorage.clear(); } catch (ignored) {}
+                        }
+                        """);
+            } catch (Exception ignored) {
+                // 页面正在切换时直接关闭旧会话。
             }
-            for (String selector : RETRY_SELECTORS) {
-                try {
-                    ElementHandle retry = frame.querySelector(selector);
-                    if (retry != null && retry.isVisible()) {
-                        retry.click();
-                        return true;
+            currentPage.close();
+
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) {
+                return new ReopenResult(null, "重新打开消息页超时");
+            }
+            int navigationTimeout = (int) Math.max(1,
+                    Math.min(45_000, remaining));
+            Page homePage = context.newPage();
+            homePage.navigate(GOOFISH_HOME_URL, new Page.NavigateOptions()
+                    .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+                    .setTimeout(navigationTimeout));
+            if (!waitWithinDeadline(homePage, deadline, 2_000)) {
+                return new ReopenResult(null, "重新打开消息页超时");
+            }
+            if (isLoginPage(homePage)) {
+                return new ReopenResult(null, COOKIE_EXPIRED_MESSAGE);
+            }
+
+            List<Page> pagesBeforeClick = new ArrayList<>(context.pages());
+            if (!clickMessageEntry(homePage)) {
+                return new ReopenResult(null, "未找到闲鱼消息入口，请稍后重试");
+            }
+            long popupDeadline = Math.min(deadline, System.currentTimeMillis() + 8_000);
+            while (System.currentTimeMillis() < popupDeadline) {
+                for (Page candidate : context.pages()) {
+                    if (pagesBeforeClick.contains(candidate) || candidate.isClosed()) {
+                        continue;
                     }
-                } catch (Exception ignored) {
-                    // 页面刷新期间继续检查其余重试状态。
+                    if (!waitWithinDeadline(candidate, deadline, 1_500)) {
+                        return new ReopenResult(null, "重新打开消息页超时");
+                    }
+                    if (isLoginPage(candidate)) {
+                        return new ReopenResult(null, COOKIE_EXPIRED_MESSAGE);
+                    }
+                    if (isMessagePageUrl(candidate.url())) {
+                        homePage.close();
+                        return new ReopenResult(candidate, null);
+                    }
+                    candidate.close();
+                }
+                if (isMessagePageUrl(homePage.url())) {
+                    if (!waitWithinDeadline(homePage, deadline, 1_500)) {
+                        return new ReopenResult(null, "重新打开消息页超时");
+                    }
+                    return isLoginPage(homePage)
+                            ? new ReopenResult(null, COOKIE_EXPIRED_MESSAGE)
+                            : new ReopenResult(homePage, null);
+                }
+                if (!waitWithinDeadline(homePage, popupDeadline, 250)) {
+                    break;
                 }
             }
+            return new ReopenResult(null, "点击消息入口后未打开消息页，请稍后重试");
+        } catch (Exception e) {
+            return new ReopenResult(null, "重新打开消息页失败，请稍后重试");
         }
-        return false;
+    }
+
+    private boolean waitWithinDeadline(Page page, long deadline, long maximumWait) {
+        long wait = Math.min(maximumWait, deadline - System.currentTimeMillis());
+        if (wait <= 0) {
+            return false;
+        }
+        page.waitForTimeout(wait);
+        return System.currentTimeMillis() < deadline;
+    }
+
+    private boolean clickMessageEntry(Page homePage) {
+        return Boolean.TRUE.equals(homePage.evaluate(MESSAGE_ENTRY_SCRIPT));
+    }
+
+    static boolean isMessagePageUrl(String value) {
+        try {
+            URI uri = URI.create(value);
+            String path = uri.getPath();
+            return uri.getHost() != null
+                    && isDomain(uri.getHost().toLowerCase(Locale.ROOT), "goofish.com")
+                    && ("/im".equals(path) || (path != null && path.startsWith("/im/")));
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    private boolean isLoginPage(Page page) {
+        String url = page.url().toLowerCase(Locale.ROOT);
+        if (url.contains("login.taobao.com") || url.contains("login.goofish.com")
+                || url.matches(".*(?:/login|/uilogin)(?:[/?#].*)?$")) {
+            return true;
+        }
+        try {
+            String bodyText = (String) page.evaluate(
+                    "() => document.body ? document.body.innerText : ''");
+            return isLoginBody(bodyText);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    static boolean isLoginBody(String bodyText) {
+        return bodyText != null
+                && bodyText.matches("(?s).*(扫码登录|手机号登录|账号密码登录).*");
     }
 
     private boolean waitForCaptchaGone(Page page, long deadline) {
@@ -782,7 +916,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 return false;
             }
             if (!isCaptchaVisible(page)) {
-                return true;
+                return !isLoginPage(page);
             }
             page.waitForTimeout(300);
         }
@@ -902,6 +1036,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private boolean hasValue(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private record ReopenResult(Page page, String message) {
     }
 
     private static final class BrowserProcessSession {
