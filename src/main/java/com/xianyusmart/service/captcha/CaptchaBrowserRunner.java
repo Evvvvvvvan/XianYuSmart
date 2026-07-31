@@ -25,6 +25,14 @@ public interface CaptchaBrowserRunner {
     RunResult run(Long accountId, CaptchaSolveService.Mode mode,
                   String captchaUrl, String cookieText, Consumer<ProgressUpdate> progress);
 
+    default CaptchaSolveService.ManualFrame getManualFrame(Long accountId) {
+        return null;
+    }
+
+    default void submitManualDrag(Long accountId, CaptchaSolveService.ManualDrag drag) {
+        throw new IllegalStateException("人工浏览器尚未准备完成");
+    }
+
     default void cancel(Long accountId) {
     }
 }

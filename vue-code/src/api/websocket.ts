@@ -112,6 +112,20 @@ export interface CaptchaTaskStatus {
   finishedAt?: number;
 }
 
+export interface CaptchaManualFrame {
+  version: number;
+  width: number;
+  height: number;
+  updatedAt: number;
+  imageBase64: string;
+}
+
+export interface CaptchaDragPoint {
+  x: number;
+  y: number;
+  elapsedMs: number;
+}
+
 // 启动服务端滑块验证任务
 export function solveCaptcha(accountId: number, mode: CaptchaSolveMode) {
   return request<CaptchaTaskStatus>({
@@ -137,6 +151,29 @@ export function cancelCaptcha(accountId: number) {
     url: '/websocket/captcha/cancel',
     method: 'POST',
     data: { xianyuAccountId: accountId }
+  });
+}
+
+// 获取服务器人工验证画面
+export function getCaptchaManualFrame(accountId: number) {
+  return request<CaptchaManualFrame>({
+    url: '/websocket/captcha/manual/frame',
+    method: 'POST',
+    data: { xianyuAccountId: accountId },
+    silent: true
+  });
+}
+
+// 提交归一化人工拖动轨迹
+export function submitCaptchaManualDrag(
+  accountId: number,
+  frameVersion: number,
+  points: CaptchaDragPoint[]
+) {
+  return request<CaptchaTaskStatus>({
+    url: '/websocket/captcha/manual/drag',
+    method: 'POST',
+    data: { xianyuAccountId: accountId, frameVersion, points }
   });
 }
 

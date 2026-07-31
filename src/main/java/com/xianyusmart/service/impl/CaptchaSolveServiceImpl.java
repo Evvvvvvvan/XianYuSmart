@@ -166,6 +166,34 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
         return tasks.get(accountId);
     }
 
+    @Override
+    public ManualFrame getManualFrame(Long accountId) {
+        requireManualTask(accountId);
+        ManualFrame frame = captchaBrowserRunner.getManualFrame(accountId);
+        if (frame == null) {
+            throw new IllegalStateException("人工浏览器画面正在生成");
+        }
+        return frame;
+    }
+
+    @Override
+    public TaskView submitManualDrag(Long accountId, ManualDrag drag) {
+        requireManualTask(accountId);
+        captchaBrowserRunner.submitManualDrag(accountId, drag);
+        return tasks.get(accountId);
+    }
+
+    private TaskView requireManualTask(Long accountId) {
+        if (accountId == null) {
+            throw new IllegalArgumentException("账号不能为空");
+        }
+        TaskView task = tasks.get(accountId);
+        if (!isActive(task) || task.mode() != Mode.MANUAL_BROWSER) {
+            throw new IllegalStateException("当前没有运行中的人工滑块任务");
+        }
+        return task;
+    }
+
     private void runTask(TaskView task, String captchaUrl, TaskControl control) {
         try {
             String activeCaptchaUrl = captchaUrl;
@@ -272,6 +300,9 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
             } finally {
                 control.sideEffectLock.unlock();
             }
+            updateProgress(control, new CaptchaBrowserRunner.ProgressUpdate(
+                    "VALIDATING_CREDENTIAL", "正在确认平台已放行新凭证",
+                    control.attempt, control.maxAttempts));
             control.sideEffectLock.lock();
             try {
                 if (!isCurrentActive(tasks.get(control.accountId), control)) {
@@ -281,7 +312,8 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                 if (connected) {
                     complete(control, Status.SUCCEEDED, "验证完成，Cookie已更新并重新连接");
                 } else {
-                    complete(control, Status.FAILED, "验证完成，但凭证更新或重新连接失败");
+                    complete(control, Status.FAILED,
+                            credentialFailureMessage(pendingCaptchaUrl(task.xianyuAccountId())));
                 }
             } finally {
                 control.sideEffectLock.unlock();
@@ -313,6 +345,22 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
             return "滑块验证未完成";
         }
         return result.message();
+    }
+
+    private String pendingCaptchaUrl(Long accountId) {
+        try {
+            return tokenService.getPendingCaptchaUrl(accountId);
+        } catch (Exception e) {
+            log.warn("【账号{}】读取平台验证状态失败: {}", accountId,
+                    e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
+    static String credentialFailureMessage(String pendingCaptchaUrl) {
+        return pendingCaptchaUrl == null || pendingCaptchaUrl.isBlank()
+                ? "凭证已更新，但WebSocket重新连接失败"
+                : "滑块操作完成，但平台仍要求验证";
     }
 
     private void updateProgress(TaskControl control, CaptchaBrowserRunner.ProgressUpdate progress) {

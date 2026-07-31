@@ -2,8 +2,12 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
   cancelCaptcha,
+  getCaptchaManualFrame,
   getCaptchaStatus,
   solveCaptcha,
+  submitCaptchaManualDrag,
+  type CaptchaDragPoint,
+  type CaptchaManualFrame,
   type CaptchaSolveMode,
   type CaptchaTaskStatus
 } from '@/api/websocket';
@@ -46,8 +50,12 @@ const phaseLabels: Record<string, string> = {
   RESETTING_SESSION: '重建验证会话',
   WAITING_BROWSER: '等待浏览器响应',
   WAITING_MANUAL: '等待人工拖动',
+  WAITING_SLIDER: '等待滑块加载',
+  CAPTURING_MANUAL_FRAME: '同步人工画面',
+  REPLAYING_MANUAL_DRAG: '执行人工拖动',
   COLLECTING_COOKIE: '回收 Cookie',
-  UPDATING_COOKIE: '更新 Cookie 并重连'
+  UPDATING_COOKIE: '更新 Cookie',
+  VALIDATING_CREDENTIAL: '确认平台凭证'
 };
 
 const props = defineProps<Props>();
@@ -58,14 +66,26 @@ const loading = ref(false);
 const cancelling = ref(false);
 const pollError = ref('');
 const now = ref(Date.now());
+const manualFrame = ref<CaptchaManualFrame | null>(null);
+const manualFrameError = ref('');
+const dragging = ref(false);
+const dragSubmitting = ref(false);
+const dragPoints = ref<CaptchaDragPoint[]>([]);
+const dragStartedAt = ref(0);
+const dragFrameVersion = ref(0);
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 let clockTimer: ReturnType<typeof setInterval> | null = null;
+let frameTimer: ReturnType<typeof setTimeout> | null = null;
+let frameRequesting = false;
 
 const taskRunning = computed(() =>
   taskStatus.value?.status === 'PENDING'
   || taskStatus.value?.status === 'RUNNING'
 );
 const running = computed(() => loading.value || taskRunning.value);
+const manualTaskRunning = computed(() =>
+  taskRunning.value && taskStatus.value?.mode === 'MANUAL_BROWSER'
+);
 
 const elapsedSeconds = computed(() => {
   if (!taskStatus.value) return 0;
@@ -97,13 +117,14 @@ const phaseText = computed(() =>
 const actionText = computed(() => {
   if (running.value) return '验证处理中';
   if (selectedMode.value === 'AUTO') return '开始自动拖动';
-  if (selectedMode.value === 'MANUAL_BROWSER') return '打开人工浏览器';
+  if (selectedMode.value === 'MANUAL_BROWSER') return '启动人工拖动';
   return '粘贴更新后的 Cookie';
 });
 
 watch(() => props.modelValue, (visible) => {
   if (!visible) {
     clearPolling();
+    clearFramePolling();
     stopClock();
     return;
   }
@@ -112,12 +133,16 @@ watch(() => props.modelValue, (visible) => {
   loading.value = false;
   cancelling.value = false;
   pollError.value = '';
+  manualFrame.value = null;
+  manualFrameError.value = '';
+  resetDrag();
   startClock();
   void resumeActiveTask();
 });
 
 const handleClose = () => {
   clearPolling();
+  clearFramePolling();
   emit('update:modelValue', false);
 };
 
@@ -179,6 +204,7 @@ const handleTaskStatus = (status: CaptchaTaskStatus) => {
   selectedMode.value = status.mode;
   clearPolling();
   if (status.status === 'SUCCEEDED') {
+    clearFramePolling();
     showSuccess(status.message || '滑块验证完成，连接已恢复');
     emit('success');
     handleClose();
@@ -187,15 +213,127 @@ const handleTaskStatus = (status: CaptchaTaskStatus) => {
   if (status.status === 'FAILED'
       || status.status === 'TIMEOUT'
       || status.status === 'UNSUPPORTED') {
+    clearFramePolling();
     showError(status.message || '滑块验证未完成');
     return;
   }
   if (status.status === 'CANCELLED') {
+    clearFramePolling();
     showSuccess(status.message || '滑块验证已取消');
     return;
   }
   schedulePolling();
+  if (status.mode === 'MANUAL_BROWSER') {
+    scheduleFramePolling(0);
+  } else {
+    clearFramePolling();
+  }
 };
+
+const pollManualFrame = async () => {
+  if (!manualTaskRunning.value || !props.modelValue) {
+    clearFramePolling();
+    return;
+  }
+  if (frameRequesting) return;
+  frameRequesting = true;
+  try {
+    const response = await getCaptchaManualFrame(props.accountId);
+    if (response.code !== 0 && response.code !== 200) {
+      throw new Error(response.msg || '人工验证画面获取失败');
+    }
+    if (response.data && !dragging.value) {
+      manualFrame.value = response.data;
+      manualFrameError.value = '';
+    }
+  } catch (error: any) {
+    const message = error.message || '人工验证画面获取失败';
+    manualFrameError.value = message === '人工浏览器画面正在生成' ? '' : message;
+  } finally {
+    frameRequesting = false;
+    scheduleFramePolling();
+  }
+};
+
+function normalizedPoint(event: PointerEvent, element: HTMLElement): CaptchaDragPoint {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+    y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+    elapsedMs: Math.max(0, Date.now() - dragStartedAt.value)
+  };
+}
+
+function handlePointerDown(event: PointerEvent) {
+  if (!manualFrame.value || dragSubmitting.value || event.button !== 0) return;
+  event.preventDefault();
+  const element = event.currentTarget as HTMLElement;
+  element.setPointerCapture(event.pointerId);
+  dragging.value = true;
+  dragStartedAt.value = Date.now();
+  dragFrameVersion.value = manualFrame.value.version;
+  dragPoints.value = [normalizedPoint(event, element)];
+}
+
+function handlePointerMove(event: PointerEvent) {
+  if (!dragging.value) return;
+  event.preventDefault();
+  const point = normalizedPoint(event, event.currentTarget as HTMLElement);
+  const lastPoint = dragPoints.value[dragPoints.value.length - 1];
+  if (dragPoints.value.length >= 199
+      || (lastPoint && point.elapsedMs - lastPoint.elapsedMs < 16)) {
+    return;
+  }
+  dragPoints.value.push(point);
+}
+
+async function handlePointerUp(event: PointerEvent) {
+  if (!dragging.value) return;
+  event.preventDefault();
+  const element = event.currentTarget as HTMLElement;
+  if (dragPoints.value.length < 200) {
+    dragPoints.value.push(normalizedPoint(event, element));
+  }
+  dragging.value = false;
+  if (element.hasPointerCapture(event.pointerId)) {
+    element.releasePointerCapture(event.pointerId);
+  }
+  const points = [...dragPoints.value];
+  const frameVersion = dragFrameVersion.value;
+  dragPoints.value = [];
+  if (points.length < 2) return;
+
+  dragSubmitting.value = true;
+  try {
+    const response = await submitCaptchaManualDrag(props.accountId, frameVersion, points);
+    if (response.code !== 0 && response.code !== 200) {
+      throw new Error(response.msg || '人工拖动轨迹提交失败');
+    }
+    if (response.data) {
+      manualFrameError.value = '';
+      handleTaskStatus(response.data);
+    }
+  } catch (error: any) {
+    manualFrameError.value = error.message || '人工拖动轨迹提交失败';
+    showError(manualFrameError.value);
+  } finally {
+    dragSubmitting.value = false;
+    scheduleFramePolling(0);
+  }
+}
+
+function resetDrag(event?: PointerEvent) {
+  if (event) {
+    const element = event.currentTarget as HTMLElement;
+    if (element.hasPointerCapture(event.pointerId)) {
+      element.releasePointerCapture(event.pointerId);
+    }
+  }
+  dragging.value = false;
+  dragPoints.value = [];
+  dragStartedAt.value = 0;
+  dragFrameVersion.value = 0;
+}
 
 const handleCancel = async () => {
   if (!props.accountId || !taskRunning.value || cancelling.value) return;
@@ -247,7 +385,7 @@ async function resumeActiveTask() {
 function schedulePolling() {
   clearPolling();
   if (taskRunning.value && props.modelValue) {
-    pollTimer = setTimeout(pollStatus, 2000);
+    pollTimer = setTimeout(pollStatus, 1000);
   }
 }
 
@@ -255,6 +393,20 @@ function clearPolling() {
   if (pollTimer) {
     clearTimeout(pollTimer);
     pollTimer = null;
+  }
+}
+
+function scheduleFramePolling(delay = 700) {
+  clearFramePolling();
+  if (manualTaskRunning.value && props.modelValue) {
+    frameTimer = setTimeout(pollManualFrame, delay);
+  }
+}
+
+function clearFramePolling() {
+  if (frameTimer) {
+    clearTimeout(frameTimer);
+    frameTimer = null;
   }
 }
 
@@ -275,6 +427,7 @@ function stopClock() {
 
 onBeforeUnmount(() => {
   clearPolling();
+  clearFramePolling();
   stopClock();
 });
 </script>
@@ -305,7 +458,7 @@ onBeforeUnmount(() => {
                 <input v-model="selectedMode" type="radio" value="MANUAL_BROWSER" :disabled="running">
                 <span>
                   <strong>人工拖动</strong>
-                  <small>本机打开可视浏览器，人工完成后自动回收 Cookie 和重连</small>
+                  <small>直接在管理后台操作服务器浏览器画面，完成后自动回收 Cookie 和重连</small>
                 </span>
               </label>
               <label class="captcha-option" :class="{ 'captcha-option--active': selectedMode === 'COOKIE' }">
@@ -330,7 +483,31 @@ onBeforeUnmount(() => {
                 状态查询暂时失败，正在继续重试：{{ pollError }}
               </p>
             </div>
-            <p class="captcha-tip">人工浏览器仅支持可显示桌面的本地环境；服务器无界面时可改用粘贴 Cookie。</p>
+            <div v-if="manualTaskRunning" class="manual-panel">
+              <div
+                class="manual-browser"
+                :class="{ 'manual-browser--dragging': dragging }"
+                @pointerdown="handlePointerDown"
+                @pointermove="handlePointerMove"
+                @pointerup="handlePointerUp"
+                @pointercancel="resetDrag"
+              >
+                <img
+                  v-if="manualFrame"
+                  :src="`data:image/jpeg;base64,${manualFrame.imageBase64}`"
+                  alt="服务器滑块验证页面"
+                  draggable="false"
+                >
+                <span v-else>正在加载服务器验证画面…</span>
+              </div>
+              <p class="manual-panel__hint">
+                {{ dragSubmitting ? '拖动轨迹已提交，正在等待平台结果…' : '请直接在上方画面按住滑块并拖动。' }}
+              </p>
+              <p v-if="manualFrameError" class="manual-panel__error">
+                {{ manualFrameError }}
+              </p>
+            </div>
+            <p class="captcha-tip">人工拖动支持生产服务器无界面环境；粘贴 Cookie 方式继续保留。</p>
           </div>
 
           <div class="modal-footer">
@@ -365,7 +542,8 @@ onBeforeUnmount(() => {
 }
 
 .modal-container {
-  width: min(460px, 96vw);
+  width: min(900px, 96vw);
+  max-height: 96vh;
   overflow: hidden;
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -414,6 +592,8 @@ onBeforeUnmount(() => {
 }
 
 .modal-body {
+  max-height: calc(96vh - 138px);
+  overflow-y: auto;
   padding: 20px;
 }
 
@@ -489,6 +669,52 @@ onBeforeUnmount(() => {
 }
 
 .captcha-status .captcha-poll-error {
+  color: #dc2626;
+}
+
+.manual-panel {
+  margin-top: 14px;
+}
+
+.manual-browser {
+  position: relative;
+  display: flex;
+  min-height: 220px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #cbd5e1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.manual-browser--dragging {
+  cursor: grabbing;
+}
+
+.manual-browser img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.manual-panel__hint,
+.manual-panel__error {
+  margin: 7px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.manual-panel__hint {
+  color: #64748b;
+}
+
+.manual-panel__error {
   color: #dc2626;
 }
 

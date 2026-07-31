@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 /**
  * WebSocket控制器
  */
@@ -556,6 +558,75 @@ public class WebSocketController {
     }
 
     /**
+     * 获取服务器人工验证画面
+     */
+    @PostMapping("/captcha/manual/frame")
+    public ResultObject<CaptchaSolveService.ManualFrame> getCaptchaManualFrame(
+            @RequestBody CaptchaStatusReqDTO reqDTO) {
+        try {
+            if (reqDTO == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("账号ID不能为空");
+            }
+            // 画面读取沿用账号归属校验，避免跨租户查看浏览器内容。
+            if (xianyuAccountMapper.selectById(reqDTO.getXianyuAccountId()) == null) {
+                return ResultObject.failed("账号不存在");
+            }
+            return ResultObject.success(
+                    captchaSolveService.getManualFrame(reqDTO.getXianyuAccountId()));
+        } catch (Exception e) {
+            if (e instanceof IllegalArgumentException || e instanceof IllegalStateException) {
+                return ResultObject.failed(e.getMessage() == null
+                        ? "人工验证画面获取失败" : e.getMessage());
+            }
+            log.warn("获取人工验证画面失败: accountId={}, type={}",
+                    reqDTO == null ? null : reqDTO.getXianyuAccountId(),
+                    e.getClass().getSimpleName());
+            return ResultObject.failed("人工验证画面获取失败");
+        }
+    }
+
+    /**
+     * 提交服务器人工拖动轨迹
+     */
+    @PostMapping("/captcha/manual/drag")
+    public ResultObject<CaptchaSolveService.TaskView> submitCaptchaManualDrag(
+            @RequestBody CaptchaManualDragReqDTO reqDTO) {
+        try {
+            if (reqDTO == null || reqDTO.getXianyuAccountId() == null) {
+                return ResultObject.failed("账号ID不能为空");
+            }
+            if (reqDTO.getFrameVersion() == null || reqDTO.getPoints() == null) {
+                return ResultObject.failed("拖动轨迹不能为空");
+            }
+            if (reqDTO.getPoints().stream().anyMatch(point -> point == null
+                    || point.getX() == null || point.getY() == null
+                    || point.getElapsedMs() == null)) {
+                return ResultObject.failed("拖动轨迹无效");
+            }
+            // 轨迹提交沿用账号归属校验，只接收归一化坐标和相对时间。
+            if (xianyuAccountMapper.selectById(reqDTO.getXianyuAccountId()) == null) {
+                return ResultObject.failed("账号不存在");
+            }
+            List<CaptchaSolveService.DragPoint> points = reqDTO.getPoints().stream()
+                    .map(point -> new CaptchaSolveService.DragPoint(
+                            point.getX(), point.getY(), point.getElapsedMs()))
+                    .toList();
+            CaptchaSolveService.ManualDrag drag = new CaptchaSolveService.ManualDrag(
+                    reqDTO.getFrameVersion(), points);
+            return ResultObject.success(captchaSolveService.submitManualDrag(
+                    reqDTO.getXianyuAccountId(), drag));
+        } catch (Exception e) {
+            log.warn("提交人工拖动轨迹失败: accountId={}, type={}",
+                    reqDTO == null ? null : reqDTO.getXianyuAccountId(),
+                    e.getClass().getSimpleName());
+            String message = e instanceof IllegalArgumentException || e instanceof IllegalStateException
+                    ? e.getMessage()
+                    : "人工拖动轨迹提交失败";
+            return ResultObject.failed(message == null ? "人工拖动轨迹提交失败" : message);
+        }
+    }
+
+    /**
      * 更新Cookie
      */
     @PostMapping("/updateCookie")
@@ -892,6 +963,26 @@ public class WebSocketController {
     @Data
     public static class CaptchaStatusReqDTO {
         private Long xianyuAccountId;
+    }
+
+    /**
+     * 人工拖动轨迹请求DTO
+     */
+    @Data
+    public static class CaptchaManualDragReqDTO {
+        private Long xianyuAccountId;
+        private Long frameVersion;
+        private List<CaptchaManualPointDTO> points;
+    }
+
+    /**
+     * 人工拖动轨迹点DTO
+     */
+    @Data
+    public static class CaptchaManualPointDTO {
+        private Double x;
+        private Double y;
+        private Long elapsedMs;
     }
 
     /**

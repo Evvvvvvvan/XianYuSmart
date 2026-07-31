@@ -25,9 +25,23 @@ public interface CaptchaSolveService {
                     long startedAt, long updatedAt, long deadlineAt, Long finishedAt) {
     }
 
+    record ManualFrame(long version, int width, int height,
+                       long updatedAt, String imageBase64) {
+    }
+
+    record DragPoint(double x, double y, long elapsedMs) {
+    }
+
+    record ManualDrag(long frameVersion, java.util.List<DragPoint> points) {
+    }
+
     TaskView start(Long accountId, Mode mode);
 
     TaskView getStatus(Long accountId);
 
     TaskView cancel(Long accountId);
+
+    ManualFrame getManualFrame(Long accountId);
+
+    TaskView submitManualDrag(Long accountId, ManualDrag drag);
 }
