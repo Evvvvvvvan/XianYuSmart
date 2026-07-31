@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 import java.awt.GraphicsEnvironment;
 import java.lang.reflect.Field;
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -41,9 +42,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private static final long TASK_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(5);
     private static final int MAX_AUTO_ATTEMPTS = 5;
     private final Map<Long, BrowserProcessSession> activeBrowserSessions = new ConcurrentHashMap<>();
-    private static final String USER_AGENT =
+    private static final String USER_AGENT_TEMPLATE =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                    + "(KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+                    + "(KHTML, like Gecko) Chrome/%s.0.0.0 Safari/537.36";
     private static final List<String> COOKIE_URLS = List.of(
             "https://www.goofish.com/im",
             "https://passport.goofish.com",
@@ -318,19 +319,11 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         Playwright playwright = null;
         try {
             playwright = Playwright.create();
-            Browser browser = chromiumAfterProcessAttached(playwright, processSession).launch(
-                     new BrowserType.LaunchOptions()
-                             .setHeadless(automatic)
-                             .setIgnoreDefaultArgs(List.of("--enable-automation"))
-                             .setArgs(List.of(
-                                     "--disable-blink-features=AutomationControlled",
-                                     "--disable-infobars",
-                                     "--disable-dev-shm-usage",
-                                     "--no-first-run",
-                                     "--no-default-browser-check")));
+            BrowserType browserType = chromiumAfterProcessAttached(playwright, processSession);
+            Browser browser = browserType.launch(browserLaunchOptions(browserType, automatic));
             BrowserContext context = browser.newContext(
                      new Browser.NewContextOptions()
-                             .setUserAgent(USER_AGENT)
+                             .setUserAgent(browserUserAgent(browser.version()))
                              .setLocale("zh-CN")
                              .setTimezoneId("Asia/Shanghai")
                              .setViewportSize(1365, 768));
@@ -400,6 +393,28 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             Playwright playwright, BrowserProcessSession processSession) {
         processSession.attach(playwright);
         return playwright.chromium();
+    }
+
+    private BrowserType.LaunchOptions browserLaunchOptions(BrowserType browserType, boolean automatic) {
+        return new BrowserType.LaunchOptions()
+                // 显式使用完整Chromium，避免默认headless shell暴露不同的浏览器特征。
+                .setExecutablePath(Path.of(browserType.executablePath()))
+                .setHeadless(automatic)
+                .setIgnoreDefaultArgs(List.of("--enable-automation"))
+                .setArgs(List.of(
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-infobars",
+                        "--disable-dev-shm-usage",
+                        "--no-first-run",
+                        "--no-default-browser-check"));
+    }
+
+    private static String browserUserAgent(String browserVersion) {
+        String majorVersion = browserVersion == null ? "" : browserVersion.split("\\.", 2)[0];
+        if (!majorVersion.matches("\\d+")) {
+            majorVersion = "146";
+        }
+        return USER_AGENT_TEMPLATE.formatted(majorVersion);
     }
 
     void applyFingerprint(BrowserContext context) {
@@ -536,8 +551,12 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
             if (attempt < MAX_AUTO_ATTEMPTS) {
+                String failureReason = failureReason(page);
+                String retryMessage = failureReason == null
+                        ? "第" + attempt + "次未通过，正在重置滑块"
+                        : "第" + attempt + "次未通过：" + failureReason + "，正在重置滑块";
                 reportProgress(progress, "RETRYING_SLIDER",
-                        "第" + attempt + "次未通过，正在重置滑块", attempt);
+                        retryMessage, attempt);
                 resetSliderAfterFailure(page);
                 page.waitForTimeout(ThreadLocalRandom.current().nextInt(1_500, 2_501));
             }
@@ -794,6 +813,10 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     private boolean hasFailureSignal(Page page) {
+        return failureReason(page) != null;
+    }
+
+    private String failureReason(Page page) {
         for (Frame frame : page.frames()) {
             if (frame.isDetached()) {
                 continue;
@@ -802,14 +825,21 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 for (String selector : FAILURE_SELECTORS) {
                     ElementHandle failure = frame.querySelector(selector);
                     if (failure != null && failure.isVisible()) {
-                        return true;
+                        String text = failure.innerText();
+                        if (text == null || text.isBlank()) {
+                            return "平台返回验证失败";
+                        }
+                        String normalized = text.replaceAll("\\s+", " ").trim();
+                        return normalized.length() > 120
+                                ? normalized.substring(0, 120) + "..."
+                                : normalized;
                     }
                 }
             } catch (Exception ignored) {
                 // 页面切换时等待下一轮检查。
             }
         }
-        return false;
+        return null;
     }
 
     private List<Cookie> buildBrowserCookies(String cookieText) {
