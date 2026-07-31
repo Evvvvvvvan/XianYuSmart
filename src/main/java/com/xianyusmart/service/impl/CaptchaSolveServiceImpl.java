@@ -1,5 +1,7 @@
 package com.xianyusmart.service.impl;
 
+import com.xianyusmart.exception.CaptchaRequiredException;
+import com.xianyusmart.exception.CookieExpiredException;
 import com.xianyusmart.service.AccountService;
 import com.xianyusmart.service.CaptchaSolveService;
 import com.xianyusmart.service.WebSocketService;
@@ -166,6 +168,7 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
 
     private void runTask(TaskView task, String captchaUrl, TaskControl control) {
         try {
+            String activeCaptchaUrl = captchaUrl;
             control.started.set(true);
             if (!isCurrentActive(tasks.get(control.accountId), control)) {
                 return;
@@ -179,6 +182,35 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                         0, MAX_AUTO_ATTEMPTS));
                 // 自动验证期间暂停同账号后台重连，避免两个浏览器任务争抢内存和页面响应。
                 webSocketService.stopWebSocket(task.xianyuAccountId());
+                updateProgress(control, new CaptchaBrowserRunner.ProgressUpdate(
+                        "REFRESHING_CHALLENGE", "正在刷新验证会话，避免使用过期滑块",
+                        0, MAX_AUTO_ATTEMPTS));
+                // 自动模式先刷新平台验证会话，已恢复时无需继续打开旧滑块页面。
+                tokenService.clearCaptchaWait(task.xianyuAccountId());
+                try {
+                    String refreshedToken = tokenService.refreshToken(task.xianyuAccountId());
+                    if (refreshedToken != null && !refreshedToken.isBlank()) {
+                        updateProgress(control, new CaptchaBrowserRunner.ProgressUpdate(
+                                "RECONNECTING", "凭证已恢复，正在重新连接",
+                                0, MAX_AUTO_ATTEMPTS));
+                        boolean connected = webSocketService.restartAfterCredentialUpdate(
+                                task.xianyuAccountId());
+                        complete(control,
+                                connected ? Status.SUCCEEDED : Status.FAILED,
+                                connected
+                                        ? "凭证已自动恢复并重新连接"
+                                        : "凭证已恢复，但重新连接失败");
+                        return;
+                    }
+                } catch (CaptchaRequiredException e) {
+                    if (e.getCaptchaUrl() != null && !e.getCaptchaUrl().isBlank()) {
+                        activeCaptchaUrl = e.getCaptchaUrl();
+                    }
+                } catch (CookieExpiredException e) {
+                    complete(control, Status.FAILED,
+                            "Cookie Session已过期，请重新扫码登录后再连接");
+                    return;
+                }
             }
 
             String currentCookie = accountService.getCookieByAccountId(task.xianyuAccountId());
@@ -187,9 +219,10 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                 return;
             }
 
+            String browserCaptchaUrl = activeCaptchaUrl;
             FutureTask<CaptchaBrowserRunner.RunResult> browserFuture = new FutureTask<>(
                     () -> captchaBrowserRunner.run(
-                            task.xianyuAccountId(), task.mode(), captchaUrl, currentCookie,
+                            task.xianyuAccountId(), task.mode(), browserCaptchaUrl, currentCookie,
                             progress -> updateProgress(control, progress)));
             synchronized (control.startLock) {
                 if (!isCurrentActive(tasks.get(control.accountId), control)
@@ -366,13 +399,18 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
     private boolean complete(TaskControl control, Status status, String message) {
         long now = System.currentTimeMillis();
         AtomicBoolean completed = new AtomicBoolean();
+        String finalPhase = status == Status.FAILED
+                || status == Status.TIMEOUT
+                || status == Status.UNSUPPORTED
+                ? control.phase
+                : status.name();
         tasks.compute(control.accountId, (accountId, current) -> {
             if (!isCurrentActive(current, control)) {
                 return current;
             }
             completed.set(true);
             return new TaskView(accountId, current.mode(), status, message,
-                    status.name(), control.attempt, control.maxAttempts,
+                    finalPhase, control.attempt, control.maxAttempts,
                     current.startedAt(), now, current.deadlineAt(), now);
         });
         return completed.get();

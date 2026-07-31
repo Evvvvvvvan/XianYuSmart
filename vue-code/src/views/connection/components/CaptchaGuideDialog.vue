@@ -36,6 +36,8 @@ const phaseLabels: Record<string, string> = {
   CHECKING_ENVIRONMENT: '检查浏览器环境',
   STARTING_BROWSER: '启动浏览器',
   PAUSING_RECONNECT: '暂停后台重连',
+  REFRESHING_CHALLENGE: '刷新验证会话',
+  RECONNECTING: '重新连接',
   OPENING_PAGE: '打开验证页面',
   FINDING_SLIDER: '识别滑块',
   DRAGGING_SLIDER: '拖动滑块',

@@ -332,10 +332,14 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
         reportProgress(progress, "STARTING_BROWSER", "正在启动浏览器", 0);
         Playwright playwright = null;
+        String failureStage = "启动浏览器";
         try {
+            failureStage = "创建浏览器进程";
             playwright = Playwright.create();
             BrowserType browserType = chromiumAfterProcessAttached(playwright, processSession);
+            failureStage = "启动浏览器";
             Browser browser = browserType.launch(browserLaunchOptions(browserType, automatic));
+            failureStage = "创建浏览器上下文";
             BrowserContext context = browser.newContext(
                      new Browser.NewContextOptions()
                              .setUserAgent(browserUserAgent(browser.version()))
@@ -347,9 +351,11 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 // 自动模式在页面脚本执行前统一浏览器指纹，避免同一上下文暴露互相矛盾的特征。
                 applyFingerprint(context);
             }
+            failureStage = "加载账号Cookie";
             context.addCookies(buildBrowserCookies(cookieText));
 
             reportProgress(progress, "OPENING_PAGE", "正在打开滑块验证页面", 0);
+            failureStage = "打开滑块验证页面";
             Page page = context.newPage();
             page.navigate(captchaUrl, new Page.NavigateOptions()
                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
@@ -359,6 +365,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
 
             long deadline = System.currentTimeMillis() + TASK_TIMEOUT_MS;
+            failureStage = automatic ? "执行自动拖动" : "等待人工拖动";
             RunResult verificationResult = automatic
                     ? runAutomatic(context, page, deadline, progress)
                     : waitForManual(page, deadline, progress);
@@ -367,6 +374,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
 
             reportProgress(progress, "COLLECTING_COOKIE", "正在回收更新后的Cookie", 0);
+            failureStage = "回收更新后的Cookie";
             List<Page> activePages = context.pages();
             if (!activePages.isEmpty()) {
                 activePages.get(activePages.size() - 1).waitForTimeout(800);
@@ -377,13 +385,14 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             return new RunResult(Outcome.SOLVED, refreshedCookie, "滑块验证完成");
         } catch (Exception e) {
-            log.warn("【账号{}】浏览器滑块验证失败: {}", accountId,
-                    e.getClass().getSimpleName());
+            String failureMessage = browserFailureMessage(failureStage, e);
+            log.warn("【账号{}】浏览器滑块验证失败: type={}, reason={}", accountId,
+                    e.getClass().getSimpleName(), failureMessage);
             if (!automatic && isDisplayFailure(e)) {
                 return new RunResult(Outcome.UNSUPPORTED, null,
                         "浏览器窗口无法显示，请改用粘贴Cookie");
             }
-            return new RunResult(Outcome.FAILED, null, "浏览器滑块验证失败");
+            return new RunResult(Outcome.FAILED, null, failureMessage);
         } finally {
             // 先终止独立进程再关闭管道，避免关闭阻塞并回收Playwright传输线程。
             processSession.terminate();
@@ -397,6 +406,34 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             activeBrowserSessions.remove(accountId, processSession);
         }
+    }
+
+    static String browserFailureMessage(String stage, Exception exception) {
+        String rawMessage = exception == null ? null : exception.getMessage();
+        String normalized = rawMessage == null ? "" : rawMessage
+                .replaceAll("https?://\\S+", "验证地址")
+                .replaceAll("(?i)(cookie|token|authorization)[=:]\\S+", "$1=<redacted>")
+                .replaceAll("\\s+", " ")
+                .trim();
+        String lowerMessage = normalized.toLowerCase(Locale.ROOT);
+        String reason;
+        if (lowerMessage.contains("net::err_")) {
+            reason = "验证页面网络请求失败";
+        } else if (lowerMessage.contains("target page")
+                && lowerMessage.contains("has been closed")) {
+            reason = "验证页面已关闭";
+        } else if (lowerMessage.contains("timeout") || lowerMessage.contains("timed out")) {
+            reason = "验证页面响应超时";
+        } else if (lowerMessage.contains("executable doesn't exist")) {
+            reason = "浏览器运行文件缺失";
+        } else if (normalized.isBlank()) {
+            reason = exception == null ? "未知异常" : exception.getClass().getSimpleName();
+        } else {
+            reason = normalized.length() > 160
+                    ? normalized.substring(0, 160) + "..."
+                    : normalized;
+        }
+        return stage + "失败：" + reason;
     }
 
     @Override
