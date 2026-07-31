@@ -173,6 +173,14 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
             updateProgress(control, new CaptchaBrowserRunner.ProgressUpdate(
                     "STARTING_BROWSER", "正在启动浏览器", 0, MAX_AUTO_ATTEMPTS));
 
+            if (task.mode() == Mode.AUTO) {
+                updateProgress(control, new CaptchaBrowserRunner.ProgressUpdate(
+                        "PAUSING_RECONNECT", "正在暂停后台重连，避免占用浏览器资源",
+                        0, MAX_AUTO_ATTEMPTS));
+                // 自动验证期间暂停同账号后台重连，避免两个浏览器任务争抢内存和页面响应。
+                webSocketService.stopWebSocket(task.xianyuAccountId());
+            }
+
             String currentCookie = accountService.getCookieByAccountId(task.xianyuAccountId());
             if (currentCookie == null || currentCookie.isBlank()) {
                 complete(control, Status.FAILED, "账号Cookie不存在");
