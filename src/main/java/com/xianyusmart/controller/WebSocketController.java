@@ -5,8 +5,11 @@ import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.controller.dto.UpdateCookieReqDTO;
 import com.xianyusmart.controller.dto.UpdateCookieRespDTO;
 import com.xianyusmart.mapper.XianyuAccountMapper;
+import com.xianyusmart.mapper.MerchantTaskMapper;
+import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.CaptchaSolveService;
 import com.xianyusmart.service.CookieRefreshService;
+import com.xianyusmart.service.RiskControlService;
 import com.xianyusmart.service.WebSocketService;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
@@ -47,6 +50,15 @@ public class WebSocketController {
 
     @Autowired
     private XianyuAccountMapper xianyuAccountMapper;
+
+    @Autowired
+    private RiskControlService riskControlService;
+
+    @Autowired
+    private MerchantTaskMapper merchantTaskMapper;
+
+    @Autowired
+    private XianyuGoodsOrderMapper xianyuGoodsOrderMapper;
 
     /**
      * 启动WebSocket连接
@@ -338,6 +350,10 @@ public class WebSocketController {
             respDTO.setXianyuAccountId(reqDTO.getXianyuAccountId());
             respDTO.setConnected(connected);
             respDTO.setStatus(connected ? "已连接" : "未连接");
+            respDTO.setRiskGuard(riskControlService.getStatus(reqDTO.getXianyuAccountId()));
+            respDTO.setDeferredPlatformActions(
+                    merchantTaskMapper.countPendingPlatformActions(reqDTO.getXianyuAccountId())
+                            + xianyuGoodsOrderMapper.countDeferredActions(reqDTO.getXianyuAccountId()));
 
             // 获取Cookie状态和Cookie值
             com.xianyusmart.service.AccountService accountService =
@@ -920,6 +936,8 @@ public class WebSocketController {
         private Long tokenExpireTime;  // Token过期时间戳（毫秒）
         private Boolean autoDeliveryOn; // 是否有商品开启了自动发货
         private Boolean autoReplyOn;     // 是否有商品开启了自动回复
+        private RiskControlService.GuardStatus riskGuard; // 平台写操作护栏状态
+        private Long deferredPlatformActions; // 等待平台恢复的任务数
     }
     
     /**

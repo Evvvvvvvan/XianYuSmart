@@ -15,6 +15,7 @@ import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.mapper.XianyuGoodsAutoReplyRecordMapper;
 import com.xianyusmart.mapper.XianyuOperationLogMapper;
 import com.xianyusmart.service.AccountService;
+import com.xianyusmart.service.RiskControlService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -60,6 +61,9 @@ public class AccountServiceImpl implements AccountService {
     
     @Autowired
     private XianyuOperationLogMapper operationLogMapper;
+
+    @Autowired
+    private RiskControlService riskControlService;
     
     private static final DateTimeFormatter DATETIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     
@@ -551,6 +555,8 @@ public class AccountServiceImpl implements AccountService {
                 log.info("创建Cookie成功: accountId={}", accountId);
             }
 
+            // 完整凭证保存成功后解除熔断，普通 Set-Cookie 合并不会走此入口。
+            riskControlService.clearCircuit(accountId);
             return true;
 
         } catch (Exception e) {

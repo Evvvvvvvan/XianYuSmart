@@ -60,6 +60,8 @@ public class OperationConstants {
         public static final String AUTO_RATE = "AUTO_RATE";
         /** 自动擦亮模块 */
         public static final String AUTO_POLISH = "AUTO_POLISH";
+        /** 平台风控模块 */
+        public static final String RISK_CONTROL = "RISK_CONTROL";
         /** 商家运营模块 */
         public static final String MERCHANT_OPERATIONS = "MERCHANT_OPERATIONS";
         /** 二维码登录模块 */

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import type { Account } from '@/types'
+import type { RiskGuardStatus } from '@/api/websocket'
 
 import IconClock from '@/components/icons/IconClock.vue'
 import IconArrowRight from '@/components/icons/IconArrowRight.vue'
@@ -13,6 +14,8 @@ interface ConnectionInfo {
   status?: string
   cookieStatus?: number
   tokenExpireTime?: number
+  riskGuard?: RiskGuardStatus
+  deferredPlatformActions?: number
 }
 
 interface Props {
@@ -78,6 +81,16 @@ const getWsText = (info?: ConnectionInfo) => {
   if (!info) return '未检测'
   return info.connected ? '已连接' : '未连接'
 }
+
+const getRiskText = (info?: ConnectionInfo) => {
+  if ((!info?.riskGuard || info.riskGuard.state === 'NORMAL') && info?.deferredPlatformActions) {
+    return `待恢复 ${info.deferredPlatformActions} 项`
+  }
+  if (!info?.riskGuard || info.riskGuard.state === 'NORMAL') return '风控正常'
+  if (info.riskGuard.state === 'CIRCUIT_OPEN') return '风控冷却'
+  if (info.riskGuard.state === 'RECOVERING') return '正在恢复'
+  return '写操作等待'
+}
 </script>
 
 <template>
@@ -132,6 +145,18 @@ const getWsText = (info?: ConnectionInfo) => {
           <span class="conn-card__label">创建</span>
           <span class="conn-card__value">{{ new Date(account.createdTime).toLocaleDateString() }}</span>
         </div>
+        <div
+          v-if="(connections.get(Number(account.id))?.riskGuard
+            && connections.get(Number(account.id))?.riskGuard?.state !== 'NORMAL')
+            || connections.get(Number(account.id))?.deferredPlatformActions"
+          class="conn-card__row"
+        >
+          <div class="conn-card__label-icon"><IconClock /></div>
+          <span class="conn-card__label">平台风控</span>
+          <span class="conn-card__badge" :style="{ color: 'var(--c-warning)', background: 'rgba(255,159,10,.18)' }">
+            {{ getRiskText(connections.get(Number(account.id))) }}
+          </span>
+        </div>
       </div>
 
       <div class="conn-card__footer">
@@ -185,6 +210,15 @@ const getWsText = (info?: ConnectionInfo) => {
         >
           <IconWs />
           {{ getWsText(connections.get(Number(account.id))) }}
+        </span>
+        <span
+          v-if="(connections.get(Number(account.id))?.riskGuard
+            && connections.get(Number(account.id))?.riskGuard?.state !== 'NORMAL')
+            || connections.get(Number(account.id))?.deferredPlatformActions"
+          class="grid-card__tag"
+          :style="{ color: 'var(--c-warning)', background: 'rgba(255,159,10,.18)' }"
+        >
+          {{ getRiskText(connections.get(Number(account.id))) }}
         </span>
       </div>
     </div>

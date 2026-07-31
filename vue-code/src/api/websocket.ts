@@ -1,6 +1,14 @@
 import { request } from '@/utils/request';
 import type { ApiResponse } from '@/types';
 
+export interface RiskGuardStatus {
+  state: 'NORMAL' | 'RATE_WAIT' | 'CIRCUIT_OPEN' | 'RECOVERING';
+  remainingSeconds: number;
+  retryAt: number;
+  reason?: string;
+  operation?: string;
+}
+
 // WebSocket连接状态
 export interface WebSocketStatus {
   xianyuAccountId: number;
@@ -12,6 +20,8 @@ export interface WebSocketStatus {
   tokenExpireTime?: number;   // Token过期时间戳（毫秒）
   autoDeliveryOn?: boolean;   // 是否有商品开启了自动发货
   autoReplyOn?: boolean;      // 是否有商品开启了自动回复
+  riskGuard?: RiskGuardStatus; // 平台写操作护栏
+  deferredPlatformActions?: number; // 等待平台恢复的任务数
 }
 
 // 获取连接状态

@@ -53,4 +53,14 @@ public interface MerchantTaskMapper extends BaseMapper<MerchantTask> {
 
     @Update("UPDATE merchant_task SET status = 0, attempt_count = 0, scheduled_time = NOW(3), next_retry_time = NULL, error_message = NULL WHERE id = #{id}")
     int requeue(@Param("id") Long id);
+
+    @Update("UPDATE merchant_task SET status = 0, attempt_count = GREATEST(attempt_count - 1, 0), " +
+            "scheduled_time = #{retryAt}, next_retry_time = NULL, error_message = #{message} WHERE id = #{id}")
+    int defer(@Param("id") Long id, @Param("retryAt") LocalDateTime retryAt,
+              @Param("message") String message);
+
+    @Select("SELECT COUNT(*) FROM merchant_task WHERE xianyu_account_id = #{accountId} " +
+            "AND task_type IN ('BARGAIN_FREE_SHIPPING', 'CONFIRM_SHIPMENT') " +
+            "AND (status IN (0, 1) OR (status = -1 AND attempt_count < max_attempts))")
+    long countPendingPlatformActions(@Param("accountId") Long accountId);
 }

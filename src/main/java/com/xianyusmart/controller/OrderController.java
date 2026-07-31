@@ -13,6 +13,7 @@ import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.OrderService;
 import com.xianyusmart.service.DeliveryTaskService;
+import com.xianyusmart.service.MerchantOperationsService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +38,9 @@ public class OrderController {
 
     @Autowired
     private DeliveryTaskService deliveryTaskService;
+
+    @Autowired
+    private MerchantOperationsService merchantOperationsService;
 
     @Autowired
     private com.xianyusmart.service.GoodsAutomationService goodsAutomationService;
@@ -127,7 +131,11 @@ public class OrderController {
                     reqDTO.getOrderId()
             );
 
-            if (result != null) {
+            if (OrderService.CONSIGN_DEFERRED.equals(result)) {
+                merchantOperationsService.enqueueConfirmShipment(
+                        reqDTO.getXianyuAccountId(), reqDTO.getOrderId());
+                return ResultObject.success(result);
+            } else if (result != null) {
                 orderMapper.updateConfirmState(reqDTO.getXianyuAccountId(), reqDTO.getOrderId());
                 return ResultObject.success(result);
             } else {

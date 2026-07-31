@@ -9,6 +9,7 @@ import com.xianyusmart.event.chatMessageEvent.ChatMessageReceivedEvent;
 import com.xianyusmart.mapper.XianyuGoodsInfoMapper;
 import com.xianyusmart.service.DeliveryTaskService;
 import com.xianyusmart.service.BuyerProfileService;
+import com.xianyusmart.service.MerchantOperationsService;
 import com.xianyusmart.service.NotificationCenterService;
 import com.xianyusmart.service.OrderService;
 import com.xianyusmart.entity.XianyuGoodsConfig;
@@ -60,6 +61,9 @@ public class ChatMessageEventAutoDeliveryListener {
 
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private MerchantOperationsService merchantOperationsService;
 
     private final Map<String, Long> bargainMessageStages = new ConcurrentHashMap<>();
 
@@ -183,15 +187,22 @@ public class ChatMessageEventAutoDeliveryListener {
             return;
         }
 
-        boolean success = orderService.freeShippingBargain(
+        OrderService.BargainFreeShippingResult result = orderService.freeShippingBargain(
                 accountId,
                 message.getOrderId(),
                 Long.valueOf(message.getXyGoodsId()),
                 Long.valueOf(message.getSenderUserId()));
-        if (success) {
+        if (result == OrderService.BargainFreeShippingResult.SUCCESS) {
             log.info("【账号{}】小刀待刀成订单免拼完成: orderId={}", accountId, message.getOrderId());
         } else {
-            log.warn("【账号{}】小刀待刀成订单免拼失败: orderId={}", accountId, message.getOrderId());
+            // 事件只出现一次，失败后必须持久化，避免重启或冷却期间丢失小刀订单。
+            merchantOperationsService.enqueueBargainFreeShipping(
+                    accountId,
+                    message.getOrderId(),
+                    Long.valueOf(message.getXyGoodsId()),
+                    Long.valueOf(message.getSenderUserId()));
+            log.warn("【账号{}】小刀待刀成订单免拼已进入恢复队列: orderId={}",
+                    accountId, message.getOrderId());
         }
     }
 

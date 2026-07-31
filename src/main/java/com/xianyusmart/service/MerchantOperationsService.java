@@ -21,6 +21,7 @@ import com.xianyusmart.entity.XianyuAccount;
 import com.xianyusmart.entity.XianyuGoodsInfo;
 import com.xianyusmart.entity.XianyuGoodsAutoDeliveryConfig;
 import com.xianyusmart.entity.XianyuKamiConfig;
+import com.xianyusmart.exception.RiskGuardBlockedException;
 import com.xianyusmart.mapper.MerchantDistributionMapper;
 import com.xianyusmart.mapper.MerchantResourceMapper;
 import com.xianyusmart.mapper.MerchantTaskMapper;
@@ -28,12 +29,15 @@ import com.xianyusmart.mapper.MerchantShortLinkMapper;
 import com.xianyusmart.mapper.XianyuAccountMapper;
 import com.xianyusmart.mapper.XianyuKamiConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsAutoDeliveryConfigMapper;
+import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -54,7 +58,8 @@ public class MerchantOperationsService {
             "PUBLISH_RULE", "DELETE_RULE", "ANNOUNCEMENT", "FEEDBACK", "RISK_EVENT", "WORKFLOW"
     );
     public static final Set<String> TASK_TYPES = Set.of(
-            "COLLECT", "SELECT", "PUBLISH", "DELETE", "COMPENSATE", "REFRESH_PROMOTION", "WORKFLOW"
+            "COLLECT", "SELECT", "PUBLISH", "DELETE", "COMPENSATE", "REFRESH_PROMOTION", "WORKFLOW",
+            "BARGAIN_FREE_SHIPPING", "CONFIRM_SHIPMENT"
     );
 
     private final MerchantResourceMapper resourceMapper;
@@ -64,7 +69,10 @@ public class MerchantOperationsService {
     private final XianyuKamiConfigMapper kamiConfigMapper;
     private final MerchantShortLinkMapper shortLinkMapper;
     private final XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper;
+    private final XianyuGoodsOrderMapper goodsOrderMapper;
     private final ItemService itemService;
+    private final OrderService orderService;
+    private final RiskControlService riskControlService;
     private final PlatformPublishService platformPublishService;
     private final OpportunityAnalysisService opportunityAnalysisService;
     private final WorkflowDefinitionService workflowDefinitionService;
@@ -80,7 +88,10 @@ public class MerchantOperationsService {
                                      XianyuKamiConfigMapper kamiConfigMapper,
                                      MerchantShortLinkMapper shortLinkMapper,
                                      XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper,
+                                     XianyuGoodsOrderMapper goodsOrderMapper,
                                      ItemService itemService,
+                                     OrderService orderService,
+                                     RiskControlService riskControlService,
                                      PlatformPublishService platformPublishService,
                                      OpportunityAnalysisService opportunityAnalysisService,
                                      WorkflowDefinitionService workflowDefinitionService,
@@ -95,7 +106,10 @@ public class MerchantOperationsService {
         this.kamiConfigMapper = kamiConfigMapper;
         this.shortLinkMapper = shortLinkMapper;
         this.autoDeliveryConfigMapper = autoDeliveryConfigMapper;
+        this.goodsOrderMapper = goodsOrderMapper;
         this.itemService = itemService;
+        this.orderService = orderService;
+        this.riskControlService = riskControlService;
         this.platformPublishService = platformPublishService;
         this.opportunityAnalysisService = opportunityAnalysisService;
         this.workflowDefinitionService = workflowDefinitionService;
@@ -426,8 +440,63 @@ public class MerchantOperationsService {
         task.setScheduledTime(request.getScheduledTime() == null ? LocalDateTime.now() : request.getScheduledTime());
         task.setAttemptCount(0);
         // 发布结果不确定时禁止自动重发，避免平台已成功但本地超时造成重复商品。
-        task.setMaxAttempts("PUBLISH".equals(request.getTaskType()) ? 1 : 3);
+        task.setMaxAttempts("PUBLISH".equals(request.getTaskType()) ? 1
+                : isPlatformOrderTask(request.getTaskType()) ? 12 : 3);
         task.setRequestJson(writeJson(request.getRequest()));
+        taskMapper.insert(task);
+        return task;
+    }
+
+    public MerchantTask enqueueBargainFreeShipping(Long accountId, String orderId,
+                                                    Long itemId, Long buyerId) {
+        if (itemId == null || buyerId == null) {
+            throw new IllegalArgumentException("小刀订单商品和买家不能为空");
+        }
+        return enqueuePlatformOrderTask("BARGAIN_FREE_SHIPPING", accountId, orderId,
+                String.valueOf(itemId), Map.of(
+                        "orderId", orderId,
+                        "itemId", itemId,
+                        "buyerId", buyerId
+                ));
+    }
+
+    public MerchantTask enqueueConfirmShipment(Long accountId, String orderId) {
+        return enqueuePlatformOrderTask("CONFIRM_SHIPMENT", accountId, orderId,
+                null, Map.of("orderId", orderId));
+    }
+
+    private MerchantTask enqueuePlatformOrderTask(String taskType, Long accountId, String orderId,
+                                                  String xyGoodsId, Map<String, Object> request) {
+        if (accountId == null || orderId == null || orderId.isBlank()) {
+            throw new IllegalArgumentException("账号和订单不能为空");
+        }
+        XianyuAccount account = accountMapper.selectById(accountId);
+        if (account == null || account.getTenantId() == null) {
+            throw new IllegalArgumentException("账号不存在或无权访问");
+        }
+        String requestKey = accountId + ":" + orderId.trim();
+        MerchantTask existing = taskMapper.selectByRequestKey(account.getTenantId(), taskType, requestKey);
+        if (existing != null) {
+            if (Integer.valueOf(-1).equals(existing.getStatus())
+                    && existing.getAttemptCount() != null && existing.getMaxAttempts() != null
+                    && existing.getAttemptCount() >= existing.getMaxAttempts()) {
+                taskMapper.requeue(existing.getId());
+                return taskMapper.selectById(existing.getId());
+            }
+            return existing;
+        }
+
+        MerchantTask task = new MerchantTask();
+        task.setTenantId(account.getTenantId());
+        task.setTaskType(taskType);
+        task.setRequestKey(requestKey);
+        task.setXianyuAccountId(accountId);
+        task.setXyGoodsId(xyGoodsId);
+        task.setStatus(0);
+        task.setScheduledTime(LocalDateTime.now());
+        task.setAttemptCount(0);
+        task.setMaxAttempts(12);
+        task.setRequestJson(writeJson(request));
         taskMapper.insert(task);
         return task;
     }
@@ -614,6 +683,8 @@ public class MerchantOperationsService {
                 case "COMPENSATE" -> executeCompensation(task);
                 case "REFRESH_PROMOTION" -> executePromotionRefresh(task);
                 case "WORKFLOW" -> executeWorkflow(task);
+                case "BARGAIN_FREE_SHIPPING" -> executeBargainFreeShipping(task);
+                case "CONFIRM_SHIPMENT" -> executeConfirmShipment(task);
                 default -> throw new IllegalArgumentException("不支持的任务类型");
             };
             taskMapper.complete(task.getId(), writeJson(result));
@@ -621,6 +692,14 @@ public class MerchantOperationsService {
                     OperationConstants.Module.MERCHANT_OPERATIONS, task.getTaskType() + "任务执行成功",
                     OperationConstants.Status.SUCCESS, OperationConstants.TargetType.TASK,
                     String.valueOf(task.getId()), task.getRequestJson(), writeJson(result), null, null);
+        } catch (RiskGuardBlockedException e) {
+            LocalDateTime retryAt = Instant.ofEpochMilli(e.getRetryAt())
+                    .atZone(ZoneId.of("Asia/Shanghai")).toLocalDateTime();
+            taskMapper.defer(task.getId(), retryAt, trimError(e.getMessage()));
+            operationLogService.log(task.getXianyuAccountId(), OperationConstants.Type.UPDATE,
+                    OperationConstants.Module.RISK_CONTROL, task.getTaskType() + "任务等待平台恢复",
+                    OperationConstants.Status.PARTIAL, OperationConstants.TargetType.TASK,
+                    String.valueOf(task.getId()), null, null, trimError(e.getMessage()), null);
         } catch (Exception e) {
             int attempt = task.getAttemptCount() == null ? 1 : task.getAttemptCount() + 1;
             taskMapper.fail(task.getId(), trimError(e.getMessage()), LocalDateTime.now().plusMinutes(Math.min(60, attempt * 5L)));
@@ -676,6 +755,45 @@ public class MerchantOperationsService {
             created++;
         }
         return Map.of("collected", collected, "selected", created);
+    }
+
+    private Map<String, Object> executeBargainFreeShipping(MerchantTask task) {
+        Map<String, Object> request = readJson(task.getRequestJson());
+        String orderId = text(request.get("orderId"));
+        Long itemId = longValue(request.get("itemId"));
+        Long buyerId = longValue(request.get("buyerId"));
+        OrderService.BargainFreeShippingResult result = orderService.freeShippingBargain(
+                task.getXianyuAccountId(), orderId, itemId, buyerId);
+        if (result == OrderService.BargainFreeShippingResult.SUCCESS) {
+            return Map.of("success", true, "orderId", orderId);
+        }
+        if (result == OrderService.BargainFreeShippingResult.RETRY_LATER) {
+            throwPlatformWait(task.getXianyuAccountId(), "小刀订单免拼失败，等待重试");
+        }
+        throw new IllegalArgumentException("小刀订单参数无效");
+    }
+
+    private Map<String, Object> executeConfirmShipment(MerchantTask task) {
+        String orderId = text(readJson(task.getRequestJson()).get("orderId"));
+        String result = orderService.confirmShipment(task.getXianyuAccountId(), orderId);
+        if (OrderService.CONSIGN_DEFERRED.equals(result)) {
+            throwPlatformWait(task.getXianyuAccountId(), result);
+        }
+        if (result == null) {
+            throw new IllegalStateException("平台确认发货失败，等待重试");
+        }
+        goodsOrderMapper.updateConfirmState(task.getXianyuAccountId(), orderId);
+        return Map.of("success", true, "orderId", orderId, "message", result);
+    }
+
+    private void throwPlatformWait(Long accountId, String fallbackMessage) {
+        RiskControlService.GuardStatus status = riskControlService.getStatus(accountId);
+        if (status.state() == RiskControlService.GuardState.CIRCUIT_OPEN) {
+            throw new RiskGuardBlockedException(new RiskControlService.GuardDecision(
+                    false, status.state(), status.remainingSeconds(), status.retryAt(),
+                    status.reason(), status.operation()));
+        }
+        throw new IllegalStateException(fallbackMessage);
     }
 
     private Map<String, Object> executeWorkflow(MerchantTask task) {
@@ -1125,6 +1243,11 @@ public class MerchantOperationsService {
         if (type == null || !TASK_TYPES.contains(type)) {
             throw new IllegalArgumentException("不支持的任务类型");
         }
+    }
+
+    private boolean isPlatformOrderTask(String taskType) {
+        return "BARGAIN_FREE_SHIPPING".equals(taskType)
+                || "CONFIRM_SHIPMENT".equals(taskType);
     }
 
     private int normalizeLimit(Integer limit) {

@@ -1,6 +1,7 @@
 package com.xianyusmart.utils;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xianyusmart.service.RiskControlService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,9 @@ public class XianyuApiCallUtils {
     
     @Autowired
     private com.xianyusmart.service.AccountService accountService;
+
+    @Autowired
+    private RiskControlService riskControlService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -96,6 +100,13 @@ public class XianyuApiCallUtils {
                                            Map<String, String> extraQueryParams,
                                            int retryCount) {
         try {
+            RiskControlService.GuardDecision guard = riskControlService.checkApiWrite(accountId, apiName);
+            if (!guard.allowed()) {
+                log.warn("【账号{}】平台写请求等待恢复: apiName={}, remainingSeconds={}",
+                        accountId, apiName, guard.remainingSeconds());
+                return ApiCallResult.guardBlocked(guard);
+            }
+
             XianyuApiUtils.ApiCallResultWithHeaders result = XianyuApiUtils.callApiWithHeaders(
                     apiName, apiPathVersion, dataMap, cookiesStr, null, null, extraHeaders, extraQueryParams);
 
@@ -116,6 +127,7 @@ public class XianyuApiCallUtils {
             // 3. 解析响应
             @SuppressWarnings("unchecked")
             Map<String, Object> responseMap = objectMapper.readValue(response, Map.class);
+            riskControlService.recordResponse(accountId, responseMap);
 
             @SuppressWarnings("unchecked")
             List<String> ret = (List<String>) responseMap.get("ret");
@@ -170,7 +182,7 @@ public class XianyuApiCallUtils {
             }
 
             // 6. 检查是否触发风控
-            if (isRiskControl(retCode)) {
+            if (riskControlService.detectRiskControl(responseMap)) {
                 log.error("【账号{}】触发风控: {}", accountId, retCode);
                 return new ApiCallResult(false, response, platformRestrictionMessage(retCode), false);
             }
@@ -270,15 +282,6 @@ public class XianyuApiCallUtils {
                retCode.contains("令牌过期");
     }
     
-    /**
-     * 判断是否为风控错误
-     */
-    private boolean isRiskControl(String retCode) {
-        return retCode.contains("RGV587_ERROR") ||
-               retCode.contains("被挤爆啦") ||
-               retCode.contains("FAIL_SYS_USER_VALIDATE");
-    }
-
     private String platformRestrictionMessage(String retCode) {
         if (retCode.contains("FAIL_SYS_USER_VALIDATE")) {
             return "平台要求完成账号验证，搜索结果仍可继续整理；发布前请在连接管理更新登录状态后重试";
@@ -297,12 +300,31 @@ public class XianyuApiCallUtils {
         private final String response;
         private final String errorMessage;
         private final boolean tokenExpired;
+        private final RiskControlService.GuardState guardState;
+        private final long remainingSeconds;
+        private final long retryAt;
         
         public ApiCallResult(boolean success, String response, String errorMessage, boolean tokenExpired) {
+            this(success, response, errorMessage, tokenExpired, null, 0, 0);
+        }
+
+        private ApiCallResult(boolean success, String response, String errorMessage, boolean tokenExpired,
+                              RiskControlService.GuardState guardState, long remainingSeconds, long retryAt) {
             this.success = success;
             this.response = response;
             this.errorMessage = errorMessage;
             this.tokenExpired = tokenExpired;
+            this.guardState = guardState;
+            this.remainingSeconds = remainingSeconds;
+            this.retryAt = retryAt;
+        }
+
+        public static ApiCallResult guardBlocked(RiskControlService.GuardDecision guard) {
+            String message = guard.state() == RiskControlService.GuardState.CIRCUIT_OPEN
+                    ? "账号风控冷却中，剩余" + guard.remainingSeconds() + "秒"
+                    : "写操作过于频繁，请" + guard.remainingSeconds() + "秒后重试";
+            return new ApiCallResult(false, null, message, false,
+                    guard.state(), guard.remainingSeconds(), guard.retryAt());
         }
         
         public boolean isSuccess() {
@@ -319,6 +341,23 @@ public class XianyuApiCallUtils {
         
         public boolean isTokenExpired() {
             return tokenExpired;
+        }
+
+        public boolean isGuardBlocked() {
+            return guardState == RiskControlService.GuardState.RATE_WAIT
+                    || guardState == RiskControlService.GuardState.CIRCUIT_OPEN;
+        }
+
+        public RiskControlService.GuardState getGuardState() {
+            return guardState;
+        }
+
+        public long getRemainingSeconds() {
+            return remainingSeconds;
+        }
+
+        public long getRetryAt() {
+            return retryAt;
         }
         
         /**

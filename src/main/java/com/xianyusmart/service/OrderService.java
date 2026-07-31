@@ -11,6 +11,7 @@ public interface OrderService {
     String CONSIGN_SUCCESS = "虚拟发货成功";
     String CONSIGN_UNCERTAIN = "虚拟发货结果待确认";
     String CONSIGN_ALREADY_DELIVERED = "订单已存在发货凭证";
+    String CONSIGN_DEFERRED = "平台风控冷却中，发货任务已等待恢复";
     
     /**
      * 确认发货
@@ -24,7 +25,13 @@ public interface OrderService {
     /**
      * 小刀订单免拼发货
      */
-    boolean freeShippingBargain(Long accountId, String orderId, Long itemId, Long buyerId);
+    BargainFreeShippingResult freeShippingBargain(Long accountId, String orderId, Long itemId, Long buyerId);
+
+    enum BargainFreeShippingResult {
+        SUCCESS,
+        RETRY_LATER,
+        FAILED
+    }
     
     /**
      * 调用闲鱼API确认发货

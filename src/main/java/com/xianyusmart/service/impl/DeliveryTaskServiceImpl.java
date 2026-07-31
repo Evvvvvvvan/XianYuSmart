@@ -92,6 +92,13 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
     }
 
     @Override
+    public void deferForRisk(Long taskId, LocalDateTime retryAt, String errorMessage) {
+        String safeMessage = errorMessage == null ? "账号风控冷却中" :
+                errorMessage.substring(0, Math.min(errorMessage.length(), 500));
+        orderMapper.deferForRisk(taskId, retryAt, safeMessage);
+    }
+
+    @Override
     public void markReviewRequired(Long taskId, String errorMessage) {
         String safeMessage = errorMessage == null ? "发送结果不确定，请人工核对" :
                 errorMessage.substring(0, Math.min(errorMessage.length(), 500));

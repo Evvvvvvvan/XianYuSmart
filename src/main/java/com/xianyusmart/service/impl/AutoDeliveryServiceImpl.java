@@ -11,10 +11,12 @@ import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.mapper.XianyuGoodsAutoReplyRecordMapper;
 import com.xianyusmart.service.AutoDeliveryService;
 import com.xianyusmart.service.BuyerMessageService;
+import com.xianyusmart.service.DeliveryTaskService;
 import com.xianyusmart.service.EmailNotifyService;
 import com.xianyusmart.service.NotificationCenterService;
 import com.xianyusmart.service.KamiConfigService;
 import com.xianyusmart.service.OrderService;
+import com.xianyusmart.service.RiskControlService;
 import com.xianyusmart.service.WebSocketService;
 import com.xianyusmart.service.delivery.DeliveryContext;
 import com.xianyusmart.service.delivery.DeliveryStrategyResolver;
@@ -27,6 +29,9 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
@@ -71,6 +76,12 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
 
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private DeliveryTaskService deliveryTaskService;
+
+    @Autowired
+    private RiskControlService riskControlService;
 
     @Autowired
     private OrderDetailFetcher orderDetailFetcher;
@@ -479,6 +490,21 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
                 cardDeliveryAttempted = cardDelivery;
                 String deliveryResult = orderService.consignDummyDelivery(
                         accountId, orderId, finalDeliveryContent, imageUrls);
+                if (OrderService.CONSIGN_DEFERRED.equals(deliveryResult)) {
+                    if (cardDelivery) {
+                        kamiConfigService.releaseReservation(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    // 平台请求未发出时保留订单任务，熔断结束后重新解析并履约。
+                    deliveryTaskService.deferForRisk(recordId, riskRetryTime(accountId),
+                            OrderService.CONSIGN_DEFERRED);
+                    log.info("【账号{}】自动发货等待平台恢复: recordId={}, orderId={}",
+                            accountId, recordId, orderId);
+                    return;
+                }
                 if (OrderService.CONSIGN_UNCERTAIN.equals(deliveryResult)) {
                     String failReason = "发货结果待确认，请核对平台凭证后处理";
                     if (cardDelivery) {
@@ -640,7 +666,9 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             try {
                 HumanLikeDelayUtils.longDelay();
                 String result = orderService.confirmShipment(accountId, orderId);
-                if (result != null) {
+                if (OrderService.CONSIGN_DEFERRED.equals(result)) {
+                    log.info("【账号{}】自动确认发货等待平台恢复: orderId={}", accountId, orderId);
+                } else if (result != null) {
                     log.info("【账号{}】✅ 自动确认发货成功: orderId={}", accountId, orderId);
                     orderMapper.updateConfirmState(accountId, orderId);
                 } else {
@@ -658,6 +686,14 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
         } catch (Exception e) {
             log.error("更新订单状态失败: recordId={}, state={}", recordId, state, e);
         }
+    }
+
+    private LocalDateTime riskRetryTime(Long accountId) {
+        long retryAt = riskControlService.getStatus(accountId).retryAt();
+        if (retryAt <= System.currentTimeMillis()) {
+            retryAt = System.currentTimeMillis() + 60_000L;
+        }
+        return Instant.ofEpochMilli(retryAt).atZone(ZoneId.of("Asia/Shanghai")).toLocalDateTime();
     }
 
     @Override

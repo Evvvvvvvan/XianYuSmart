@@ -26,7 +26,7 @@ public class GoodsAutomationScheduler {
         this.buyerMessageService = buyerMessageService;
     }
 
-    @Scheduled(fixedDelayString = "${app.automation.rate-delay-ms:600000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
+    @Scheduled(fixedDelayString = "${app.automation.rate-delay-ms:60000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
     public void rateEnabledGoods() {
         if (!rating.compareAndSet(false, true)) {
             return;
@@ -40,7 +40,7 @@ public class GoodsAutomationScheduler {
         }
     }
 
-    @Scheduled(fixedDelayString = "${app.automation.polish-delay-ms:3600000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
+    @Scheduled(fixedDelayString = "${app.automation.polish-delay-ms:60000}", initialDelayString = "${app.automation.initial-delay-ms:60000}")
     public void polishEnabledGoods() {
         if (!polishing.compareAndSet(false, true)) {
             return;

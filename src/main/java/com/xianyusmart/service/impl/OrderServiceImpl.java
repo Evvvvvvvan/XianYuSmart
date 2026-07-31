@@ -2,6 +2,9 @@ package com.xianyusmart.service.impl;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -15,8 +18,10 @@ import com.xianyusmart.mapper.XianyuGoodsAutoDeliveryConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import com.xianyusmart.service.AccountService;
 import com.xianyusmart.service.BuyerMessageService;
+import com.xianyusmart.service.DeliveryTaskService;
 import com.xianyusmart.service.KamiConfigService;
 import com.xianyusmart.service.OrderService;
+import com.xianyusmart.service.RiskControlService;
 import com.xianyusmart.service.delivery.DeliveryContext;
 import com.xianyusmart.service.delivery.DeliveryStrategyResolver;
 import com.xianyusmart.utils.XianyuApiCallUtils;
@@ -60,6 +65,12 @@ public class OrderServiceImpl implements OrderService {
 
     @Autowired
     private BuyerMessageService buyerMessageService;
+
+    @Autowired
+    private DeliveryTaskService deliveryTaskService;
+
+    @Autowired
+    private RiskControlService riskControlService;
     
     private final ObjectMapper objectMapper = new ObjectMapper();
     
@@ -73,17 +84,17 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public boolean freeShippingBargain(Long accountId, String orderId, Long itemId, Long buyerId) {
+    public BargainFreeShippingResult freeShippingBargain(Long accountId, String orderId, Long itemId, Long buyerId) {
         try {
             if (accountId == null || orderId == null || orderId.isBlank()
                     || itemId == null || buyerId == null) {
-                return false;
+                return BargainFreeShippingResult.FAILED;
             }
 
             String cookieStr = accountService.getCookieByAccountId(accountId);
             if (cookieStr == null || cookieStr.isBlank()) {
                 log.warn("【账号{}】小刀订单免拼失败，未找到Cookie: orderId={}", accountId, orderId);
-                return false;
+                return BargainFreeShippingResult.RETRY_LATER;
             }
 
             Map<String, Object> dataMap = new HashMap<>();
@@ -99,18 +110,19 @@ public class OrderServiceImpl implements OrderService {
             );
             if (result.isSuccess()) {
                 log.info("【账号{}】小刀订单免拼成功: orderId={}", accountId, orderId);
-                return true;
+                return BargainFreeShippingResult.SUCCESS;
             }
             if (isBargainAlreadyDelivered(result)) {
                 log.info("【账号{}】小刀订单已完成免拼发货: orderId={}", accountId, orderId);
-                return true;
+                return BargainFreeShippingResult.SUCCESS;
             }
 
-            log.warn("【账号{}】小刀订单免拼失败: orderId={}", accountId, orderId);
-            return false;
+            log.warn("【账号{}】小刀订单免拼等待重试: orderId={}, error={}",
+                    accountId, orderId, result.getErrorMessage());
+            return BargainFreeShippingResult.RETRY_LATER;
         } catch (Exception e) {
             log.error("【账号{}】小刀订单免拼异常: orderId={}", accountId, orderId);
-            return false;
+            return BargainFreeShippingResult.RETRY_LATER;
         }
     }
 
@@ -187,6 +199,10 @@ public class OrderServiceImpl implements OrderService {
                 String errorMsg = result.getErrorMessage();
                 log.error("【账号{}】❌ 闲鱼新发货API失败: {}", accountId, errorMsg);
 
+                if (result.isGuardBlocked()) {
+                    return CONSIGN_DEFERRED;
+                }
+
                 if (result.isTokenExpired()) {
                     return null;
                 }
@@ -258,9 +274,13 @@ public class OrderServiceImpl implements OrderService {
             if (!result.isSuccess()) {
                 String errorMsg = result.getErrorMessage();
                 log.error("【账号{}】❌ 闲鱼API确认发货失败: {}", accountId, errorMsg);
-                
+
+                if (result.isGuardBlocked()) {
+                    return CONSIGN_DEFERRED;
+                }
+
                 if (result.isTokenExpired()) {
-                    return "令牌过期，请稍后重试或手动更新Cookie";
+                    return null;
                 }
 
                 if (errorMsg != null && errorMsg.contains("ORDER_ALREADY_DELIVERY")) {
@@ -736,6 +756,19 @@ public class OrderServiceImpl implements OrderService {
                 log.info("【账号{}】先提交发货凭证: orderId={}, deliveryMode={}, contentLen={}, imageCount={}",
                         accountId, orderId, deliveryMode, finalDeliveryContent.length(), imageUrls.size());
                 String result = consignDummyDelivery(accountId, orderId, finalDeliveryContent, imageUrls);
+                if (CONSIGN_DEFERRED.equals(result)) {
+                    if (cardDelivery) {
+                        kamiConfigService.releaseReservation(orderId);
+                    }
+                    if (deliveryMessageHeld) {
+                        buyerMessageService.cancelHeldDeliveryMessage(deliveryOrder);
+                        deliveryMessageHeld = false;
+                    }
+                    // 平台请求尚未发出，完整订单留在原队列等待熔断结束。
+                    deliveryTaskService.deferForRisk(deliveryOrder.getId(),
+                            riskRetryTime(accountId), CONSIGN_DEFERRED);
+                    return CONSIGN_DEFERRED;
+                }
                 if (CONSIGN_UNCERTAIN.equals(result) || CONSIGN_ALREADY_DELIVERED.equals(result)) {
                     String failReason = CONSIGN_UNCERTAIN.equals(result)
                             ? "发货结果待确认，请核对平台凭证后处理"
@@ -815,5 +848,13 @@ public class OrderServiceImpl implements OrderService {
         log.info("【账号{}】商品配置发货完成: orderId={}, voucher={}, chat={}",
                 accountId, orderId, voucherDeliveryEnabled, chatDeliveryEnabled);
         return CONSIGN_SUCCESS;
+    }
+
+    private LocalDateTime riskRetryTime(Long accountId) {
+        long retryAt = riskControlService.getStatus(accountId).retryAt();
+        if (retryAt <= System.currentTimeMillis()) {
+            retryAt = System.currentTimeMillis() + 60_000L;
+        }
+        return Instant.ofEpochMilli(retryAt).atZone(ZoneId.of("Asia/Shanghai")).toLocalDateTime();
     }
 }

@@ -10,6 +10,7 @@ import com.microsoft.playwright.options.WaitUntilState;
 import com.xianyusmart.config.PlaywrightManager;
 import com.xianyusmart.common.ResultObject;
 import com.xianyusmart.entity.MerchantResource;
+import com.xianyusmart.exception.RiskGuardBlockedException;
 import com.xianyusmart.utils.XianyuApiCallUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class PlatformPublishService {
     private final AccountService accountService;
     private final ObjectMapper objectMapper;
     private final XianyuApiCallUtils apiCallUtils;
+    private final RiskControlService riskControlService;
     private final ImageUploadService imageUploadService;
     private final GoodsInfoService goodsInfoService;
     private final PlatformMarketplaceParser responseParser;
@@ -49,12 +51,14 @@ public class PlatformPublishService {
                                   AccountService accountService,
                                   ObjectMapper objectMapper,
                                   XianyuApiCallUtils apiCallUtils,
+                                  RiskControlService riskControlService,
                                   ImageUploadService imageUploadService,
                                   GoodsInfoService goodsInfoService) {
         this.playwrightManager = playwrightManager;
         this.accountService = accountService;
         this.objectMapper = objectMapper;
         this.apiCallUtils = apiCallUtils;
+        this.riskControlService = riskControlService;
         this.imageUploadService = imageUploadService;
         this.goodsInfoService = goodsInfoService;
         this.responseParser = new PlatformMarketplaceParser(objectMapper);
@@ -100,6 +104,8 @@ public class PlatformPublishService {
 
         Map<String, Object> publishData = buildPublishData(
                 title, description, material.getAmount(), material.getStock(), cdnImages, category, platformAddress);
+        // 图片上传不单独限流，最终提交前只获取一次完整发布额度。
+        requirePermit(accountId, RiskControlService.WriteOperation.ITEM_PUBLISH);
         XianyuApiCallUtils.ApiCallResult publishResult = apiCallUtils.callApiWithRetry(
                 accountId, "mtop.idle.pc.idleitem.publish", publishData, cookieText);
         if (!publishResult.isSuccess()) {
@@ -186,6 +192,8 @@ public class PlatformPublishService {
         if (cookieText == null || cookieText.isBlank()) {
             throw new IllegalStateException("账号Cookie不可用");
         }
+        // 删除内部的下架和删除共享一次额度，避免第二个接口被本地护栏拦截。
+        requirePermit(accountId, RiskControlService.WriteOperation.ITEM_DELETE);
         XianyuApiCallUtils.ApiCallResult offShelfResult = apiCallUtils.callApiWithRetry(
                 accountId, "mtop.taobao.idle.item.downshelf", "2.0",
                 Map.of("itemId", goodsId), cookieText, null, null);
@@ -209,6 +217,7 @@ public class PlatformPublishService {
         if (cookieText == null || cookieText.isBlank()) {
             throw new IllegalStateException("账号 Cookie 不可用");
         }
+        requirePermit(accountId, RiskControlService.WriteOperation.ITEM_STATUS);
         if (!onSale) {
             XianyuApiCallUtils.ApiCallResult result = apiCallUtils.callApiWithRetry(
                     accountId, "mtop.taobao.idle.item.downshelf", "2.0",
@@ -237,6 +246,13 @@ public class PlatformPublishService {
             }
             page.waitForTimeout(2000);
             return Map.of("success", true, "itemId", goodsId, "onSale", onSale);
+        }
+    }
+
+    private void requirePermit(Long accountId, RiskControlService.WriteOperation operation) {
+        RiskControlService.GuardDecision decision = riskControlService.tryAcquire(accountId, operation);
+        if (!decision.allowed()) {
+            throw new RiskGuardBlockedException(decision);
         }
     }
 

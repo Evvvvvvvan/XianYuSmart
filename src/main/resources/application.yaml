@@ -18,6 +18,8 @@ app:
     dispatch-delay-ms: ${DELIVERY_DISPATCH_DELAY_MS:1000}
     lease-seconds: ${DELIVERY_LEASE_SECONDS:120}
     max-attempts: ${DELIVERY_MAX_ATTEMPTS:3}
+  risk-guard:
+    state-file: ${RISK_GUARD_STATE_FILE:data/platform-risk-guard.json}
   security:
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173,http://localhost:12400}
     trust-proxy: ${TRUST_PROXY:false}

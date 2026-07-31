@@ -51,6 +51,7 @@ public class GoodsAutomationService {
     private final XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper;
     private final BuyerMessageService buyerMessageService;
     private final RatingContentService ratingContentService;
+    private final RiskControlService riskControlService;
     private final Map<Long, Integer> rateScanStartPages = new ConcurrentHashMap<>();
     private final Clock clock;
 
@@ -62,9 +63,10 @@ public class GoodsAutomationService {
                                   OperationLogService operationLogService,
                                   XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper,
                                   BuyerMessageService buyerMessageService,
-                                  RatingContentService ratingContentService) {
+                                  RatingContentService ratingContentService,
+                                  RiskControlService riskControlService) {
         this(goodsConfigMapper, goodsOrderMapper, accountService, apiCallUtils, operationLogService,
-                autoDeliveryConfigMapper, buyerMessageService, ratingContentService,
+                autoDeliveryConfigMapper, buyerMessageService, ratingContentService, riskControlService,
                 Clock.system(BUSINESS_ZONE));
     }
 
@@ -76,6 +78,7 @@ public class GoodsAutomationService {
                            XianyuGoodsAutoDeliveryConfigMapper autoDeliveryConfigMapper,
                            BuyerMessageService buyerMessageService,
                            RatingContentService ratingContentService,
+                           RiskControlService riskControlService,
                            Clock clock) {
         this.goodsConfigMapper = goodsConfigMapper;
         this.goodsOrderMapper = goodsOrderMapper;
@@ -85,6 +88,7 @@ public class GoodsAutomationService {
         this.autoDeliveryConfigMapper = autoDeliveryConfigMapper;
         this.buyerMessageService = buyerMessageService;
         this.ratingContentService = ratingContentService;
+        this.riskControlService = riskControlService;
         this.clock = clock;
     }
 
@@ -344,6 +348,12 @@ public class GoodsAutomationService {
         request.put("feedback", feedback);
         request.put("anonymous", false);
 
+        RiskControlService.GuardDecision permit =
+                riskControlService.tryAcquire(accountId, RiskControlService.WriteOperation.ORDER_RATE);
+        if (!permit.allowed()) {
+            // 未请求平台时保留待评价状态，下一轮继续处理。
+            return XianyuApiCallUtils.ApiCallResult.guardBlocked(permit);
+        }
         XianyuApiCallUtils.ApiCallResult result = normalizeRateResult(apiCallUtils.callApiWithRetry(
                 accountId, "mtop.taobao.idle.merchant.rate.create", request, cookie,
                 sellerHeaders(), sellerQueryParams()), orderId);
@@ -573,6 +583,12 @@ public class GoodsAutomationService {
             return false;
         }
 
+        RiskControlService.GuardDecision permit =
+                riskControlService.tryAcquire(accountId, RiskControlService.WriteOperation.ITEM_POLISH);
+        if (!permit.allowed()) {
+            // 等待中的商品不写失败日志，也不更新最后擦亮时间。
+            return false;
+        }
         Map<String, Object> request = Map.of("itemId", config.getXyGoodsId());
         Map<String, String> query = new HashMap<>(sellerQueryParams());
         query.put("v", "2.0");
@@ -631,7 +647,7 @@ public class GoodsAutomationService {
     }
 
     private boolean isCredentialOrRiskFailure(XianyuApiCallUtils.ApiCallResult result) {
-        if (result.isTokenExpired()) {
+        if (result.isTokenExpired() || result.isGuardBlocked()) {
             return true;
         }
         String error = result.getErrorMessage();

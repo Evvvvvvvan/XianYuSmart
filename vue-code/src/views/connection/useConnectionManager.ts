@@ -2,6 +2,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { showConfirm } from '@/utils/confirm'
 import { getAccountList } from '@/api/account'
 import { getConnectionStatus, startConnection, stopConnection } from '@/api/websocket'
+import type { RiskGuardStatus } from '@/api/websocket'
 import { showSuccess, showError, showInfo } from '@/utils'
 import type { Account } from '@/types'
 
@@ -13,6 +14,8 @@ interface ConnectionStatus {
   cookieText?: string
   websocketToken?: string
   tokenExpireTime?: number
+  riskGuard?: RiskGuardStatus
+  deferredPlatformActions?: number
 }
 
 interface LogEntry {

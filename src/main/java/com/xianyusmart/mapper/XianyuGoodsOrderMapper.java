@@ -184,6 +184,17 @@ public interface XianyuGoodsOrderMapper {
                         @Param("nextRetryTime") java.time.LocalDateTime nextRetryTime,
                         @Param("errorMessage") String errorMessage);
 
+    @Update("UPDATE xianyu_goods_order SET delivery_status = 'RETRY_WAIT', " +
+            "attempt_count = GREATEST(attempt_count - 1, 0), next_retry_time = #{retryAt}, " +
+            "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'RISK_GUARD_WAIT', " +
+            "last_error_message = #{message} WHERE id = #{id}")
+    int deferForRisk(@Param("id") Long id, @Param("retryAt") java.time.LocalDateTime retryAt,
+                     @Param("message") String message);
+
+    @Select("SELECT COUNT(*) FROM xianyu_goods_order WHERE xianyu_account_id = #{accountId} " +
+            "AND delivery_status = 'RETRY_WAIT'")
+    long countDeferredActions(@Param("accountId") Long accountId);
+
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'REVIEW_REQUIRED', next_retry_time = NULL, " +
             "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_UNCERTAIN', last_error_message = #{errorMessage}, " +
             "exception_revision = exception_revision + 1 WHERE id = #{id}")

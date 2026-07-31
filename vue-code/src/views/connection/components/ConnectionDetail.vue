@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, watch, computed, onBeforeUnmount } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { showConfirm } from '@/utils/confirm'
 import { toast } from '@/utils/toast'
 import { getConnectionStatus, startConnection, stopConnection } from '@/api/websocket'
+import type { RiskGuardStatus } from '@/api/websocket'
 import { queryOperationLogs, type OperationLog } from '@/api/operation-log'
 import { showSuccess, showError, showInfo } from '@/utils'
 import CredentialModal from './CredentialModal.vue'
@@ -31,6 +32,8 @@ interface ConnectionStatus {
   tokenExpireTime?: number
   autoDeliveryOn?: boolean
   autoReplyOn?: boolean
+  riskGuard?: RiskGuardStatus
+  deferredPlatformActions?: number
 }
 
 interface Props {
@@ -44,6 +47,8 @@ const connectionStatus = ref<ConnectionStatus | null>(null)
 const statusLoading = ref(false)
 const operationLogs = ref<OperationLog[]>([])
 let statusInterval: number | null = null
+let countdownInterval: number | null = null
+const now = ref(Date.now())
 
 const showManualUpdateCookieDialog = ref(false)
 const showQRUpdateDialog = ref(false)
@@ -78,7 +83,12 @@ const loadOperationLogs = async () => {
     if (response.code === 0 || response.code === 200) {
       const data = response.data
       operationLogs.value = (data?.logs || []).filter(
-        (log: OperationLog) => log.operationModule === 'COOKIE' || log.operationModule === 'TOKEN'
+        (log: OperationLog) => log.operationModule === 'COOKIE'
+          || log.operationModule === 'TOKEN'
+          || log.operationModule === 'RISK_CONTROL'
+          || (log.operationModule === 'MERCHANT_OPERATIONS'
+            && (log.operationDesc.startsWith('BARGAIN_FREE_SHIPPING')
+              || log.operationDesc.startsWith('CONFIRM_SHIPMENT')))
       )
     }
   } catch (error: any) {
@@ -204,19 +214,49 @@ const getMH5TkStatusColor = (mH5Tk?: string) => {
 const h5Token = computed(() => connectionStatus.value?.mH5Tk || connectionStatus.value?.mh5Tk)
 
 const getOperationStatusText = (status: number) => {
-  const map: Record<number, string> = { 1: '成功', 2: '失败', 3: '部分成功' }
+  const map: Record<number, string> = { 0: '失败', 1: '成功', 2: '部分成功' }
   return map[status] || '未知'
 }
 
 const getOperationStatusColor = (status: number) => {
   if (status === 1) return '#30D158'
-  if (status === 2) return '#FF453A'
-  if (status === 3) return '#FF9F0A'
+  if (status === 0) return '#FF453A'
+  if (status === 2) return '#FF9F0A'
   return 'rgba(28,28,30,.55)'
 }
 
 const canSyncGoods = computed(() => connectionStatus.value?.cookieStatus === 1)
 const canAutoReply = computed(() => connectionStatus.value?.connected === true)
+const riskGuardNormal = computed(() => (!connectionStatus.value?.riskGuard
+  || connectionStatus.value.riskGuard.state === 'NORMAL')
+  && !connectionStatus.value?.deferredPlatformActions)
+const riskRemainingSeconds = computed(() => Math.max(0, Math.ceil(
+  ((connectionStatus.value?.riskGuard?.retryAt || 0) - now.value) / 1000
+)))
+const riskGuardText = computed(() => {
+  const state = connectionStatus.value?.riskGuard?.state
+  if ((!state || state === 'NORMAL') && connectionStatus.value?.deferredPlatformActions) {
+    return '平台任务等待恢复'
+  }
+  if (!state || state === 'NORMAL') return '正常'
+  if (state === 'CIRCUIT_OPEN') return '平台风控冷却中'
+  if (state === 'RECOVERING') return '正在恢复'
+  return '写操作等待中'
+})
+const riskGuardDescription = computed(() => {
+  const parts = [riskGuardText.value]
+  if (riskRemainingSeconds.value > 0) parts.push(`剩余 ${riskRemainingSeconds.value} 秒`)
+  if (connectionStatus.value?.deferredPlatformActions) {
+    parts.push(`等待恢复 ${connectionStatus.value.deferredPlatformActions} 项`)
+  }
+  return parts.join('，')
+})
+
+onMounted(() => {
+  countdownInterval = window.setInterval(() => {
+    now.value = Date.now()
+  }, 1000)
+})
 
 watch(() => props.accountId, (newId) => {
   if (newId) {
@@ -241,6 +281,7 @@ watch(() => props.accountId, (newId) => {
 
 onBeforeUnmount(() => {
   if (statusInterval) clearInterval(statusInterval)
+  if (countdownInterval) clearInterval(countdownInterval)
 })
 </script>
 
@@ -311,6 +352,19 @@ onBeforeUnmount(() => {
               <span class="status-card__desc">{{ connectionStatus.autoReplyOn ? '已开启' : '未开启' }}</span>
             </div>
           </div>
+
+          <div class="status-card" :class="riskGuardNormal ? 'status-card--success' : 'status-card--danger'">
+            <div class="status-card__icon">
+              <component :is="riskGuardNormal ? IconCheck : IconAlert" />
+            </div>
+            <div class="status-card__content">
+              <span class="status-card__title">平台风控</span>
+              <span class="status-card__desc">{{ riskGuardDescription }}</span>
+              <span v-if="connectionStatus.riskGuard?.reason" class="status-card__desc">
+                原因：{{ connectionStatus.riskGuard.reason }}
+              </span>
+            </div>
+          </div>
         </div>
 
         <div class="action-bar">
@@ -330,12 +384,14 @@ onBeforeUnmount(() => {
             <div v-for="log in operationLogs" :key="log.id" class="log-entry">
               <span class="log-entry__time">{{ formatTimestamp(log.createTime) }}</span>
               <span class="log-entry__module">{{ log.operationModule }}</span>
-              <span class="log-entry__desc">{{ log.operationDesc }}</span>
+              <span class="log-entry__desc">
+                {{ log.operationDesc }}{{ log.errorMessage ? `：${log.errorMessage}` : '' }}
+              </span>
               <span class="log-entry__status" :style="{ color: getOperationStatusColor(log.operationStatus) }">
                 {{ getOperationStatusText(log.operationStatus) }}
               </span>
             </div>
-            <div v-if="operationLogs.length === 0" class="log-empty">暂无Cookie/Token相关日志</div>
+            <div v-if="operationLogs.length === 0" class="log-empty">暂无凭证或风控日志</div>
           </div>
         </div>
       </div>

@@ -113,6 +113,10 @@ public class DeliveryTaskScheduler {
             XianyuGoodsOrder result = orderMapper.selectById(task.getId());
             if (result != null && Integer.valueOf(1).equals(result.getState())) {
                 deliveryTaskService.complete(task.getId());
+            } else if (result != null && DeliveryStatus.RETRY_WAIT.name().equals(result.getDeliveryStatus())
+                    && "RISK_GUARD_WAIT".equals(result.getLastErrorCode())) {
+                // 风控等待已经设置准确恢复时间，不能再按普通失败增加次数。
+                log.info("订单任务等待平台恢复: taskId={}, orderId={}", task.getId(), task.getOrderId());
             } else if (result != null && DeliveryStatus.REVIEW_REQUIRED.name().equals(result.getDeliveryStatus())) {
                 log.warn("订单发货结果待人工核对: taskId={}, orderId={}", task.getId(), task.getOrderId());
             } else if (kamiItemMapper.countByOrderAndStatus(task.getOrderId(), KamiStatus.REVIEW_REQUIRED.getCode()) > 0) {
