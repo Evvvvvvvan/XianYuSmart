@@ -29,6 +29,9 @@ RUN chmod +x mvnw
 # 复制前端构建产物到 static 目录
 COPY --from=frontend-build /app/vue-code/../src/main/resources/static src/main/resources/static/
 
+# pom 资源声明会从 vue-code/src/data 打包 china-division.json，需一并复制
+COPY vue-code/src/data vue-code/src/data/
+
 # 复制后端源码
 COPY src/ src/
 # 行政区划数据由Maven作为后端资源打包。

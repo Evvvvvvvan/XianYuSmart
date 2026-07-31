@@ -307,7 +307,15 @@ class PlatformMarketplaceParser {
     }
 
     Map<String, Object> extractDefaultAddress(String response) {
-        return findAddress(map(readMap(response).get("data")));
+        Map<String, Object> data = map(readMap(response).get("data"));
+        Map<String, Object> selectedPoi = map(data.get("selectedPoi"));
+        if (!firstText(selectedPoi, "divisionId").isBlank()) {
+            Map<String, Object> address = new LinkedHashMap<>(selectedPoi);
+            // 与官方发布页保持一致：gps 为 "纬度,经度"
+            address.put("gps", firstText(selectedPoi, "latitude") + "," + firstText(selectedPoi, "longitude"));
+            return address;
+        }
+        return findAddress(data);
     }
 
     private Map<String, Object> findAddress(Object value) {
