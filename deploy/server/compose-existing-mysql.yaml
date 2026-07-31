@@ -31,7 +31,8 @@ services:
       - app-data:/app/data
       - app-logs:/app/logs
       - ${UPDATE_HOST_DIR:-/opt/xianyusmart/runtime/update}:/app/update
-    mem_limit: 1g
+    # 滑块浏览器与 Java 共用容器内存，预留渲染进程空间避免 DOM 操作卡死。
+    mem_limit: 1536m
     cpus: 1.5
     pids_limit: 256
     security_opt:
