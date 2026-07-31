@@ -6,6 +6,7 @@ import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.ElementHandle;
 import com.microsoft.playwright.Frame;
 import com.microsoft.playwright.JSHandle;
+import com.microsoft.playwright.Mouse;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.options.BoundingBox;
@@ -82,6 +83,17 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             ".nc_wrapper .icon-success",
             "#baxia-dialog .icon-success",
             ".slide-verify .verify-success");
+    private static final List<String> RETRY_SELECTORS = List.of(
+            ".nc_error",
+            ".errloading",
+            "#nc_1_refresh1",
+            ".fail",
+            ".nc-lang-cnt");
+    private static final List<String> FAILURE_SELECTORS = List.of(
+            ".nc_error",
+            ".errloading",
+            "#nc_1_refresh1",
+            ".fail");
     private static final String FINGERPRINT_SCRIPT = """
             (() => {
               try {
@@ -523,7 +535,12 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             if (waitForCaptchaGone(page, Math.min(deadline, System.currentTimeMillis() + 10_000))) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
-            page.waitForTimeout(ThreadLocalRandom.current().nextInt(700, 1_301));
+            if (attempt < MAX_AUTO_ATTEMPTS) {
+                reportProgress(progress, "RETRYING_SLIDER",
+                        "第" + attempt + "次未通过，正在重置滑块", attempt);
+                resetSliderAfterFailure(page);
+                page.waitForTimeout(ThreadLocalRandom.current().nextInt(1_500, 2_501));
+            }
         }
         if (System.currentTimeMillis() >= deadline) {
             return new RunResult(Outcome.TIMEOUT, null, "滑块验证超时");
@@ -576,45 +593,176 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             return false;
         }
 
+        ThreadLocalRandom random = ThreadLocalRandom.current();
         double startX = handleBox.x + handleBox.width / 2;
         double startY = handleBox.y + handleBox.height / 2;
         BoundingBox trackBox = target.track() == null ? null : target.track().boundingBox();
         double distance = trackBox == null
                 ? 300
                 : calculateDistance(trackBox.width, handleBox.width);
-        double overshoot = ThreadLocalRandom.current().nextDouble(3, 8);
-        int steps = ThreadLocalRandom.current().nextInt(28, 39);
-
-        page.mouse().move(startX, startY);
-        page.waitForTimeout(ThreadLocalRandom.current().nextInt(80, 181));
-        page.mouse().down();
-        for (int index = 1; index <= steps; index++) {
-            double progress = (double) index / steps;
-            double eased = progress < 0.5
-                    ? 2 * progress * progress
-                    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
-            double x = startX + (distance + overshoot) * eased;
-            double jitter = Math.sin(progress * Math.PI * (2 + attempt % 2))
-                    * ThreadLocalRandom.current().nextDouble(0.4, 1.8);
-            double y = startY + jitter;
-            page.mouse().move(x, y);
-            if (index == steps / 2) {
-                page.mouse().move(x - ThreadLocalRandom.current().nextDouble(1, 3), y);
+        int stepsBase;
+        int delayMin;
+        int delayMax;
+        boolean pauseDuringDrag = false;
+        switch (attempt) {
+            case 1 -> {
+                stepsBase = 30;
+                delayMin = 20;
+                delayMax = 50;
             }
-            if (index % 8 == 0) {
-                page.waitForTimeout(ThreadLocalRandom.current().nextInt(12, 41));
+            case 2 -> {
+                stepsBase = 35;
+                delayMin = 30;
+                delayMax = 70;
+            }
+            case 3 -> {
+                stepsBase = 25;
+                delayMin = 15;
+                delayMax = 40;
+            }
+            case 4 -> {
+                stepsBase = 40;
+                delayMin = 40;
+                delayMax = 90;
+                pauseDuringDrag = true;
+            }
+            default -> {
+                stepsBase = 30 + random.nextInt(15);
+                delayMin = 20 + random.nextInt(30);
+                delayMax = delayMin + 30 + random.nextInt(40);
             }
         }
-        page.waitForTimeout(ThreadLocalRandom.current().nextInt(50, 121));
-        page.mouse().move(startX + distance, startY + ThreadLocalRandom.current().nextDouble(-0.8, 0.8));
-        page.waitForTimeout(ThreadLocalRandom.current().nextInt(30, 91));
-        page.mouse().up();
-        return true;
+        int steps = stepsBase + random.nextInt(15);
+        double actualStartX = startX + random.nextDouble(-4, 4);
+        double actualStartY = startY + random.nextDouble(-3, 3);
+        double approachAngle = random.nextDouble(0, Math.PI * 2);
+        double approachDistance = random.nextDouble(40, 120);
+        double approachX = actualStartX + Math.cos(approachAngle) * approachDistance;
+        double approachY = actualStartY + Math.sin(approachAngle) * approachDistance;
+        Mouse mouse = page.mouse();
+        boolean mouseDown = false;
+        try {
+            // 先自然接近滑块再按下，避免鼠标瞬移到固定中心点。
+            mouse.move(approachX, approachY, new Mouse.MoveOptions().setSteps(8));
+            page.waitForTimeout(random.nextInt(80, 201));
+            int approachSteps = random.nextInt(3, 6);
+            for (int index = 1; index <= approachSteps; index++) {
+                double progress = (double) index / approachSteps;
+                double eased = progress * progress * (3 - 2 * progress);
+                mouse.move(
+                        approachX + (actualStartX - approachX) * eased,
+                        approachY + (actualStartY - approachY) * eased,
+                        new Mouse.MoveOptions().setSteps(5));
+                page.waitForTimeout(random.nextInt(12, 38));
+            }
+            page.waitForTimeout(random.nextInt(100, 251));
+            mouse.down();
+            mouseDown = true;
+            page.waitForTimeout(random.nextInt(80, 181));
+            mouse.move(
+                    actualStartX + random.nextDouble(-1.5, 1.5),
+                    actualStartY + random.nextDouble(-1.5, 1.5),
+                    new Mouse.MoveOptions().setSteps(3));
+            page.waitForTimeout(random.nextInt(30, 81));
+
+            double pausePoint = random.nextDouble(0.3, 0.7);
+            boolean paused = false;
+            double lastX = actualStartX;
+            double lastY = actualStartY;
+            double arcDirection = random.nextBoolean() ? -1 : 1;
+            double arcAmplitude = random.nextDouble(3, 8);
+            for (int index = 1; index <= steps; index++) {
+                double progress = (double) index / steps;
+                double speedWeight;
+                if (progress < 0.2) {
+                    speedWeight = 1 - 0.7 * (progress / 0.2);
+                } else if (progress < 0.7) {
+                    speedWeight = 0.25 + 0.15 * Math.sin(progress * Math.PI * 4);
+                } else {
+                    speedWeight = 0.4 + 0.6 * ((progress - 0.7) / 0.3);
+                }
+                double poweredProgress = Math.pow(progress, 2.5);
+                double poweredRemaining = Math.pow(1 - progress, 2.5);
+                double eased = poweredProgress / (poweredProgress + poweredRemaining);
+                double x = actualStartX + distance * eased;
+                if (random.nextDouble() < 0.05 && index > 3 && index < steps - 3) {
+                    x = lastX - random.nextDouble(2, 5);
+                }
+                double arcOffset = arcDirection * arcAmplitude * Math.sin(Math.PI * progress);
+                double targetY = actualStartY + arcOffset;
+                double y = (lastY + random.nextDouble(-3, 3)) * 0.6 + targetY * 0.4;
+                mouse.move(x, y, new Mouse.MoveOptions().setSteps(3));
+                double medianDelay = delayMin + (delayMax - delayMin) * 0.4;
+                double logNormalDelay = medianDelay * Math.exp(0.5 * random.nextGaussian());
+                double baseDelay = Math.max(delayMin, Math.min(delayMax * 2, logNormalDelay));
+                page.waitForTimeout(Math.max(8, baseDelay * speedWeight));
+                lastX = x;
+                lastY = y;
+                if (pauseDuringDrag && !paused && progress >= pausePoint) {
+                    page.waitForTimeout(300);
+                    paused = true;
+                }
+            }
+
+            double overshoot = random.nextDouble(5, 13);
+            page.waitForTimeout(random.nextInt(30, 101));
+            mouse.move(
+                    actualStartX + distance + overshoot,
+                    actualStartY + random.nextDouble(-5, 5),
+                    new Mouse.MoveOptions().setSteps(4));
+            page.waitForTimeout(random.nextInt(50, 131));
+            mouse.move(
+                    actualStartX + distance,
+                    actualStartY + random.nextDouble(-3, 3),
+                    new Mouse.MoveOptions().setSteps(4));
+            int adjustments = random.nextDouble() < 0.7 ? 1 : 2;
+            for (int index = 0; index < adjustments; index++) {
+                page.waitForTimeout(random.nextInt(40, 101));
+                mouse.move(
+                        actualStartX + distance + random.nextDouble(-2, 2),
+                        actualStartY + random.nextDouble(-2, 2),
+                        new Mouse.MoveOptions().setSteps(2));
+            }
+            page.waitForTimeout(random.nextInt(50, 121));
+            mouse.up();
+            mouseDown = false;
+            return true;
+        } finally {
+            if (mouseDown) {
+                mouse.up();
+            }
+        }
+    }
+
+    private boolean resetSliderAfterFailure(Page page) {
+        for (Frame frame : page.frames()) {
+            if (frame.isDetached()) {
+                continue;
+            }
+            for (String selector : RETRY_SELECTORS) {
+                try {
+                    ElementHandle retry = frame.querySelector(selector);
+                    if (retry != null && retry.isVisible()) {
+                        retry.click();
+                        return true;
+                    }
+                } catch (Exception ignored) {
+                    // 页面刷新期间继续检查其余重试状态。
+                }
+            }
+        }
+        return false;
     }
 
     private boolean waitForCaptchaGone(Page page, long deadline) {
         while (System.currentTimeMillis() < deadline) {
-            if (hasSuccessSignal(page) || !isCaptchaVisible(page)) {
+            if (hasSuccessSignal(page)) {
+                return true;
+            }
+            if (hasFailureSignal(page)) {
+                return false;
+            }
+            if (!isCaptchaVisible(page)) {
                 return true;
             }
             page.waitForTimeout(300);
@@ -635,6 +783,25 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 for (String selector : SUCCESS_SELECTORS) {
                     ElementHandle success = frame.querySelector(selector);
                     if (success != null && success.isVisible()) {
+                        return true;
+                    }
+                }
+            } catch (Exception ignored) {
+                // 页面切换时等待下一轮检查。
+            }
+        }
+        return false;
+    }
+
+    private boolean hasFailureSignal(Page page) {
+        for (Frame frame : page.frames()) {
+            if (frame.isDetached()) {
+                continue;
+            }
+            try {
+                for (String selector : FAILURE_SELECTORS) {
+                    ElementHandle failure = frame.querySelector(selector);
+                    if (failure != null && failure.isVisible()) {
                         return true;
                     }
                 }
