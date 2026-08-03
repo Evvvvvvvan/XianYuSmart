@@ -3,7 +3,7 @@
 [![Stars](https://img.shields.io/github/stars/Evvvvvvvan/XianYuSmart?style=flat&color=2f6f5e)](https://github.com/Evvvvvvvan/XianYuSmart/stargazers)
 [![Forks](https://img.shields.io/github/forks/Evvvvvvvan/XianYuSmart?style=flat&color=2f6f5e)](https://github.com/Evvvvvvvan/XianYuSmart/forks)
 [![Release](https://img.shields.io/github/v/release/Evvvvvvvan/XianYuSmart?display_name=tag&color=2f6f5e)](https://github.com/Evvvvvvvan/XianYuSmart/releases/latest)
-[![Star History](https://img.shields.io/badge/Star%20History-View%20Growth-2f6f5e)](https://www.star-history.com/#Evvvvvvvan/XianYuSmart&Date)
+[![Star History](https://img.shields.io/badge/Star%20History-View%20Growth-2f6f5e)](#star-history)
 [![Java 21](https://img.shields.io/badge/Java-21-2f6f5e)](https://www.oracle.com/java/technologies/downloads/#java21)
 [![Spring Boot 3.5](https://img.shields.io/badge/Spring%20Boot-3.5-2f6f5e)](https://spring.io/projects/spring-boot)
 [![Vue 3](https://img.shields.io/badge/Vue-3-2f6f5e)](https://vuejs.org/)
@@ -443,11 +443,11 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 
 ## Star History
 
-<a href="https://star-history.com/#Evvvvvvvan/XianYuSmart&Date">
+<a href="docs/assets/star-history-light.png">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/star-history-dark.png" />
     <source media="(prefers-color-scheme: light)" srcset="docs/assets/star-history-light.png" />
     <img alt="XianYuSmart Star History Chart" src="docs/assets/star-history-light.png" width="100%" />
   </picture>
 </a>
-<sub>由 [`scripts/gen_star_history.py`](scripts/gen_star_history.py) 生成，[GitHub Actions](.github/workflows/star-history.yml) 每日自动更新 · 点击图片查看实时数据</sub>
+<sub>由 [`scripts/gen_star_history.py`](scripts/gen_star_history.py) 生成，[GitHub Actions](.github/workflows/star-history.yml) 每日自动更新 · 点击图片查看大图</sub>
