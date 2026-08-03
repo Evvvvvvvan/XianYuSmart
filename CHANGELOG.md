@@ -4,6 +4,32 @@
 
 ## [未发布]
 
+## [2.0.4] - 2026-08-03
+
+`2.0.4` 聚焦容器启动、商品发布校验和账号连接稳定性，修复当前公开 issue 并补齐验证码处理闭环。
+
+### 用户可感知修复
+
+- 修复正式容器未打包本地行政区划数据的问题，避免 OpenWrt、飞牛等全新 Docker 环境启动时报“缺少本地发布行政区划数据”。
+- 类目推荐首次返回空结果时自动使用完整商品详情重试，并动态兼容嵌套响应及 `catId`、`cid`、`categoryId` 字段，降低 AI 润色后偶发无法识别可发布类目的概率。
+- 完善验证码浏览器启动、进度反馈、超时中断、会话刷新和跨域 Cookie 维护，验证码处理过程更可见且可恢复。
+- Cookie 缺少主账号字段时增加账号 ID 回退解析，降低粘贴 Cookie 后无法建立连接的概率。
+- 增加平台写操作频率与风控冷却保护，避免连续请求扩大账号限制风险。
+
+### 升级说明
+
+1. 本版本没有新增数据库迁移，升级前仍建议备份 MySQL 数据库和运行环境配置。
+2. 使用固定镜像标签时切换到 `v2.0.4`，不要继续使用存在资源遗漏的 `v2.0.3` 镜像。
+3. 升级后建议检查容器健康状态、账号连接、验证码处理和商品发布前校验。
+
+### 获取与部署
+
+- 容器镜像：`ghcr.io/evvvvvvvan/xianyusmart:v2.0.4`
+- 滚动标签：`ghcr.io/evvvvvvvan/xianyusmart:latest`
+- GitHub Release 提供 `xianyusmart-2.0.4.jar` 与 `SHA256SUMS.txt`。
+
+完整提交差异：[v2.0.3...v2.0.4](https://github.com/Evvvvvvvan/XianYuSmart/compare/v2.0.3...v2.0.4)
+
 ## [2.0.3] - 2026-07-30
 
 `2.0.3` 聚焦商机发现、货源沉淀、商品发布和在线接待闭环，让商家可以从市场分析与选品开始，完成素材生成、商品发布、消息沟通和履约异常处理。
@@ -167,6 +193,7 @@
 
 首个正式版本，面向单商家私有部署的闲鱼虚拟商品经营场景，提供商品、卡密库存、自动交付、自动回复、异常待办、MySQL 持久化和容器部署能力。
 
+[2.0.4]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.4
 [2.0.3]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.3
 [2.0.2]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.2
 [2.0.1]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.1

@@ -22,7 +22,7 @@ const route = useRoute()
 
 declare const __APP_VERSION__: string
 
-const currentVersion = ref(__APP_VERSION__ || '2.0.3')
+const currentVersion = ref(__APP_VERSION__ || '2.0.4')
 const hasNewVersion = ref(false)
 const isAdmin = ref(false)
 const updateDialog = ref<InstanceType<typeof UpdateDialog> | null>(null)
