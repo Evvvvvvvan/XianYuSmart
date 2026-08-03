@@ -116,14 +116,15 @@ const toggleHelpGuide = () => {
                 <p class="tips-text">请从浏览器中复制完整的Cookie字符串</p>
                 <p class="tips-text tips-text--highlight">
                   <span class="tips-label">重要字段：</span>
-                  <span class="tips-field">unb</span>、
+                  <span class="tips-field">unb</span> 或
+                  <span class="tips-field">havana_lgc2_*</span>、
                   <span class="tips-field">_m_h5_tk</span>、
                   <span class="tips-field">cookie2</span>、
                   <span class="tips-field">t</span>
                 </p>
                 <p class="tips-text tips-text--bold">格式示例：</p>
                 <p class="tips-example">
-                  <span class="tips-field">unb</span>=2218021801256; 
+                  <span class="tips-field">havana_lgc2_77</span>=eyJoaWQiOjEy...;
                   cookies=sgcookie=E100JgD87TWZ...; 
                   <span class="tips-field">t</span>=97df36d73d5e5bfb...; 
                   tracknick=xy246940070033; 

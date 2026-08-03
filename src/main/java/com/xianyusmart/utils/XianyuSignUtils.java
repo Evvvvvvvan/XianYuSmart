@@ -1,9 +1,12 @@
 package com.xianyusmart.utils;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParser;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -14,6 +17,7 @@ import java.util.Map;
 public class XianyuSignUtils {
 
     private static final String APP_KEY = "34839810";
+    private static final String HAVANA_LOGIN_COOKIE_PREFIX = "havana_lgc2_";
 
     /**
      * 将Cookie字符串转换为Map
@@ -24,7 +28,7 @@ public class XianyuSignUtils {
             return cookies;
         }
 
-        String[] cookieArray = cookiesStr.split("; ");
+        String[] cookieArray = cookiesStr.split(";\\s*");
         for (String cookie : cookieArray) {
             if (cookie.contains("=")) {
                 String[] parts = cookie.split("=", 2);
@@ -32,6 +36,69 @@ public class XianyuSignUtils {
             }
         }
         return cookies;
+    }
+
+    /**
+     * 从Cookie中提取账号标识
+     */
+    public static String extractUserId(String cookieText) {
+        Map<String, String> cookies = parseCookies(cookieText);
+        String unb = cookies.get("unb");
+        if (isNumericUserId(unb)) {
+            return unb;
+        }
+
+        for (Map.Entry<String, String> entry : cookies.entrySet()) {
+            if (!entry.getKey().startsWith(HAVANA_LOGIN_COOKIE_PREFIX)) {
+                continue;
+            }
+            String hid = extractHavanaUserId(entry.getValue());
+            if (hid != null) {
+                return hid;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 补齐unb以兼容现有平台调用链
+     */
+    public static String normalizeCookieUserId(String cookieText, String userId) {
+        if (cookieText == null || cookieText.isBlank() || !isNumericUserId(userId)
+                || parseCookies(cookieText).containsKey("unb")) {
+            return cookieText;
+        }
+        String normalized = cookieText.trim();
+        return normalized + (normalized.endsWith(";") ? " " : "; ") + "unb=" + userId;
+    }
+
+    private static String extractHavanaUserId(String encodedValue) {
+        if (encodedValue == null || encodedValue.isBlank()) {
+            return null;
+        }
+        try {
+            String value = encodedValue.trim();
+            String paddedValue = value + "=".repeat((4 - value.length() % 4) % 4);
+            byte[] decoded;
+            try {
+                decoded = Base64.getDecoder().decode(paddedValue);
+            } catch (IllegalArgumentException e) {
+                decoded = Base64.getUrlDecoder().decode(paddedValue);
+            }
+            JsonElement hid = JsonParser.parseString(
+                    new String(decoded, StandardCharsets.UTF_8))
+                    .getAsJsonObject()
+                    .get("hid");
+            String userId = hid == null || hid.isJsonNull() ? null : hid.getAsString();
+            return isNumericUserId(userId) ? userId : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static boolean isNumericUserId(String value) {
+        return value != null && !value.isBlank()
+                && value.chars().allMatch(Character::isDigit);
     }
 
     /**

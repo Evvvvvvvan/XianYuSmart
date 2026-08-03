@@ -278,13 +278,13 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                     "UPDATING_COOKIE", "正在更新Cookie并恢复连接",
                     control.attempt, control.maxAttempts));
             String refreshedCookie = result.cookieText();
-            String unb = refreshedCookie == null
-                    ? null
-                    : XianyuSignUtils.parseCookies(refreshedCookie).get("unb");
+            String unb = XianyuSignUtils.extractUserId(refreshedCookie);
             if (unb == null || unb.isBlank()) {
                 complete(control, Status.FAILED, "验证完成但未获取到有效Cookie");
                 return;
             }
+            String normalizedCookie = XianyuSignUtils.normalizeCookieUserId(
+                    refreshedCookie, unb);
 
             control.sideEffectLock.lock();
             try {
@@ -292,7 +292,7 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                     return;
                 }
                 boolean updated = accountService.updateAccountCookie(
-                        task.xianyuAccountId(), unb, refreshedCookie);
+                        task.xianyuAccountId(), unb, normalizedCookie);
                 if (!updated) {
                     complete(control, Status.FAILED, "验证完成，但凭证更新或重新连接失败");
                     return;

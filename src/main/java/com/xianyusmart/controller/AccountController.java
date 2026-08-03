@@ -14,6 +14,7 @@ import com.xianyusmart.controller.dto.ManualAddAccountReqDTO;
 import com.xianyusmart.controller.dto.UpdateAccountReqDTO;
 import com.xianyusmart.controller.dto.UpdateAccountRespDTO;
 import com.xianyusmart.service.AccountService;
+import com.xianyusmart.utils.XianyuSignUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -90,11 +91,13 @@ public class AccountController {
                 return ResultObject.failed("Cookie不能为空");
             }
             
-            // 从Cookie中提取unb信息
-            String unb = extractUnbFromCookie(reqDTO.getCookie());
+            // 同时兼容Cookie中的unb和havana登录账号标识。
+            String unb = XianyuSignUtils.extractUserId(reqDTO.getCookie());
             if (unb == null || unb.isEmpty()) {
-                return ResultObject.failed("无法从Cookie中提取UNB信息");
+                return ResultObject.failed("无法从Cookie中识别账号信息，请确认包含unb或有效的havana_lgc2字段");
             }
+            String normalizedCookie = XianyuSignUtils.normalizeCookieUserId(
+                    reqDTO.getCookie(), unb);
             
             // 检查账号是否已存在
             Long existingAccountId = accountService.getAccountIdByUnb(unb);
@@ -106,7 +109,7 @@ public class AccountController {
             Long accountId = accountService.saveAccountAndCookie(
                     reqDTO.getAccountNote(),
                     unb,
-                    reqDTO.getCookie()
+                    normalizedCookie
             );
             
             AddAccountRespDTO respDTO = new AddAccountRespDTO();
@@ -119,28 +122,6 @@ public class AccountController {
         }
     }
     
-    /**
-     * 从Cookie字符串中提取UNB值
-     *
-     * @param cookie Cookie字符串
-     * @return UNB值，如果未找到则返回null
-     */
-    private String extractUnbFromCookie(String cookie) {
-        if (cookie == null || cookie.isEmpty()) {
-            return null;
-        }
-        
-        // 查找unb=后面的值
-        String[] cookieParts = cookie.split(";\\s*");
-        for (String part : cookieParts) {
-            if (part.startsWith("unb=")) {
-                return part.substring(4); // "unb=".length() = 4
-            }
-        }
-        
-        return null;
-    }
-
     /**
      * 更新账号
      */

@@ -11,6 +11,7 @@ import com.xianyusmart.service.CaptchaSolveService;
 import com.xianyusmart.service.CookieRefreshService;
 import com.xianyusmart.service.RiskControlService;
 import com.xianyusmart.service.WebSocketService;
+import com.xianyusmart.utils.XianyuSignUtils;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -650,16 +651,19 @@ public class WebSocketController {
                 return ResultObject.failed("账号不存在");
             }
             
-            // 从Cookie中提取UNB
-            String unb = extractUnbFromCookie(reqDTO.getCookieText());
+            // 同时兼容Cookie中的unb和havana登录账号标识。
+            String unb = XianyuSignUtils.extractUserId(reqDTO.getCookieText());
             if (unb == null || unb.isEmpty()) {
-                return ResultObject.failed("无法从Cookie中提取UNB信息，请确保Cookie包含unb字段");
+                return ResultObject.failed("无法从Cookie中识别账号信息，请确认包含unb或有效的havana_lgc2字段");
             }
+            String normalizedCookie = XianyuSignUtils.normalizeCookieUserId(
+                    reqDTO.getCookieText(), unb);
             
             // 更新Cookie
             com.xianyusmart.service.AccountService accountService = 
                     applicationContext.getBean(com.xianyusmart.service.AccountService.class);
-            boolean updated = accountService.updateAccountCookie(reqDTO.getXianyuAccountId(), unb, reqDTO.getCookieText());
+            boolean updated = accountService.updateAccountCookie(
+                    reqDTO.getXianyuAccountId(), unb, normalizedCookie);
             if (!updated) {
                 return ResultObject.failed("Cookie更新失败");
             }
@@ -697,12 +701,6 @@ public class WebSocketController {
         }
     }
     
-    /**
-     * 从Cookie字符串中提取UNB值
-     *
-     * @param cookie Cookie字符串
-     * @return UNB值，如果未找到则返回null
-     */
     /**
      * 手动刷新Token
      */
@@ -897,22 +895,6 @@ public class WebSocketController {
             log.error("检查登录状态异常: xianyuAccountId={}", reqDTO.getXianyuAccountId(), e);
             return ResultObject.failed("检查登录状态异常: " + e.getMessage());
         }
-    }
-
-    private String extractUnbFromCookie(String cookie) {
-        if (cookie == null || cookie.isEmpty()) {
-            return null;
-        }
-        
-        // 查找unb=后面的值
-        String[] cookieParts = cookie.split(";\\s*");
-        for (String part : cookieParts) {
-            if (part.startsWith("unb=")) {
-                return part.substring(4); // "unb=".length() = 4
-            }
-        }
-        
-        return null;
     }
 
     /**

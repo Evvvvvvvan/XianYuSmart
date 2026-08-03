@@ -70,6 +70,7 @@ const manualFrame = ref<CaptchaManualFrame | null>(null);
 const manualFrameError = ref('');
 const dragging = ref(false);
 const dragSubmitting = ref(false);
+const cookieGuideVisible = ref(false);
 const dragPoints = ref<CaptchaDragPoint[]>([]);
 const dragStartedAt = ref(0);
 const dragFrameVersion = ref(0);
@@ -135,6 +136,7 @@ watch(() => props.modelValue, (visible) => {
   pollError.value = '';
   manualFrame.value = null;
   manualFrameError.value = '';
+  cookieGuideVisible.value = false;
   resetDrag();
   startClock();
   void resumeActiveTask();
@@ -143,13 +145,13 @@ watch(() => props.modelValue, (visible) => {
 const handleClose = () => {
   clearPolling();
   clearFramePolling();
+  cookieGuideVisible.value = false;
   emit('update:modelValue', false);
 };
 
 const handleAction = async () => {
   if (selectedMode.value === 'COOKIE') {
-    emit('cookie');
-    handleClose();
+    cookieGuideVisible.value = true;
     return;
   }
   if (!props.accountId) {
@@ -173,6 +175,15 @@ const handleAction = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const openGoofishIm = () => {
+  window.open('https://www.goofish.com/im', '_blank', 'noopener,noreferrer');
+};
+
+const continueCookiePaste = () => {
+  emit('cookie');
+  handleClose();
 };
 
 const pollStatus = async () => {
@@ -440,12 +451,24 @@ onBeforeUnmount(() => {
           <div class="modal-header">
             <div>
               <h2 class="modal-title">需要滑块验证</h2>
-              <p class="modal-subtitle">请选择自动拖动、人工拖动或粘贴 Cookie</p>
+              <p class="modal-subtitle">
+                {{ cookieGuideVisible ? '请在常用浏览器完成验证，再更新账号凭证' : '请选择自动拖动、人工拖动或粘贴 Cookie' }}
+              </p>
             </div>
             <button class="modal-close" type="button" aria-label="关闭" @click="handleClose">×</button>
           </div>
 
           <div class="modal-body">
+            <div v-if="cookieGuideVisible" class="cookie-guide">
+              <ol class="captcha-steps">
+                <li>点击下方按钮访问闲鱼 IM 页面</li>
+                <li>在闲鱼页面完成滑块验证</li>
+                <li>按 F12 打开开发者工具并复制最新 Cookie</li>
+                <li>返回连接管理，点击“继续粘贴 Cookie”保存凭证</li>
+              </ol>
+              <p class="captcha-tip">Cookie 更新成功后会立即刷新凭证并尝试重新连接。</p>
+            </div>
+            <template v-else>
             <div class="captcha-options">
               <label class="captcha-option" :class="{ 'captcha-option--active': selectedMode === 'AUTO' }">
                 <input v-model="selectedMode" type="radio" value="AUTO" :disabled="running">
@@ -508,9 +531,15 @@ onBeforeUnmount(() => {
               </p>
             </div>
             <p class="captcha-tip">人工拖动支持生产服务器无界面环境；粘贴 Cookie 方式继续保留。</p>
+            </template>
           </div>
 
-          <div class="modal-footer">
+          <div v-if="cookieGuideVisible" class="modal-footer">
+            <button class="btn btn-secondary" type="button" @click="cookieGuideVisible = false">返回</button>
+            <button class="btn btn-secondary" type="button" @click="openGoofishIm">访问闲鱼 IM</button>
+            <button class="btn btn-primary" type="button" @click="continueCookiePaste">继续粘贴 Cookie</button>
+          </div>
+          <div v-else class="modal-footer">
             <button
               class="btn btn-secondary"
               type="button"
@@ -600,6 +629,18 @@ onBeforeUnmount(() => {
 .captcha-options {
   display: grid;
   gap: 10px;
+}
+
+.captcha-steps {
+  margin: 0;
+  padding-left: 24px;
+  color: #374151;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.captcha-steps li + li {
+  margin-top: 8px;
 }
 
 .captcha-option {
