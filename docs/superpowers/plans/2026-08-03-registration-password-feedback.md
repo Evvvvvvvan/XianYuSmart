@@ -41,7 +41,7 @@ class RegistrationPasswordPolicyTest {
 
     @Test
     void acceptsMediumAndStrongPasswords() {
-        assertNull(RegistrationPasswordPolicy.validate("merchant", "Abc12345"));
+        assertNull(RegistrationPasswordPolicy.validate("merchant", "Abc92745"));
         assertNull(RegistrationPasswordPolicy.validate("merchant", "Abc123!45678"));
     }
 
@@ -167,7 +167,7 @@ import assert from 'node:assert/strict'
 import { evaluateRegistrationPassword } from '../src/utils/registration-password.ts'
 
 test('accepts medium and strong passwords', () => {
-  assert.equal(evaluateRegistrationPassword('Abc12345', 'merchant').strength, 'medium')
+  assert.equal(evaluateRegistrationPassword('Abc92745', 'merchant').strength, 'medium')
   assert.equal(evaluateRegistrationPassword('Abc123!45678', 'merchant').strength, 'strong')
 })
 

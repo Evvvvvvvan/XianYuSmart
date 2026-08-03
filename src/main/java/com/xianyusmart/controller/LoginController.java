@@ -8,6 +8,7 @@ import com.xianyusmart.controller.dto.LoginRespDTO;
 import com.xianyusmart.controller.dto.RegisterReqDTO;
 import com.xianyusmart.service.AuthService;
 import com.xianyusmart.service.bo.*;
+import com.xianyusmart.util.RegistrationPasswordPolicy;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,8 +66,9 @@ public class LoginController {
             if (reqDTO.getUsername().length() < 3 || reqDTO.getUsername().length() > 20) {
                 return ResultObject.validateFailed("用户名长度需在3-20之间");
             }
-            if (reqDTO.getPassword().length() < 8 || reqDTO.getPassword().length() > 72) {
-                return ResultObject.validateFailed("密码长度需在8-72之间");
+            String passwordError = RegistrationPasswordPolicy.validate(reqDTO.getUsername(), reqDTO.getPassword());
+            if (passwordError != null) {
+                return ResultObject.validateFailed(passwordError);
             }
 
             RegisterReqBO reqBO = new RegisterReqBO();

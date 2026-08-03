@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { checkUserExists, login, register } from '@/api/auth'
 import { setAuthToken, isLoggedIn } from '@/utils/request'
+import { evaluateRegistrationPassword } from '@/utils/registration-password'
 
 // 'checking' -> 'login' -> 'register'
 const mode = ref<'checking' | 'login' | 'register'>('checking')
@@ -13,6 +14,19 @@ const confirmPassword = ref('')
 
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
+
+const trimmedUsername = computed(() => username.value.trim())
+const usernameValid = computed(() => trimmedUsername.value.length >= 3 && trimmedUsername.value.length <= 20)
+const passwordEvaluation = computed(() => evaluateRegistrationPassword(password.value, trimmedUsername.value))
+const confirmMatches = computed(() => !!confirmPassword.value && password.value === confirmPassword.value)
+const canRegister = computed(() => usernameValid.value && passwordEvaluation.value.valid && confirmMatches.value)
+
+const passwordStrengthLabel = computed(() => ({
+  empty: '未输入',
+  weak: '弱',
+  medium: '中',
+  strong: '强'
+}[passwordEvaluation.value.strength]))
 
 const switchMode = (targetMode: 'login' | 'register') => {
   mode.value = targetMode
@@ -60,15 +74,11 @@ async function handleLogin() {
 }
 
 async function handleRegister() {
-  if (!username.value.trim()) return
-  if (!password.value) return
-  if (password.value !== confirmPassword.value) return
-  if (username.value.trim().length < 3) return
-  if (password.value.length < 8 || password.value.length > 72) return
+  if (!canRegister.value) return
   loading.value = true
   try {
     const res = await register({
-      username: username.value.trim(),
+      username: trimmedUsername.value,
       password: password.value,
       confirmPassword: confirmPassword.value
     })
@@ -170,6 +180,9 @@ function handleKeydown(e: KeyboardEvent) {
               @keydown="handleKeydown"
             />
           </div>
+          <p class="login-field-message" :class="usernameValid ? 'is-valid' : 'is-pending'">
+            {{ usernameValid ? '账号格式正确' : '账号需为3–20位字符' }}
+          </p>
         </div>
 
         <div class="login-field">
@@ -188,6 +201,19 @@ function handleKeydown(e: KeyboardEvent) {
             <button class="login-eye-btn" @click="showPassword = !showPassword" tabindex="-1">
               {{ showPassword ? '隐藏' : '显示' }}
             </button>
+          </div>
+          <div class="password-feedback" aria-live="polite">
+            <div class="password-strength-row">
+              <span>密码强度：{{ passwordStrengthLabel }}</span>
+              <div class="password-strength-bars" :class="`is-${passwordEvaluation.strength}`" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+            <ul class="password-rules">
+              <li :class="{ 'is-valid': passwordEvaluation.lengthValid, 'is-invalid': password && !passwordEvaluation.lengthValid }">8–72 位字符</li>
+              <li :class="{ 'is-valid': passwordEvaluation.categoriesValid, 'is-invalid': password && !passwordEvaluation.categoriesValid }">至少包含字母、数字、符号中的两类</li>
+              <li :class="{ 'is-valid': passwordEvaluation.usernameValid && passwordEvaluation.simpleValid, 'is-invalid': password && (!passwordEvaluation.usernameValid || !passwordEvaluation.simpleValid) }">不能与账号相同，也不能使用常见或重复弱密码</li>
+            </ul>
           </div>
         </div>
 
@@ -208,9 +234,12 @@ function handleKeydown(e: KeyboardEvent) {
               {{ showConfirmPassword ? '隐藏' : '显示' }}
             </button>
           </div>
+          <p v-if="confirmPassword" class="login-field-message" :class="confirmMatches ? 'is-valid' : 'is-invalid'" aria-live="polite">
+            {{ confirmMatches ? '两次密码一致' : '两次密码不一致' }}
+          </p>
         </div>
 
-        <button class="login-btn" :disabled="loading" @click="handleRegister">
+        <button class="login-btn" :disabled="loading || !canRegister" @click="handleRegister">
           <span v-if="loading" class="login-btn-spinner"></span>
           {{ loading ? '请稍候...' : '创建账号' }}
         </button>
@@ -222,12 +251,14 @@ function handleKeydown(e: KeyboardEvent) {
 
 <style scoped>
 .login-page {
+  height: 100vh;
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #f5f6f8;
   padding: 16px;
+  overflow-y: auto;
 }
 
 .login-card {
@@ -364,6 +395,70 @@ function handleKeydown(e: KeyboardEvent) {
   opacity: 0.5;
 }
 
+.login-field-message {
+  margin: 2px 0 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.login-field-message.is-valid,
+.password-rules .is-valid {
+  color: #067647;
+}
+
+.login-field-message.is-invalid,
+.password-rules .is-invalid {
+  color: #b42318;
+}
+
+.password-feedback {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.password-strength-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #475467;
+  font-size: 12px;
+}
+
+.password-strength-bars {
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  gap: 4px;
+}
+
+.password-strength-bars span {
+  height: 4px;
+  border-radius: 999px;
+  background: #e4e7ec;
+}
+
+.password-strength-bars.is-weak span:first-child,
+.password-strength-bars.is-medium span:nth-child(-n+2),
+.password-strength-bars.is-strong span {
+  background: currentColor;
+}
+
+.password-strength-bars.is-weak { color: #d92d20; }
+.password-strength-bars.is-medium { color: #dc6803; }
+.password-strength-bars.is-strong { color: #079455; }
+
+.password-rules {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .login-eye-btn {
   position: absolute;
   right: 10px;
@@ -470,6 +565,13 @@ function handleKeydown(e: KeyboardEvent) {
   .login-btn {
     height: 44px;
     font-size: 15px;
+  }
+}
+
+/* 矮屏从顶部展示，确保完整注册表单可滚动访问。 */
+@media (max-height: 760px) {
+  .login-page {
+    align-items: flex-start;
   }
 }
 </style>
