@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.xianyusmart</groupId>
     <artifactId>xianyusmart</artifactId>
-    <version>2.0.4</version>
+    <version>2.0.5</version>
     <name>XianYuSmart</name>
     <description>多租户闲鱼虚拟商品运营与自动交付系统</description>
     <url/>

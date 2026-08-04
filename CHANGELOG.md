@@ -4,6 +4,44 @@
 
 ## [未发布]
 
+## [2.0.5] - 2026-08-04
+
+`2.0.5` 聚焦全局 AI 接口兼容与配置可见性，补齐官方服务、第三方中转、连接测试和独立模型能力。
+
+### AI 配置与第三方兼容
+
+- 全局 AI 配置支持 OpenAI Chat Completions 与 Anthropic Messages 两种主流协议。
+- 内置 OpenAI、Anthropic、DeepSeek、阿里云百炼和 Google Gemini 官方预设，官方服务默认只需填写 API Key。
+- 新增第三方中转站配置，可自定义名称、协议、Base URL 和模型名称。
+- Base URL 同时支持根地址、`/v1` 地址和完整 endpoint，避免重复拼接 `/v1/v1`。
+- DeepSeek 默认地址升级为官方接口，默认模型更新为 `deepseek-v4-flash`。
+- 配置页新增真实连通性测试，可自定义发送内容并查看模型回复、最终 endpoint 和请求延时。
+
+### 独立能力与可靠性
+
+- Embedding 调整为默认关闭的独立高级配置，仅在启用 RAG 知识库时需要，不再复用对话模型凭据。
+- AI 商品图调整为默认关闭的独立高级配置，不再要求普通对话用户配置图片模型。
+- 新增 Flyway `V16`，仅按租户升级完全未修改的旧 AI 默认配置，保留已有自定义服务配置。
+- 无效或包含敏感 URL 组成部分的 Base URL 会在保存和状态检查阶段直接拒绝，避免误报服务可用。
+- 注册密码错误现在会显示明确反馈，仓库趋势图更新流程同步修复。
+- 更新微信群聊二维码，保持社区交流入口有效。
+
+### 升级说明
+
+1. 升级前备份 MySQL 数据库和运行环境配置。
+2. 首次启动 `v2.0.5` 时会自动执行 `V16` 数据库迁移。
+3. 旧版仅使用默认 AI 地址和模型时会迁移到 DeepSeek 官方默认；已有提供商或协议配置不会被覆盖。
+4. Embedding 和 AI 商品图默认关闭，普通 AI 对话不需要配置这两项。
+5. 升级后建议在系统设置中执行一次连通性测试，确认模型回复与延时正常。
+
+### 获取与部署
+
+- 容器镜像：`ghcr.io/evvvvvvvan/xianyusmart:v2.0.5`
+- 滚动标签：`ghcr.io/evvvvvvvan/xianyusmart:latest`
+- GitHub Release 提供 `xianyusmart-2.0.5.jar` 与 `SHA256SUMS.txt`。
+
+完整提交差异：[v2.0.4...v2.0.5](https://github.com/Evvvvvvvan/XianYuSmart/compare/v2.0.4...v2.0.5)
+
 ## [2.0.4] - 2026-08-03
 
 `2.0.4` 聚焦容器启动、商品发布校验和账号连接稳定性，修复当前公开 issue 并补齐验证码处理闭环。
@@ -193,6 +231,7 @@
 
 首个正式版本，面向单商家私有部署的闲鱼虚拟商品经营场景，提供商品、卡密库存、自动交付、自动回复、异常待办、MySQL 持久化和容器部署能力。
 
+[2.0.5]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.5
 [2.0.4]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.4
 [2.0.3]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.3
 [2.0.2]: https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.2

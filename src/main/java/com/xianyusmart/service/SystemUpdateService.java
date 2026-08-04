@@ -39,7 +39,7 @@ public class SystemUpdateService {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
-    @Value("${app.version:2.0.4}")
+    @Value("${app.version:2.0.5}")
     private String currentVersion;
 
     @Value("${app.update.release-api:}")
