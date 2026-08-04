@@ -15,8 +15,9 @@ import java.util.*;
 public class SystemSettingBackupHandler implements DataBackupHandler {
 
     private static final Set<String> BACKUP_KEYS = Set.of(
-            "ai_base_url", "ai_model",
-            "ai_embedding_base_url", "ai_embedding_model",
+            "ai_provider", "ai_protocol", "ai_custom_name", "ai_base_url", "ai_model",
+            "ai_embedding_enabled", "ai_embedding_base_url", "ai_embedding_model",
+            "ai_image_enabled", "ai_image_base_url", "ai_image_model",
             "sys_prompt", "similarity_threshold",
             "email_smtp_host", "email_smtp_port", "email_smtp_username",
             "email_smtp_from", "email_smtp_ssl",

@@ -88,6 +88,9 @@ export interface AIStatus {
   message: string
   baseUrl: string
   model: string
+  provider: string
+  protocol: string
+  endpoint: string
 }
 
 // 获取 AI 状态
@@ -96,6 +99,36 @@ export function getAIStatus(): Promise<Response> {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({})
+  })
+}
+
+export interface AIConnectionTestRequest {
+  provider: string
+  protocol: 'openai' | 'anthropic'
+  customName: string
+  apiKey: string
+  baseUrl: string
+  model: string
+  message: string
+}
+
+export interface AIConnectionTestResult {
+  success: boolean
+  reply: string
+  latencyMs: number
+  provider: string
+  protocol: string
+  model: string
+  endpoint: string
+  message: string
+}
+
+/** 使用当前表单配置测试AI连接，不保存配置。 */
+export function testAIConnection(data: AIConnectionTestRequest): Promise<Response> {
+  return fetch('/api/setting/ai/test', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
   })
 }
 

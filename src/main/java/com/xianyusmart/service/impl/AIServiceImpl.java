@@ -567,7 +567,7 @@ public class AIServiceImpl implements AIService {
         VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
         if (vectorStore == null) {
             log.warn("[AI RAG] 向量库未初始化，无法写入数据");
-            throw new RuntimeException("向量库未初始化，请检查AI配置是否正确");
+            throw new RuntimeException("向量库未初始化，Embedding 未启用或配置不完整");
         }
 
         log.info("[AI RAG] 写入SimpleVectorStore, goodsId={}, 内容长度={}字符", goodsId, content.length());
@@ -594,7 +594,7 @@ public class AIServiceImpl implements AIService {
         VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
         if (vectorStore == null) {
             log.warn("[AI RAG] 向量库未初始化，无法查询数据");
-            throw new RuntimeException("向量库未初始化，请检查AI配置是否正确");
+            throw new RuntimeException("向量库未初始化，Embedding 未启用或配置不完整");
         }
 
         log.info("[AI RAG] 查询SimpleVectorStore数据, goodsId={}", goodsId);
@@ -627,7 +627,7 @@ public class AIServiceImpl implements AIService {
         VectorStore vectorStore = dynamicVectorStoreManager.getVectorStore();
         if (vectorStore == null) {
             log.warn("[AI RAG] 向量库未初始化，无法删除数据");
-            throw new RuntimeException("向量库未初始化，请检查AI配置是否正确");
+            throw new RuntimeException("向量库未初始化，Embedding 未启用或配置不完整");
         }
 
         log.info("[AI RAG] 删除SimpleVectorStore数据, documentId={}", documentId);

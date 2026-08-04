@@ -1,1 +1,0 @@
-import{r as o}from"./index-hq4vAVP5.js";function t(e){return o({url:"/operation-log/query",method:"POST",data:e})}function n(e){return o({url:"/operation-log/deleteOld",method:"POST",data:{days:e}})}export{n as d,t as q};

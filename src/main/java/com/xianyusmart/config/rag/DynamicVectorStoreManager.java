@@ -33,16 +33,13 @@ import java.util.Map;
 @Component
 public class DynamicVectorStoreManager {
 
-    // AI 对话配置（默认共用）
-    private static final String AI_API_KEY_SETTING = "ai_api_key";
-    private static final String AI_BASE_URL_SETTING = "ai_base_url";
-
-    // Embedding 模型独立配置（可选，默认使用AI对话配置）
+    // Embedding 模型独立配置
+    private static final String EMBEDDING_ENABLED_SETTING = "ai_embedding_enabled";
     private static final String EMBEDDING_API_KEY_SETTING = "ai_embedding_api_key";
     private static final String EMBEDDING_BASE_URL_SETTING = "ai_embedding_base_url";
     private static final String EMBEDDING_MODEL_SETTING = "ai_embedding_model";
 
-    private static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode";
+    private static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     private static final String DEFAULT_EMBEDDING_MODEL = "text-embedding-v3";
 
     @Value("${ai.vectorstore.simple.file-path:dbdata/vectorstore.json}")
@@ -74,14 +71,9 @@ public class DynamicVectorStoreManager {
         String embeddingBaseUrl = getSettingValue(EMBEDDING_BASE_URL_SETTING);
         String embeddingModel = getSettingValue(EMBEDDING_MODEL_SETTING);
 
-        // 如果 Embedding 专用 API Key 未配置，使用 AI 对话的 API Key
-        if (embeddingApiKey == null || embeddingApiKey.trim().isEmpty()) {
-            embeddingApiKey = getSettingValue(AI_API_KEY_SETTING);
-        }
-
-        // 如果 Embedding 专用 Base URL 未配置，使用 AI 对话的 Base URL
-        if (embeddingBaseUrl == null || embeddingBaseUrl.trim().isEmpty()) {
-            embeddingBaseUrl = getSettingValue(AI_BASE_URL_SETTING);
+        // 未保存开关的旧配置仅在已配置独立Key时继续启用。
+        if (!isEmbeddingEnabled(getSettingValue(EMBEDDING_ENABLED_SETTING), embeddingApiKey)) {
+            return null;
         }
 
         // API Key 未配置
@@ -96,11 +88,18 @@ public class DynamicVectorStoreManager {
                 ? embeddingBaseUrl.trim() : DEFAULT_BASE_URL;
         String effectiveModel = (embeddingModel != null && !embeddingModel.trim().isEmpty())
                 ? embeddingModel.trim() : DEFAULT_EMBEDDING_MODEL;
+        AIEndpointResolver.Endpoint endpoint;
+        try {
+            endpoint = AIEndpointResolver.resolve(effectiveBaseUrl, AIEndpointResolver.Capability.EMBEDDING);
+        } catch (IllegalArgumentException e) {
+            log.warn("[VectorStore] Embedding地址无效，跳过向量检索: {}", e.getMessage());
+            return null;
+        }
 
         // 检查配置是否变化，需要重建
         boolean needRebuild = !vectorStores.containsKey(tenantId)
                 || !embeddingApiKey.equals(cachedApiKeys.get(tenantId))
-                || !safeEquals(effectiveBaseUrl, cachedBaseUrls.get(tenantId))
+                || !safeEquals(endpoint.endpoint(), cachedBaseUrls.get(tenantId))
                 || !safeEquals(effectiveModel, cachedModels.get(tenantId));
 
         if (needRebuild) {
@@ -110,19 +109,19 @@ public class DynamicVectorStoreManager {
                 VectorStore currentStore = vectorStores.get(tenantId);
                 boolean stillNeedRebuild = currentStore == null
                         || !embeddingApiKey.equals(cachedApiKeys.get(tenantId))
-                        || !safeEquals(effectiveBaseUrl, cachedBaseUrls.get(tenantId))
+                        || !safeEquals(endpoint.endpoint(), cachedBaseUrls.get(tenantId))
                         || !safeEquals(effectiveModel, cachedModels.get(tenantId));
 
                 if (stillNeedRebuild) {
                     log.info("[VectorStore] 检测到配置变化，重建 VectorStore: baseUrl={}, model={}",
-                            effectiveBaseUrl, effectiveModel);
+                            endpoint.endpoint(), effectiveModel);
 
-                    VectorStore rebuiltStore = buildVectorStore(tenantId, embeddingApiKey, effectiveBaseUrl, effectiveModel);
+                    VectorStore rebuiltStore = buildVectorStore(tenantId, embeddingApiKey, endpoint, effectiveModel);
                     if (rebuiltStore != null) {
                         vectorStores.put(tenantId, rebuiltStore);
                     }
                     cachedApiKeys.put(tenantId, embeddingApiKey);
-                    cachedBaseUrls.put(tenantId, effectiveBaseUrl);
+                    cachedBaseUrls.put(tenantId, endpoint.endpoint());
                     cachedModels.put(tenantId, effectiveModel);
 
                     if (rebuiltStore != null) {
@@ -190,12 +189,13 @@ public class DynamicVectorStoreManager {
     /**
      * 构建 VectorStore 实例
      */
-    private VectorStore buildVectorStore(Long tenantId, String apiKey, String baseUrl, String model) {
+    private VectorStore buildVectorStore(Long tenantId, String apiKey, AIEndpointResolver.Endpoint endpoint, String model) {
         try {
             // 创建 OpenAiApi 实例
             OpenAiApi openAiApi = OpenAiApi.builder()
                     .apiKey(new SimpleApiKey(apiKey.trim()))
-                    .baseUrl(baseUrl)
+                    .baseUrl(endpoint.baseUrl())
+                    .embeddingsPath(endpoint.path())
                     .build();
 
             // 创建 EmbeddingOptions（指定模型）
@@ -245,6 +245,13 @@ public class DynamicVectorStoreManager {
             log.warn("[VectorStore] 读取配置失败: key={}", key, e);
             return null;
         }
+    }
+
+    private boolean isEmbeddingEnabled(String enabledValue, String embeddingApiKey) {
+        if (enabledValue == null || enabledValue.trim().isEmpty()) {
+            return embeddingApiKey != null && !embeddingApiKey.trim().isEmpty();
+        }
+        return "1".equals(enabledValue.trim()) || Boolean.parseBoolean(enabledValue.trim());
     }
 
     private Long currentTenantId() {

@@ -1,6 +1,8 @@
 package com.xianyusmart.controller;
 
 import com.xianyusmart.common.ResultObject;
+import com.xianyusmart.config.rag.AIEndpointResolver;
+import com.xianyusmart.config.rag.DynamicAIChatClientManager;
 import com.xianyusmart.controller.dto.*;
 import com.xianyusmart.service.SysSettingService;
 import com.xianyusmart.service.EmailNotifyService;
@@ -23,6 +25,9 @@ public class SysSettingController {
 
     @Autowired
     private SysSettingService sysSettingService;
+
+    @Autowired
+    private DynamicAIChatClientManager dynamicAIChatClientManager;
 
     @Autowired(required = false)
     private EmailNotifyService emailNotifyService;
@@ -92,6 +97,9 @@ public class SysSettingController {
             if (reqDTO == null || reqDTO.getSettingKey() == null || reqDTO.getSettingKey().trim().isEmpty()) {
                 return ResultObject.validateFailed("配置键不能为空");
             }
+            if (isAIBaseUrlSetting(reqDTO.getSettingKey()) && !isBlank(reqDTO.getSettingValue())) {
+                AIEndpointResolver.validateBaseUrl(reqDTO.getSettingValue());
+            }
 
             SaveSettingReqBO reqBO = new SaveSettingReqBO();
             reqBO.setSettingKey(reqDTO.getSettingKey());
@@ -100,6 +108,8 @@ public class SysSettingController {
 
             sysSettingService.saveSetting(reqBO);
             return ResultObject.success(null);
+        } catch (IllegalArgumentException e) {
+            return ResultObject.validateFailed(e.getMessage());
         } catch (Exception e) {
             log.error("保存配置失败", e);
             return ResultObject.failed("保存配置失败: " + e.getMessage());
@@ -125,6 +135,22 @@ public class SysSettingController {
     }
 
     /**
+     * 使用当前表单配置测试AI连接，不写入系统配置。
+     */
+    @PostMapping("/ai/test")
+    public ResultObject<DynamicAIChatClientManager.ConnectionTestResult> testAIConnection(
+            @RequestBody AIConnectionTestReqDTO reqDTO) {
+        if (reqDTO == null || isBlank(reqDTO.getApiKey()) || isBlank(reqDTO.getBaseUrl())
+                || isBlank(reqDTO.getModel()) || isBlank(reqDTO.getMessage())) {
+            return ResultObject.validateFailed("API Key、Base URL、模型和测试内容不能为空");
+        }
+        DynamicAIChatClientManager.ChatConfig config = new DynamicAIChatClientManager.ChatConfig(
+                reqDTO.getProvider(), reqDTO.getProtocol(), reqDTO.getCustomName(), reqDTO.getApiKey(),
+                reqDTO.getBaseUrl(), reqDTO.getModel());
+        return ResultObject.success(dynamicAIChatClientManager.testConnection(config, reqDTO.getMessage()));
+    }
+
+    /**
      * 测试邮箱配置
      */
     @PostMapping("/testEmail")
@@ -146,5 +172,41 @@ public class SysSettingController {
             log.error("测试邮箱失败", e);
             return ResultObject.failed("测试邮箱失败: " + e.getMessage());
         }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private boolean isAIBaseUrlSetting(String settingKey) {
+        String normalizedKey = settingKey.trim();
+        return "ai_base_url".equals(normalizedKey)
+                || "ai_embedding_base_url".equals(normalizedKey)
+                || "ai_image_base_url".equals(normalizedKey);
+    }
+
+    public static class AIConnectionTestReqDTO {
+        private String provider;
+        private String protocol;
+        private String customName;
+        private String apiKey;
+        private String baseUrl;
+        private String model;
+        private String message;
+
+        public String getProvider() { return provider; }
+        public void setProvider(String provider) { this.provider = provider; }
+        public String getProtocol() { return protocol; }
+        public void setProtocol(String protocol) { this.protocol = protocol; }
+        public String getCustomName() { return customName; }
+        public void setCustomName(String customName) { this.customName = customName; }
+        public String getApiKey() { return apiKey; }
+        public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+        public String getBaseUrl() { return baseUrl; }
+        public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+        public String getModel() { return model; }
+        public void setModel(String model) { this.model = model; }
+        public String getMessage() { return message; }
+        public void setMessage(String message) { this.message = message; }
     }
 }

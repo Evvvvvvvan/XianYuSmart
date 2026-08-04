@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, markRaw } from 'vue'
+import { computed, ref, onMounted, markRaw, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getCurrentUser, changePassword } from '@/api/system'
 import { logout } from '@/api/auth'
 import { getSetting, saveSetting, testEmail } from '@/api/setting'
-import { getAIStatus } from '@/api/ai'
+import { getAIStatus, testAIConnection, type AIConnectionTestResult } from '@/api/ai'
 import { getBackupModules, exportBackup, importBackup, getLogDates, downloadLog, type BackupModule } from '@/api/backup'
 import { toast } from '@/utils/toast'
 import { showConfirm } from '@/utils/confirm'
@@ -65,34 +65,77 @@ const DEFAULT_SIMILARITY_THRESHOLD = 0.1
 const similarityThreshold = ref(DEFAULT_SIMILARITY_THRESHOLD)
 const similarityThresholdSaving = ref(false)
 
-// AI API Key 配置
+// AI 对话配置
+const AI_PROVIDER_SETTING = 'ai_provider'
+const AI_PROTOCOL_SETTING = 'ai_protocol'
+const AI_CUSTOM_NAME_SETTING = 'ai_custom_name'
 const AI_API_KEY_SETTING = 'ai_api_key'
 const AI_BASE_URL_SETTING = 'ai_base_url'
 const AI_MODEL_SETTING = 'ai_model'
-const AI_IMAGE_MODEL_SETTING = 'ai_image_model'
-const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode'
-const DEFAULT_MODEL = 'deepseek-v3'
-const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
 
+type AIProtocol = 'openai' | 'anthropic'
+type AIProviderPreset = {
+  id: string
+  name: string
+  description: string
+  tone: string
+  protocols: AIProtocol[]
+  defaults: Partial<Record<AIProtocol, { baseUrl: string; model: string }>>
+}
+
+const AI_PROVIDERS: AIProviderPreset[] = [
+  { id: 'openai', name: 'OpenAI', description: 'OpenAI 官方服务', tone: 'emerald', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.openai.com', model: 'gpt-5.6-terra' } } },
+  { id: 'anthropic', name: 'Anthropic Claude', description: 'Anthropic 官方 Messages API', tone: 'amber', protocols: ['anthropic'], defaults: { anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5' } } },
+  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek 官方双协议接口', tone: 'blue', protocols: ['openai', 'anthropic'], defaults: { openai: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }, anthropic: { baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-v4-flash' } } },
+  { id: 'qwen', name: '阿里云百炼 / Qwen', description: '百炼北京地域官方接口', tone: 'violet', protocols: ['openai', 'anthropic'], defaults: { openai: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3.7-plus' }, anthropic: { baseUrl: 'https://dashscope.aliyuncs.com/apps/anthropic', model: 'qwen3.7-plus' } } },
+  { id: 'gemini', name: 'Google Gemini', description: 'Gemini OpenAI 兼容接口', tone: 'cyan', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.6-flash' } } },
+  { id: 'custom', name: '第三方中转站', description: '自定义 OpenAI 或 Anthropic 兼容接口', tone: 'slate', protocols: ['openai', 'anthropic'], defaults: {} }
+]
+
+const aiProvider = ref('deepseek')
+const aiProtocol = ref<AIProtocol>('openai')
+const aiCustomName = ref('')
 const aiApiKey = ref('')
-const aiBaseUrl = ref(DEFAULT_BASE_URL)
-const aiModel = ref(DEFAULT_MODEL)
-const aiImageModel = ref(DEFAULT_IMAGE_MODEL)
+const aiBaseUrl = ref('https://api.deepseek.com')
+const aiModel = ref('deepseek-v4-flash')
 const aiApiKeySaving = ref(false)
 const showApiKey = ref(false)
+const showAIAdvanced = ref(false)
+const aiTesting = ref(false)
+const aiTestMessage = ref('请用一句话回复：连接成功')
+const aiTestResult = ref<AIConnectionTestResult | null>(null)
 
-// Embedding 模型配置（可选，默认共用 AI 配置）
+// Embedding 独立高级配置
+const EMBEDDING_ENABLED_SETTING = 'ai_embedding_enabled'
 const EMBEDDING_API_KEY_SETTING = 'ai_embedding_api_key'
 const EMBEDDING_BASE_URL_SETTING = 'ai_embedding_base_url'
 const EMBEDDING_MODEL_SETTING = 'ai_embedding_model'
+const DEFAULT_EMBEDDING_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
 const DEFAULT_EMBEDDING_MODEL = 'text-embedding-v3'
 
+const embeddingEnabled = ref(false)
 const embeddingApiKey = ref('')
-const embeddingBaseUrl = ref('')
+const embeddingBaseUrl = ref(DEFAULT_EMBEDDING_BASE_URL)
 const embeddingModel = ref(DEFAULT_EMBEDDING_MODEL)
 const embeddingSaving = ref(false)
 const showEmbeddingApiKey = ref(false)
 const showEmbeddingConfig = ref(false)
+
+// AI 商品图独立高级配置
+const IMAGE_ENABLED_SETTING = 'ai_image_enabled'
+const IMAGE_API_KEY_SETTING = 'ai_image_api_key'
+const IMAGE_BASE_URL_SETTING = 'ai_image_base_url'
+const IMAGE_MODEL_SETTING = 'ai_image_model'
+const DEFAULT_IMAGE_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+const DEFAULT_IMAGE_MODEL = 'wanx2.1-t2i-turbo'
+
+const imageEnabled = ref(false)
+const imageApiKey = ref('')
+const imageBaseUrl = ref(DEFAULT_IMAGE_BASE_URL)
+const imageModel = ref(DEFAULT_IMAGE_MODEL)
+const imageSaving = ref(false)
+const showImageApiKey = ref(false)
+const showImageConfig = ref(false)
 
 // 邮箱通知配置
 const EMAIL_SMTP_HOST_KEY = 'email_smtp_host'
@@ -125,7 +168,20 @@ const aiStatus = ref({
   apiKeyConfigured: false,
   message: '',
   baseUrl: '',
-  model: ''
+  model: '',
+  provider: '',
+  protocol: '',
+  endpoint: ''
+})
+
+const selectedAIProvider = computed(() => AI_PROVIDERS.find(item => item.id === aiProvider.value) || AI_PROVIDERS[2]!)
+const aiEndpointPreview = computed(() => resolveAIEndpointPreview(aiBaseUrl.value, aiProtocol.value))
+const aiStatusProviderName = computed(() => aiStatus.value.provider === 'custom'
+  ? aiCustomName.value.trim() || '第三方中转站'
+  : AI_PROVIDERS.find(item => item.id === aiStatus.value.provider)?.name || aiStatus.value.provider || selectedAIProvider.value.name)
+
+watch([aiProvider, aiProtocol, aiCustomName, aiApiKey, aiBaseUrl, aiModel, aiTestMessage], () => {
+  if (!aiTesting.value) aiTestResult.value = null
 })
 
 // 菜单排序配置
@@ -199,6 +255,8 @@ onMounted(async () => {
   await loadAIConfig()
   // 加载 Embedding 配置
   await loadEmbeddingConfig()
+  // 加载 AI 商品图配置
+  await loadImageConfig()
   // 加载 AI 状态
   await loadAIStatus()
   // 加载邮箱通知配置
@@ -207,25 +265,36 @@ onMounted(async () => {
 
 async function loadAIConfig() {
   try {
-    const [apiKeyRes, baseUrlRes, modelRes, imageModelRes] = await Promise.all([
+    const [providerRes, protocolRes, customNameRes, apiKeyRes, baseUrlRes, modelRes] = await Promise.all([
+      getSetting({ settingKey: AI_PROVIDER_SETTING }),
+      getSetting({ settingKey: AI_PROTOCOL_SETTING }),
+      getSetting({ settingKey: AI_CUSTOM_NAME_SETTING }),
       getSetting({ settingKey: AI_API_KEY_SETTING }),
       getSetting({ settingKey: AI_BASE_URL_SETTING }),
-      getSetting({ settingKey: AI_MODEL_SETTING }),
-      getSetting({ settingKey: AI_IMAGE_MODEL_SETTING })
+      getSetting({ settingKey: AI_MODEL_SETTING })
     ])
 
+    const storedBaseUrl = baseUrlRes.code === 200 && baseUrlRes.data ? baseUrlRes.data.settingValue || '' : ''
+    const storedModel = modelRes.code === 200 && modelRes.data ? modelRes.data.settingValue || '' : ''
+    const storedProvider = providerRes.code === 200 && providerRes.data ? providerRes.data.settingValue || '' : ''
+    aiProvider.value = AI_PROVIDERS.some(item => item.id === storedProvider)
+      ? storedProvider
+      : (storedBaseUrl || storedModel ? 'custom' : 'deepseek')
+    const storedProtocol = protocolRes.code === 200 && protocolRes.data ? protocolRes.data.settingValue : ''
+    aiProtocol.value = storedProtocol === 'anthropic' ? 'anthropic' : 'openai'
+    if (!selectedAIProvider.value.protocols.includes(aiProtocol.value)) {
+      aiProtocol.value = selectedAIProvider.value.protocols[0] || 'openai'
+    }
+    if (customNameRes.code === 200 && customNameRes.data) {
+      aiCustomName.value = customNameRes.data.settingValue || ''
+    }
     if (apiKeyRes.code === 200 && apiKeyRes.data) {
       aiApiKey.value = apiKeyRes.data.settingValue || ''
     }
-    if (baseUrlRes.code === 200 && baseUrlRes.data && baseUrlRes.data.settingValue) {
-      aiBaseUrl.value = baseUrlRes.data.settingValue
-    }
-    if (modelRes.code === 200 && modelRes.data && modelRes.data.settingValue) {
-      aiModel.value = modelRes.data.settingValue
-    }
-    if (imageModelRes.code === 200 && imageModelRes.data && imageModelRes.data.settingValue) {
-      aiImageModel.value = imageModelRes.data.settingValue
-    }
+    const preset = selectedAIProvider.value.defaults[aiProtocol.value]
+    aiBaseUrl.value = storedBaseUrl || preset?.baseUrl || ''
+    aiModel.value = storedModel || preset?.model || ''
+    showAIAdvanced.value = aiProvider.value === 'custom'
   } catch (e) {
     console.error('获取AI配置失败:', e)
   }
@@ -233,7 +302,8 @@ async function loadAIConfig() {
 
 async function loadEmbeddingConfig() {
   try {
-    const [apiKeyRes, baseUrlRes, modelRes] = await Promise.all([
+    const [enabledRes, apiKeyRes, baseUrlRes, modelRes] = await Promise.all([
+      getSetting({ settingKey: EMBEDDING_ENABLED_SETTING }),
       getSetting({ settingKey: EMBEDDING_API_KEY_SETTING }),
       getSetting({ settingKey: EMBEDDING_BASE_URL_SETTING }),
       getSetting({ settingKey: EMBEDDING_MODEL_SETTING })
@@ -248,8 +318,31 @@ async function loadEmbeddingConfig() {
     if (modelRes.code === 200 && modelRes.data && modelRes.data.settingValue) {
       embeddingModel.value = modelRes.data.settingValue
     }
+    const enabledValue = enabledRes.code === 200 && enabledRes.data ? enabledRes.data.settingValue : ''
+    embeddingEnabled.value = enabledValue
+      ? enabledValue === '1' || enabledValue === 'true'
+      : !!embeddingApiKey.value
   } catch (e) {
     console.error('获取Embedding配置失败:', e)
+  }
+}
+
+async function loadImageConfig() {
+  try {
+    const [enabledRes, apiKeyRes, baseUrlRes, modelRes] = await Promise.all([
+      getSetting({ settingKey: IMAGE_ENABLED_SETTING }),
+      getSetting({ settingKey: IMAGE_API_KEY_SETTING }),
+      getSetting({ settingKey: IMAGE_BASE_URL_SETTING }),
+      getSetting({ settingKey: IMAGE_MODEL_SETTING })
+    ])
+
+    const enabledValue = enabledRes.code === 200 && enabledRes.data ? enabledRes.data.settingValue : ''
+    imageEnabled.value = enabledValue === '1' || enabledValue === 'true'
+    if (apiKeyRes.code === 200 && apiKeyRes.data) imageApiKey.value = apiKeyRes.data.settingValue || ''
+    if (baseUrlRes.code === 200 && baseUrlRes.data && baseUrlRes.data.settingValue) imageBaseUrl.value = baseUrlRes.data.settingValue
+    if (modelRes.code === 200 && modelRes.data && modelRes.data.settingValue) imageModel.value = modelRes.data.settingValue
+  } catch (e) {
+    console.error('获取AI商品图配置失败:', e)
   }
 }
 
@@ -262,6 +355,110 @@ async function loadAIStatus() {
     }
   } catch (e) {
     console.error('获取AI状态失败:', e)
+  }
+}
+
+function selectAIProvider(provider: AIProviderPreset) {
+  aiProvider.value = provider.id
+  if (!provider.protocols.includes(aiProtocol.value)) {
+    aiProtocol.value = provider.protocols[0] || 'openai'
+  }
+  const preset = provider.defaults[aiProtocol.value]
+  if (preset) {
+    aiBaseUrl.value = preset.baseUrl
+    aiModel.value = preset.model
+  } else {
+    aiBaseUrl.value = ''
+    aiModel.value = ''
+  }
+  showAIAdvanced.value = provider.id === 'custom'
+  aiTestResult.value = null
+}
+
+function selectAIProtocol(protocol: AIProtocol) {
+  aiProtocol.value = protocol
+  const preset = selectedAIProvider.value.defaults[protocol]
+  if (preset) {
+    aiBaseUrl.value = preset.baseUrl
+    aiModel.value = preset.model
+  }
+  aiTestResult.value = null
+}
+
+function resolveAIEndpointPreview(baseUrl: string, protocol: AIProtocol): string {
+  try {
+    const url = new URL(baseUrl.trim())
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) return ''
+    let path = url.pathname.replace(/\/+$/, '')
+    const suffix = protocol === 'anthropic' ? '/messages' : '/chat/completions'
+    if (!path) path = `/v1${suffix}`
+    else if (!path.toLowerCase().endsWith(suffix)) {
+      path += /\/v\d+(?:beta\d*)?$/i.test(path) || path.toLowerCase().endsWith('/openai')
+        ? suffix
+        : `/v1${suffix}`
+    }
+    return `${url.origin}${path}`
+  } catch {
+    return ''
+  }
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim())
+    return ['http:', 'https:'].includes(url.protocol)
+      && !url.username && !url.password && !url.search && !url.hash
+  } catch {
+    return false
+  }
+}
+
+async function handleTestAIConnection() {
+  if (!aiApiKey.value.trim() || !aiBaseUrl.value.trim() || !aiModel.value.trim()) {
+    toast.warning('请先填写 API Key、Base URL 和模型名称')
+    return
+  }
+  if (!isValidHttpUrl(aiBaseUrl.value)) {
+    toast.warning('API Base URL 格式不正确')
+    return
+  }
+  if (!aiTestMessage.value.trim()) {
+    toast.warning('请输入测试内容')
+    return
+  }
+
+  aiTesting.value = true
+  aiTestResult.value = null
+  try {
+    const response = await testAIConnection({
+      provider: aiProvider.value,
+      protocol: aiProtocol.value,
+      customName: aiCustomName.value.trim(),
+      apiKey: aiApiKey.value.trim(),
+      baseUrl: aiBaseUrl.value.trim(),
+      model: aiModel.value.trim(),
+      message: aiTestMessage.value.trim()
+    })
+    const payload = await response.json()
+    if (payload.code !== 200 || !payload.data) {
+      throw new Error(payload.msg || '连接测试失败')
+    }
+    aiTestResult.value = payload.data
+    if (payload.data.success) toast.success(`连接成功，延时 ${payload.data.latencyMs} ms`)
+  } catch (e) {
+    const message = e instanceof Error ? e.message : '连接测试失败'
+    aiTestResult.value = {
+      success: false,
+      reply: '',
+      latencyMs: 0,
+      provider: selectedAIProvider.value.name,
+      protocol: aiProtocol.value,
+      model: aiModel.value,
+      endpoint: aiEndpointPreview.value,
+      message
+    }
+  } finally {
+    aiTesting.value = false
   }
 }
 
@@ -388,15 +585,29 @@ async function handleSaveAIConfig() {
     toast.warning('模型名称不能为空')
     return
   }
-  if (!aiImageModel.value.trim()) {
-    toast.warning('生图模型名称不能为空')
+  if (!isValidHttpUrl(aiBaseUrl.value)) {
+    toast.warning('API Base URL 格式不正确')
     return
   }
 
   aiApiKeySaving.value = true
   try {
-    // 对话与商品图共用鉴权和Base URL，模型名称分别配置。
-    const [keyRes, urlRes, modelRes, imageModelRes] = await Promise.all([
+    const results = await Promise.all([
+      saveSetting({
+        settingKey: AI_PROVIDER_SETTING,
+        settingValue: aiProvider.value,
+        settingDesc: 'AI服务提供商'
+      }),
+      saveSetting({
+        settingKey: AI_PROTOCOL_SETTING,
+        settingValue: aiProtocol.value,
+        settingDesc: 'AI服务接口协议'
+      }),
+      saveSetting({
+        settingKey: AI_CUSTOM_NAME_SETTING,
+        settingValue: aiCustomName.value.trim(),
+        settingDesc: '第三方中转站名称'
+      }),
       saveSetting({
         settingKey: AI_API_KEY_SETTING,
         settingValue: aiApiKey.value.trim(),
@@ -411,17 +622,11 @@ async function handleSaveAIConfig() {
         settingKey: AI_MODEL_SETTING,
         settingValue: aiModel.value.trim(),
         settingDesc: 'AI对话模型名称'
-      }),
-      saveSetting({
-        settingKey: AI_IMAGE_MODEL_SETTING,
-        settingValue: aiImageModel.value.trim(),
-        settingDesc: 'AI商品图生成模型名称'
       })
     ])
 
-    if (keyRes.code === 200 && urlRes.code === 200 && modelRes.code === 200 && imageModelRes.code === 200) {
+    if (results.every(item => item.code === 200)) {
       toast.success('AI 配置保存成功，已立即生效')
-      // 刷新 AI 状态
       await loadAIStatus()
     }
   } catch (e) {
@@ -434,35 +639,39 @@ async function handleSaveAIConfig() {
 
 function handleResetAIConfig() {
   aiApiKey.value = ''
-  aiBaseUrl.value = DEFAULT_BASE_URL
-  aiModel.value = DEFAULT_MODEL
-  aiImageModel.value = DEFAULT_IMAGE_MODEL
+  selectAIProvider(AI_PROVIDERS.find(item => item.id === 'deepseek') || AI_PROVIDERS[0]!)
+  aiCustomName.value = ''
 }
 
 async function handleSaveEmbeddingConfig() {
+  if (embeddingEnabled.value) {
+    if (!embeddingApiKey.value.trim() || !embeddingBaseUrl.value.trim() || !embeddingModel.value.trim()) {
+      toast.warning('启用 Embedding 后需要填写 API Key、Base URL 和模型名称')
+      return
+    }
+    if (!isValidHttpUrl(embeddingBaseUrl.value)) {
+      toast.warning('Embedding Base URL 格式不正确')
+      return
+    }
+  }
   embeddingSaving.value = true
   try {
-    // 保存三个配置（可以为空，空值表示使用 AI 对话配置）
-    const [keyRes, urlRes, modelRes] = await Promise.all([
-      saveSetting({
-        settingKey: EMBEDDING_API_KEY_SETTING,
-        settingValue: embeddingApiKey.value.trim(),
-        settingDesc: 'Embedding模型API Key（留空则使用AI对话的API Key）'
-      }),
-      saveSetting({
-        settingKey: EMBEDDING_BASE_URL_SETTING,
-        settingValue: embeddingBaseUrl.value.trim(),
-        settingDesc: 'Embedding模型API Base URL（留空则使用AI对话的Base URL）'
-      }),
-      saveSetting({
-        settingKey: EMBEDDING_MODEL_SETTING,
-        settingValue: embeddingModel.value.trim(),
-        settingDesc: 'Embedding模型名称'
-      })
-    ])
+    const requests = [saveSetting({
+      settingKey: EMBEDDING_ENABLED_SETTING,
+      settingValue: embeddingEnabled.value ? 'true' : 'false',
+      settingDesc: '是否启用Embedding向量模型'
+    })]
+    if (embeddingEnabled.value) {
+      requests.push(
+        saveSetting({ settingKey: EMBEDDING_API_KEY_SETTING, settingValue: embeddingApiKey.value.trim(), settingDesc: 'Embedding模型API Key' }),
+        saveSetting({ settingKey: EMBEDDING_BASE_URL_SETTING, settingValue: embeddingBaseUrl.value.trim(), settingDesc: 'Embedding模型API Base URL' }),
+        saveSetting({ settingKey: EMBEDDING_MODEL_SETTING, settingValue: embeddingModel.value.trim(), settingDesc: 'Embedding模型名称' })
+      )
+    }
+    const results = await Promise.all(requests)
 
-    if (keyRes.code === 200 && urlRes.code === 200 && modelRes.code === 200) {
-      toast.success('Embedding 配置保存成功，重启服务后生效')
+    if (results.every(item => item.code === 200)) {
+      toast.success('Embedding 配置保存成功，已立即生效')
     }
   } catch (e) {
     console.error('保存Embedding配置失败:', e)
@@ -473,9 +682,42 @@ async function handleSaveEmbeddingConfig() {
 }
 
 function handleResetEmbeddingConfig() {
-  embeddingApiKey.value = ''
-  embeddingBaseUrl.value = ''
-  embeddingModel.value = DEFAULT_EMBEDDING_MODEL
+  embeddingEnabled.value = false
+}
+
+async function handleSaveImageConfig() {
+  if (imageEnabled.value) {
+    if (!imageApiKey.value.trim() || !imageBaseUrl.value.trim() || !imageModel.value.trim()) {
+      toast.warning('启用 AI 商品图后需要填写 API Key、Base URL 和模型名称')
+      return
+    }
+    if (!isValidHttpUrl(imageBaseUrl.value)) {
+      toast.warning('商品图 Base URL 格式不正确')
+      return
+    }
+  }
+  imageSaving.value = true
+  try {
+    const requests = [saveSetting({ settingKey: IMAGE_ENABLED_SETTING, settingValue: imageEnabled.value ? 'true' : 'false', settingDesc: '是否启用AI商品图' })]
+    if (imageEnabled.value) {
+      requests.push(
+        saveSetting({ settingKey: IMAGE_API_KEY_SETTING, settingValue: imageApiKey.value.trim(), settingDesc: 'AI商品图API Key' }),
+        saveSetting({ settingKey: IMAGE_BASE_URL_SETTING, settingValue: imageBaseUrl.value.trim(), settingDesc: 'AI商品图API Base URL' }),
+        saveSetting({ settingKey: IMAGE_MODEL_SETTING, settingValue: imageModel.value.trim(), settingDesc: 'AI商品图生成模型名称' })
+      )
+    }
+    const results = await Promise.all(requests)
+    if (results.every(item => item.code === 200)) toast.success('AI 商品图配置保存成功')
+  } catch (e) {
+    console.error('保存AI商品图配置失败:', e)
+    toast.error('保存AI商品图配置失败')
+  } finally {
+    imageSaving.value = false
+  }
+}
+
+function handleResetImageConfig() {
+  imageEnabled.value = false
 }
 
 async function loadEmailConfig() {
@@ -1013,105 +1255,138 @@ async function saveMenuLayout() {
         </div>
       </div>
 
-      <!-- AI 服务配置（包含 Embedding 配置和系统提示词） -->
+      <!-- AI 服务配置 -->
       <div v-if="activeMenu === 'ai'" class="settings__panel">
         <div class="settings__panel-title">AI 服务配置</div>
 
         <!-- AI 状态指示 -->
-        <div class="settings__ai-status">
-          <div class="settings__ai-status-row">
-            <span class="settings__info-label">服务状态</span>
+        <div class="settings__ai-overview">
+          <div class="settings__ai-overview-main">
+            <span class="settings__ai-status-dot" :class="{ 'settings__ai-status-dot--ok': aiStatus.available }"></span>
+            <div>
+              <div class="settings__ai-overview-title">{{ aiStatus.available ? 'AI 服务已就绪' : 'AI 服务未就绪' }}</div>
+              <div class="settings__ai-status-msg">{{ aiStatus.message || '保存配置后立即生效' }}</div>
+            </div>
             <span class="settings__ai-status-badge" :class="aiStatus.available ? 'settings__ai-status-badge--ok' : 'settings__ai-status-badge--off'">
               {{ aiStatus.available ? '可用' : '不可用' }}
             </span>
           </div>
-          <div v-if="aiStatus.message" class="settings__ai-status-row">
-            <span class="settings__info-label">状态说明</span>
-            <span class="settings__info-value settings__ai-status-msg">{{ aiStatus.message }}</span>
-          </div>
-          <div v-if="aiStatus.baseUrl" class="settings__ai-status-row">
-            <span class="settings__info-label">Base URL</span>
-            <span class="settings__info-value">{{ aiStatus.baseUrl }}</span>
-          </div>
-          <div v-if="aiStatus.model" class="settings__ai-status-row">
-            <span class="settings__info-label">模型</span>
-            <span class="settings__info-value">{{ aiStatus.model }}</span>
+          <div class="settings__ai-overview-meta">
+            <div><span>提供商</span><strong>{{ aiStatusProviderName }}</strong></div>
+            <div><span>协议</span><strong>{{ (aiStatus.protocol || aiProtocol).toUpperCase() }}</strong></div>
+            <div><span>模型</span><strong>{{ aiStatus.model || aiModel || '未配置' }}</strong></div>
           </div>
         </div>
 
         <!-- AI 对话配置 -->
-        <div class="settings__section">
-          <div class="settings__section-title">对话模型配置</div>
-          <p class="settings__desc">配置 AI 对话服务，配置后立即生效，无需重启服务</p>
-          <div class="settings__form">
+        <div class="settings__section settings__section--ai">
+          <div class="settings__section-title">对话模型</div>
+          <p class="settings__desc">选择官方服务时默认地址和模型已配置，只需填写 API Key；第三方中转站支持两种主流协议。</p>
+
+          <div class="settings__provider-grid">
+            <button
+              v-for="provider in AI_PROVIDERS"
+              :key="provider.id"
+              class="settings__provider-card"
+              :class="{ 'settings__provider-card--active': aiProvider === provider.id }"
+              :disabled="aiApiKeySaving"
+              @click="selectAIProvider(provider)"
+            >
+              <span class="settings__provider-icon" :class="`settings__provider-icon--${provider.tone}`">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <g v-if="provider.id === 'openai'" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8c2.2 0 4 1.8 4 4v1.1l1-.6a4 4 0 1 1 4 6.9l-1 .6v1.1a4 4 0 0 1-6 3.5l-1-.6-1 .6a4 4 0 0 1-6-3.5v-1.1l-1-.6a4 4 0 1 1 4-6.9l1 .6V6.8a4 4 0 0 1 4-4Z"/></g>
+                  <g v-else-if="provider.id === 'anthropic'" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 19 10.7 5h2.6L19 19M7.5 14h9"/><path d="M16.5 5v5"/></g>
+                  <g v-else-if="provider.id === 'deepseek'" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 13c3.2-5.8 9.1-7.3 14.7-4.5L21 7l-1.2 4c.4 5.2-4.5 8.7-9.5 7.8C6.7 18.2 4.2 16.3 3 13Z"/><circle cx="15.6" cy="11.2" r="1" fill="currentColor"/></g>
+                  <g v-else-if="provider.id === 'qwen'" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m12 3 2.1 5.2L20 9l-4.4 3.7 1.4 5.7-5-3-5 3 1.4-5.7L4 9l5.9-.8L12 3Z"/><circle cx="12" cy="11" r="2.2"/></g>
+                  <g v-else-if="provider.id === 'gemini'" fill="currentColor"><path d="M12 2c.8 5.5 3.2 8.1 9 9-5.8.9-8.2 3.5-9 11-.8-7.5-3.2-10.1-9-11 5.8-.9 8.2-3.5 9-9Z"/></g>
+                  <g v-else fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.3 10.9 7.4-3.8M8.3 13.1l7.4 3.8"/></g>
+                </svg>
+              </span>
+              <span class="settings__provider-copy"><strong>{{ provider.name }}</strong><small>{{ provider.description }}</small></span>
+              <span v-if="aiProvider === provider.id" class="settings__provider-check">✓</span>
+            </button>
+          </div>
+
+          <div class="settings__form settings__ai-form">
+            <div v-if="aiProvider === 'custom'" class="settings__field">
+              <label class="settings__label">中转站名称 <span class="settings__label-hint">用于区分当前第三方服务</span></label>
+              <input v-model="aiCustomName" type="text" class="settings__input" placeholder="例如：备用中转站" :disabled="aiApiKeySaving" />
+            </div>
+
             <div class="settings__field">
-              <label class="settings__label">
-                API Key
-                <span class="settings__label-hint">（本项目默认使用 AliApiKey，请从这里获取：<a href="https://bailian.console.aliyun.com/" target="_blank" class="settings__link">https://bailian.console.aliyun.com/</a>）</span>
-              </label>
+              <label class="settings__label">API Key</label>
               <div class="settings__input-wrap">
-                <input
-                  v-model="aiApiKey"
-                  :type="showApiKey ? 'text' : 'password'"
-                  class="settings__input"
-                  placeholder="请输入 AI API Key"
-                  :disabled="aiApiKeySaving"
-                />
-                <button class="settings__eye-btn" @click="showApiKey = !showApiKey" tabindex="-1">
-                  {{ showApiKey ? '隐藏' : '显示' }}
-                </button>
+                <input v-model="aiApiKey" :type="showApiKey ? 'text' : 'password'" class="settings__input" placeholder="请输入 API Key" :disabled="aiApiKeySaving" />
+                <button class="settings__eye-btn" @click="showApiKey = !showApiKey" tabindex="-1">{{ showApiKey ? '隐藏' : '显示' }}</button>
               </div>
             </div>
 
-            <div class="settings__field">
-              <label class="settings__label">API Base URL</label>
-              <input
-                v-model="aiBaseUrl"
-                type="text"
-                class="settings__input"
-                placeholder="AI 服务的 API Base URL"
-                :disabled="aiApiKeySaving"
-              />
+            <div class="settings__ai-preset-summary">
+              <span>{{ aiProtocol === 'anthropic' ? 'Anthropic Messages' : 'OpenAI Chat Completions' }}</span>
+              <strong>{{ aiModel || '待填写模型' }}</strong>
             </div>
 
-            <div class="settings__field">
-              <label class="settings__label">模型名称</label>
-              <input
-                v-model="aiModel"
-                type="text"
-                class="settings__input"
-                placeholder="AI 对话模型名称"
-                :disabled="aiApiKeySaving"
-              />
-            </div>
+            <button class="settings__advanced-trigger" @click="showAIAdvanced = !showAIAdvanced">
+              <span>高级配置</span>
+              <small>协议、Base URL、模型</small>
+              <span>{{ showAIAdvanced ? '收起' : '展开' }}</span>
+            </button>
 
-            <div class="settings__field">
-              <label class="settings__label">商品图模型名称</label>
-              <input
-                v-model="aiImageModel"
-                type="text"
-                class="settings__input"
-                placeholder="OpenAI 兼容的图片生成模型"
-                :disabled="aiApiKeySaving"
-              />
-              <span class="settings__label-hint">商机发掘中的 AI 商品图使用该模型，生成后自动上传到闲鱼图片服务。</span>
+            <div v-if="showAIAdvanced" class="settings__advanced-panel">
+              <div class="settings__field">
+                <label class="settings__label">接口协议</label>
+                <div class="settings__protocol-tabs">
+                  <button v-for="protocol in selectedAIProvider.protocols" :key="protocol" :class="{ active: aiProtocol === protocol }" @click="selectAIProtocol(protocol)">
+                    {{ protocol === 'openai' ? 'OpenAI 协议' : 'Anthropic 协议' }}
+                  </button>
+                </div>
+              </div>
+              <div class="settings__field">
+                <label class="settings__label">API Base URL</label>
+                <input v-model="aiBaseUrl" type="text" class="settings__input" placeholder="支持根地址、/v1 或完整 endpoint" :disabled="aiApiKeySaving" />
+              </div>
+              <div class="settings__field">
+                <label class="settings__label">模型名称</label>
+                <input v-model="aiModel" type="text" class="settings__input" placeholder="请输入模型 ID" :disabled="aiApiKeySaving" />
+              </div>
+              <div class="settings__endpoint-preview">
+                <span>最终请求地址</span>
+                <code>{{ aiEndpointPreview || '请输入有效的 Base URL' }}</code>
+              </div>
             </div>
 
             <div class="settings__actions">
-              <button
-                class="settings__btn settings__btn--secondary"
-                :disabled="aiApiKeySaving"
-                @click="handleResetAIConfig"
-              >
-                恢复默认
-              </button>
-              <button
-                class="settings__btn settings__btn--primary"
-                :disabled="aiApiKeySaving"
-                @click="handleSaveAIConfig"
-              >
-                {{ aiApiKeySaving ? '保存中...' : '保存' }}
-              </button>
+              <button class="settings__btn settings__btn--secondary" :disabled="aiApiKeySaving" @click="handleResetAIConfig">恢复默认</button>
+              <button class="settings__btn settings__btn--primary" :disabled="aiApiKeySaving" @click="handleSaveAIConfig">{{ aiApiKeySaving ? '保存中...' : '保存并立即生效' }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 连通性测试 -->
+        <div class="settings__section settings__connection-test">
+          <div class="settings__section-title">连通性测试</div>
+          <p class="settings__desc">使用当前表单内容发送一次真实普通请求，无需先保存。</p>
+          <div class="settings__test-layout">
+            <div class="settings__field">
+              <label class="settings__label">测试内容</label>
+              <textarea v-model="aiTestMessage" class="settings__textarea" rows="3" placeholder="输入需要发送给模型的内容" :disabled="aiTesting"></textarea>
+            </div>
+            <button class="settings__test-button" :disabled="aiTesting" @click="handleTestAIConnection">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 16-8-5.5 16-3.1-6.4L4 12Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+              {{ aiTesting ? '正在连接...' : '发送测试' }}
+            </button>
+          </div>
+          <div v-if="aiTesting" class="settings__test-loading"><span></span><span></span><span></span>正在等待模型回复</div>
+          <div v-else-if="aiTestResult" class="settings__test-result" :class="aiTestResult.success ? 'settings__test-result--ok' : 'settings__test-result--error'">
+            <div class="settings__test-result-head">
+              <div><strong>{{ aiTestResult.success ? '连接成功' : '连接失败' }}</strong><span>{{ aiTestResult.message }}</span></div>
+              <div class="settings__latency"><strong>{{ aiTestResult.latencyMs }}</strong><span>ms</span></div>
+            </div>
+            <div v-if="aiTestResult.reply" class="settings__test-reply"><span>模型回复</span><p>{{ aiTestResult.reply }}</p></div>
+            <div class="settings__test-meta">
+              <span>{{ aiTestResult.protocol.toUpperCase() }}</span>
+              <span>{{ aiTestResult.model }}</span>
+              <code>{{ aiTestResult.endpoint }}</code>
             </div>
           </div>
         </div>
@@ -1119,76 +1394,40 @@ async function saveMenuLayout() {
         <!-- Embedding 配置 -->
         <div class="settings__section">
           <div class="settings__section-header">
-            <div class="settings__section-title">Embedding 模型配置</div>
-            <button
-              class="settings__toggle-btn"
-              @click="showEmbeddingConfig = !showEmbeddingConfig"
-            >
-              {{ showEmbeddingConfig ? '收起' : '高级配置' }}
-            </button>
+            <div><div class="settings__section-title">Embedding 向量模型</div><p class="settings__desc">仅用于 RAG 知识库，默认关闭且不复用对话配置。</p></div>
+            <button class="settings__toggle-btn" @click="showEmbeddingConfig = !showEmbeddingConfig">{{ showEmbeddingConfig ? '收起' : '独立高级配置' }}</button>
           </div>
-          <p class="settings__desc">
-            配置向量嵌入模型（用于 RAG 知识库）。默认共用对话模型的配置。
-            <strong>注意：修改后需要重启服务才能生效。</strong>
-          </p>
-          <div class="settings__form">
-            <!-- 折叠内容 -->
-            <div v-if="showEmbeddingConfig" class="settings__collapse-content">
-              <div class="settings__field">
-                <label class="settings__label">API Key <span class="settings__label-hint">(留空则使用对话模型的 API Key)</span></label>
-                <div class="settings__input-wrap">
-                  <input
-                    v-model="embeddingApiKey"
-                    :type="showEmbeddingApiKey ? 'text' : 'password'"
-                    class="settings__input"
-                    placeholder="留空则使用对话模型的 API Key"
-                    :disabled="embeddingSaving"
-                  />
-                  <button class="settings__eye-btn" @click="showEmbeddingApiKey = !showEmbeddingApiKey" tabindex="-1">
-                    {{ showEmbeddingApiKey ? '隐藏' : '显示' }}
-                  </button>
-                </div>
-              </div>
-
-              <div class="settings__field">
-                <label class="settings__label">API Base URL <span class="settings__label-hint">(留空则使用对话模型的 Base URL)</span></label>
-                <input
-                  v-model="embeddingBaseUrl"
-                  type="text"
-                  class="settings__input"
-                  placeholder="留空则使用对话模型的 Base URL"
-                  :disabled="embeddingSaving"
-                />
-              </div>
+          <div v-if="showEmbeddingConfig" class="settings__form settings__advanced-panel">
+            <div class="settings__capability-switch">
+              <div><strong>启用 Embedding</strong><span>关闭后普通 AI 回复仍可正常使用</span></div>
+              <label class="settings__switch"><input v-model="embeddingEnabled" type="checkbox" :disabled="embeddingSaving" /><span class="settings__switch-track"></span><span class="settings__switch-thumb"></span></label>
             </div>
+            <template v-if="embeddingEnabled">
+              <div class="settings__field"><label class="settings__label">API Key</label><div class="settings__input-wrap"><input v-model="embeddingApiKey" :type="showEmbeddingApiKey ? 'text' : 'password'" class="settings__input" placeholder="Embedding 专用 API Key" :disabled="embeddingSaving" /><button class="settings__eye-btn" @click="showEmbeddingApiKey = !showEmbeddingApiKey" tabindex="-1">{{ showEmbeddingApiKey ? '隐藏' : '显示' }}</button></div></div>
+              <div class="settings__field"><label class="settings__label">API Base URL</label><input v-model="embeddingBaseUrl" type="text" class="settings__input" placeholder="Embedding 服务地址" :disabled="embeddingSaving" /></div>
+              <div class="settings__field"><label class="settings__label">模型名称</label><input v-model="embeddingModel" type="text" class="settings__input" placeholder="例如 text-embedding-v3" :disabled="embeddingSaving" /></div>
+            </template>
+            <div class="settings__actions"><button class="settings__btn settings__btn--secondary" :disabled="embeddingSaving" @click="handleResetEmbeddingConfig">设为关闭</button><button class="settings__btn settings__btn--primary" :disabled="embeddingSaving" @click="handleSaveEmbeddingConfig">{{ embeddingSaving ? '保存中...' : '保存 Embedding 配置' }}</button></div>
+          </div>
+        </div>
 
-            <div class="settings__field">
-              <label class="settings__label">模型名称</label>
-              <input
-                v-model="embeddingModel"
-                type="text"
-                class="settings__input"
-                placeholder="Embedding 模型名称，如 text-embedding-v3"
-                :disabled="embeddingSaving"
-              />
+        <!-- AI 商品图配置 -->
+        <div class="settings__section">
+          <div class="settings__section-header">
+            <div><div class="settings__section-title">AI 商品图</div><p class="settings__desc">仅用于商机发掘中的图片生成，未使用时无需配置模型。</p></div>
+            <button class="settings__toggle-btn" @click="showImageConfig = !showImageConfig">{{ showImageConfig ? '收起' : '独立高级配置' }}</button>
+          </div>
+          <div v-if="showImageConfig" class="settings__form settings__advanced-panel">
+            <div class="settings__capability-switch">
+              <div><strong>启用 AI 商品图</strong><span>使用独立的 OpenAI-compatible 图片接口</span></div>
+              <label class="settings__switch"><input v-model="imageEnabled" type="checkbox" :disabled="imageSaving" /><span class="settings__switch-track"></span><span class="settings__switch-thumb"></span></label>
             </div>
-
-            <div class="settings__actions">
-              <button
-                class="settings__btn settings__btn--secondary"
-                :disabled="embeddingSaving"
-                @click="handleResetEmbeddingConfig"
-              >
-                恢复默认
-              </button>
-              <button
-                class="settings__btn settings__btn--primary"
-                :disabled="embeddingSaving"
-                @click="handleSaveEmbeddingConfig"
-              >
-                {{ embeddingSaving ? '保存中...' : '保存' }}
-              </button>
-            </div>
+            <template v-if="imageEnabled">
+              <div class="settings__field"><label class="settings__label">API Key</label><div class="settings__input-wrap"><input v-model="imageApiKey" :type="showImageApiKey ? 'text' : 'password'" class="settings__input" placeholder="商品图专用 API Key" :disabled="imageSaving" /><button class="settings__eye-btn" @click="showImageApiKey = !showImageApiKey" tabindex="-1">{{ showImageApiKey ? '隐藏' : '显示' }}</button></div></div>
+              <div class="settings__field"><label class="settings__label">API Base URL</label><input v-model="imageBaseUrl" type="text" class="settings__input" placeholder="图片生成服务地址" :disabled="imageSaving" /></div>
+              <div class="settings__field"><label class="settings__label">模型名称</label><input v-model="imageModel" type="text" class="settings__input" placeholder="例如 wanx2.1-t2i-turbo" :disabled="imageSaving" /></div>
+            </template>
+            <div class="settings__actions"><button class="settings__btn settings__btn--secondary" :disabled="imageSaving" @click="handleResetImageConfig">设为关闭</button><button class="settings__btn settings__btn--primary" :disabled="imageSaving" @click="handleSaveImageConfig">{{ imageSaving ? '保存中...' : '保存商品图配置' }}</button></div>
           </div>
         </div>
       </div>
@@ -2364,20 +2603,42 @@ async function saveMenuLayout() {
 
 .settings__btn--danger:active { opacity: .80; transform: scale(.96); }
 
-/* AI Status */
-.settings__ai-status {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  background: rgba(255,255,255,0.15);
-  border-radius: 8px;
+/* AI 服务配置 */
+.settings__ai-overview {
+  padding: 18px;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7fbff 0%, #f4f7ff 55%, #fbf9ff 100%);
 }
 
-.settings__ai-status-row {
+.settings__ai-overview-main {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+}
+
+.settings__ai-overview-main > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings__ai-overview-title {
+  color: #182230;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.settings__ai-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #98a2b3;
+  box-shadow: 0 0 0 5px rgba(152,162,179,.13);
+}
+
+.settings__ai-status-dot--ok {
+  background: #12b76a;
+  box-shadow: 0 0 0 5px rgba(18,183,106,.13);
 }
 
 .settings__ai-status-badge {
@@ -2390,18 +2651,417 @@ async function saveMenuLayout() {
 }
 
 .settings__ai-status-badge--ok {
-  background: #e6f7e6;
-  color: #52c41a;
+  background: #dcfae6;
+  color: #067647;
 }
 
 .settings__ai-status-badge--off {
-  background: rgba(255,255,255,0.55)1f0;
-  color: #ff4d4f;
+  background: #f2f4f7;
+  color: #667085;
 }
 
 .settings__ai-status-msg {
   font-weight: 400;
-  color: rgba(28,28,30,.55);
+  color: #667085;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.settings__ai-overview-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.settings__ai-overview-meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(255,255,255,.72);
+}
+
+.settings__ai-overview-meta span {
+  color: #667085;
+  font-size: 11px;
+}
+
+.settings__ai-overview-meta strong {
+  overflow: hidden;
+  color: #344054;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings__provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.settings__provider-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: border-color .18s, box-shadow .18s, transform .18s;
+}
+
+.settings__provider-card:hover {
+  border-color: #b2ccff;
+  box-shadow: 0 6px 18px rgba(16,24,40,.07);
+  transform: translateY(-1px);
+}
+
+.settings__provider-card--active {
+  border-color: #528bff;
+  background: #f5f8ff;
+  box-shadow: 0 0 0 3px rgba(21,94,239,.08);
+}
+
+.settings__provider-card:disabled {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.settings__provider-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 11px;
+}
+
+.settings__provider-icon svg {
+  width: 23px;
+  height: 23px;
+}
+
+.settings__provider-icon--emerald { color: #067647; background: #dcfae6; }
+.settings__provider-icon--amber { color: #b54708; background: #fef0c7; }
+.settings__provider-icon--blue { color: #175cd3; background: #d1e9ff; }
+.settings__provider-icon--violet { color: #6938ef; background: #ebe9fe; }
+.settings__provider-icon--cyan { color: #087e8b; background: #cff9fe; }
+.settings__provider-icon--slate { color: #475467; background: #eaecf0; }
+
+.settings__provider-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings__provider-copy strong {
+  color: #182230;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.settings__provider-copy small {
+  overflow: hidden;
+  color: #667085;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings__provider-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #155eef;
+  color: #fff;
+  font-size: 12px;
+}
+
+.settings__ai-form {
+  margin-top: 16px;
+}
+
+.settings__ai-preset-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 9px;
+  background: #f9fafb;
+  color: #667085;
+  font-size: 12px;
+}
+
+.settings__ai-preset-summary strong {
+  color: #344054;
+  font-weight: 600;
+}
+
+.settings__advanced-trigger {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid #e4e7ec;
+  border-radius: 9px;
+  background: #fff;
+  color: #344054;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.settings__advanced-trigger small {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.settings__advanced-trigger span:last-child {
+  color: #155eef;
+  font-size: 12px;
+}
+
+.settings__advanced-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e4e7ec;
+  border-radius: 12px;
+  background: #f9fafb;
+}
+
+.settings__protocol-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.settings__protocol-tabs button {
+  height: 36px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #475467;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.settings__protocol-tabs button.active {
+  border-color: #528bff;
+  background: #eff4ff;
+  color: #155eef;
+  font-weight: 600;
+}
+
+.settings__endpoint-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: #101828;
+}
+
+.settings__endpoint-preview span {
+  color: #98a2b3;
+  font-size: 11px;
+}
+
+.settings__endpoint-preview code {
+  overflow-wrap: anywhere;
+  color: #d1e9ff;
+  font-size: 12px;
+}
+
+.settings__connection-test {
+  padding: 20px;
+  border: 1px solid #dbe5f2;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.settings__test-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.settings__test-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 9px;
+  background: #155eef;
+  color: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings__test-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.settings__test-button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+.settings__test-loading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 14px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.settings__test-loading span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #528bff;
+  animation: ai-test-pulse 1.1s infinite ease-in-out;
+}
+
+.settings__test-loading span:nth-child(2) { animation-delay: .15s; }
+.settings__test-loading span:nth-child(3) { animation-delay: .3s; margin-right: 5px; }
+
+@keyframes ai-test-pulse {
+  0%, 80%, 100% { opacity: .3; transform: scale(.75); }
+  40% { opacity: 1; transform: scale(1); }
+}
+
+.settings__test-result {
+  margin-top: 14px;
+  padding: 15px;
+  border: 1px solid;
+  border-radius: 12px;
+}
+
+.settings__test-result--ok { border-color: #abefc6; background: #ecfdf3; }
+.settings__test-result--error { border-color: #fecdca; background: #fef3f2; }
+
+.settings__test-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings__test-result-head > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings__test-result-head strong { color: #182230; font-size: 14px; }
+.settings__test-result-head span { color: #667085; font-size: 11px; }
+
+.settings__latency {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  color: #155eef;
+}
+
+.settings__latency strong { color: inherit; font-size: 24px; }
+.settings__latency span { color: inherit; font-size: 11px; }
+
+.settings__test-reply {
+  margin-top: 12px;
+  padding: 11px 12px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.75);
+}
+
+.settings__test-reply span { color: #667085; font-size: 11px; }
+.settings__test-reply p { margin: 5px 0 0; color: #344054; font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+
+.settings__test-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.settings__test-meta span {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.75);
+  color: #475467;
+  font-size: 10px;
+}
+
+.settings__test-meta code {
+  flex: 1 1 100%;
+  overflow-wrap: anywhere;
+  color: #667085;
+  font-size: 11px;
+}
+
+.settings__capability-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings__capability-switch > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.settings__capability-switch strong { color: #344054; font-size: 13px; }
+.settings__capability-switch span { color: #667085; font-size: 11px; }
+
+@media (max-width: 720px) {
+  .settings__provider-grid,
+  .settings__ai-overview-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .settings__test-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings__test-button {
+    width: 100%;
+  }
 }
 
 /* Logout */

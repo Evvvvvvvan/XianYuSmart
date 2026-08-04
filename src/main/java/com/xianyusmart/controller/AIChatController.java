@@ -86,6 +86,9 @@ public class AIChatController {
         respDTO.setMessage(statusInfo.getMessage());
         respDTO.setBaseUrl(statusInfo.getBaseUrl());
         respDTO.setModel(statusInfo.getModel());
+        respDTO.setProvider(statusInfo.getProvider());
+        respDTO.setProtocol(statusInfo.getProtocol());
+        respDTO.setEndpoint(statusInfo.getEndpoint());
 
         return ResultObject.success(respDTO);
     }
@@ -97,7 +100,7 @@ public class AIChatController {
             return ResultObject.success(null);
         } catch (RuntimeException e) {
             if (e.getMessage() != null && e.getMessage().contains("向量库未初始化")) {
-                return ResultObject.failed(1001, "请完成AI配置再上传资料");
+                return ResultObject.failed(1001, "请先在系统设置的高级配置中启用并配置Embedding");
             }
             throw e;
         }
@@ -185,6 +188,9 @@ public class AIChatController {
         private String message;
         private String baseUrl;
         private String model;
+        private String provider;
+        private String protocol;
+        private String endpoint;
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -198,5 +204,11 @@ public class AIChatController {
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
+        public String getProvider() { return provider; }
+        public void setProvider(String provider) { this.provider = provider; }
+        public String getProtocol() { return protocol; }
+        public void setProtocol(String protocol) { this.protocol = protocol; }
+        public String getEndpoint() { return endpoint; }
+        public void setEndpoint(String endpoint) { this.endpoint = endpoint; }
     }
 }

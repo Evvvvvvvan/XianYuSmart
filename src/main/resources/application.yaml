@@ -63,7 +63,7 @@ spring:
   # AI配置说明：
   # - ai_api_key、ai_base_url、ai_model 配置在数据库 xianyu_sys_setting 表中
   # - 通过 DynamicAIChatClientManager 动态读取，支持热更新无需重启
-  # - 默认值：base_url=https://dashscope.aliyuncs.com/compatible-mode, model=deepseek-v3
+  # - 默认值：provider=deepseek, protocol=openai, base_url=https://api.deepseek.com, model=deepseek-v4-flash
 
 # SimpleVectorStore配置（本地文件持久化）
 

@@ -158,6 +158,11 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-model-openai</artifactId>
         </dependency>
+        <!-- Spring AI - Anthropic -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-anthropic</artifactId>
+        </dependency>
         <!-- Spring AI - Vector Store (包含 SimpleVectorStore) -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

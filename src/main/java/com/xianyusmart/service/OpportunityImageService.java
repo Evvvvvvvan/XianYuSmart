@@ -3,6 +3,7 @@ package com.xianyusmart.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xianyusmart.common.ResultObject;
+import com.xianyusmart.config.rag.AIEndpointResolver;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -21,7 +22,7 @@ import java.util.Map;
 @Service
 public class OpportunityImageService {
 
-    private static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode";
+    private static final String DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
     private static final String DEFAULT_IMAGE_MODEL = "wanx2.1-t2i-turbo";
 
     private final SysSettingService settingService;
@@ -40,11 +41,14 @@ public class OpportunityImageService {
     }
 
     public String generate(Long accountId, String prompt) {
-        String apiKey = text(settingService.getSettingValue("ai_api_key"));
-        if (apiKey.isBlank()) {
-            throw new IllegalStateException("AI API Key未配置，请先在系统设置中完成AI配置");
+        if (!isEnabled(settingService.getSettingValue("ai_image_enabled"))) {
+            throw new IllegalStateException("AI商品图未启用，请先在系统设置的高级配置中启用");
         }
-        String baseUrl = text(settingService.getSettingValue("ai_base_url"));
+        String apiKey = text(settingService.getSettingValue("ai_image_api_key"));
+        if (apiKey.isBlank()) {
+            throw new IllegalStateException("AI商品图 API Key未配置");
+        }
+        String baseUrl = text(settingService.getSettingValue("ai_image_base_url"));
         String model = text(settingService.getSettingValue("ai_image_model"));
         Map<String, Object> body = Map.of(
                 "model", model.isBlank() ? DEFAULT_IMAGE_MODEL : model,
@@ -99,9 +103,11 @@ public class OpportunityImageService {
     static String imageEndpoint(String configuredBaseUrl) {
         String baseUrl = configuredBaseUrl == null || configuredBaseUrl.isBlank()
                 ? DEFAULT_BASE_URL : configuredBaseUrl.trim();
-        baseUrl = baseUrl.replaceAll("/+$", "");
-        return baseUrl.endsWith("/v1") ? baseUrl + "/images/generations"
-                : baseUrl + "/v1/images/generations";
+        return AIEndpointResolver.resolve(baseUrl, AIEndpointResolver.Capability.IMAGE).endpoint();
+    }
+
+    private boolean isEnabled(String value) {
+        return "1".equals(text(value)) || Boolean.parseBoolean(text(value));
     }
 
     private String text(Object value) {

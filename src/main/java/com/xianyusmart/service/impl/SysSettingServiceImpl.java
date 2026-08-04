@@ -2,6 +2,7 @@ package com.xianyusmart.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.xianyusmart.config.rag.DynamicAIChatClientManager;
+import com.xianyusmart.config.rag.DynamicVectorStoreManager;
 import com.xianyusmart.entity.XianyuSysSetting;
 import com.xianyusmart.mapper.XianyuSysSettingMapper;
 import com.xianyusmart.service.SysSettingService;
@@ -28,7 +29,12 @@ public class SysSettingServiceImpl implements SysSettingService {
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS");
 
     /** AI相关配置键，变更时需要触发ChatClient重建 */
-    private static final Set<String> AI_RELATED_KEYS = Set.of("ai_api_key", "ai_base_url", "ai_model");
+    private static final Set<String> AI_RELATED_KEYS = Set.of(
+            "ai_provider", "ai_protocol", "ai_custom_name", "ai_api_key", "ai_base_url", "ai_model");
+
+    /** Embedding相关配置键，变更时需要触发VectorStore重建 */
+    private static final Set<String> EMBEDDING_RELATED_KEYS = Set.of(
+            "ai_embedding_enabled", "ai_embedding_api_key", "ai_embedding_base_url", "ai_embedding_model");
 
     @Autowired
     private XianyuSysSettingMapper sysSettingMapper;
@@ -36,6 +42,10 @@ public class SysSettingServiceImpl implements SysSettingService {
     @Autowired
     @Lazy
     private DynamicAIChatClientManager dynamicAIChatClientManager;
+
+    @Autowired
+    @Lazy
+    private DynamicVectorStoreManager dynamicVectorStoreManager;
 
     @Override
     public String getSettingValue(String settingKey) {
@@ -124,6 +134,10 @@ public class SysSettingServiceImpl implements SysSettingService {
             log.info("[SysSetting] AI配置变更，触发ChatClient重建: key={}", reqBO.getSettingKey());
             dynamicAIChatClientManager.forceRebuild();
         }
+        if (EMBEDDING_RELATED_KEYS.contains(reqBO.getSettingKey().trim())) {
+            log.info("[SysSetting] Embedding配置变更，触发VectorStore重建: key={}", reqBO.getSettingKey());
+            dynamicVectorStoreManager.forceRebuild();
+        }
     }
 
     @Override
@@ -141,6 +155,10 @@ public class SysSettingServiceImpl implements SysSettingService {
         if (AI_RELATED_KEYS.contains(settingKey.trim())) {
             log.info("[SysSetting] AI配置删除，触发ChatClient重建: key={}", settingKey);
             dynamicAIChatClientManager.forceRebuild();
+        }
+        if (EMBEDDING_RELATED_KEYS.contains(settingKey.trim())) {
+            log.info("[SysSetting] Embedding配置删除，触发VectorStore重建: key={}", settingKey);
+            dynamicVectorStoreManager.forceRebuild();
         }
     }
 }
