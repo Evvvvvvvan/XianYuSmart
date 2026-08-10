@@ -68,7 +68,7 @@ public class SkuResolver {
             return null;
         }
         try {
-            List<XianyuGoodsSku> skus = goodsSkuService.listByXyGoodsId(xyGoodsId);
+            List<XianyuGoodsSku> skus = goodsSkuService.listByXyGoodsId(xyGoodsId, accountId);
             if (skus == null || skus.isEmpty()) {
                 log.info("【账号{}】商品无SKU数据: xyGoodsId={}", accountId, xyGoodsId);
                 return null;

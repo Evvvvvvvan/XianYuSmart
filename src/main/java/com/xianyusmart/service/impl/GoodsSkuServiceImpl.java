@@ -35,10 +35,36 @@ public class GoodsSkuServiceImpl implements GoodsSkuService {
     }
 
     @Override
+    public List<XianyuGoodsSku> listByXyGoodsId(String xyGoodsId, Long xianyuAccountId) {
+        LambdaQueryWrapper<XianyuGoodsSku> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(XianyuGoodsSku::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsSku::getXyGoodsId, xyGoodsId);
+        wrapper.orderByAsc(XianyuGoodsSku::getPropertySortOrder, XianyuGoodsSku::getValueSortOrder);
+        return goodsSkuMapper.selectList(wrapper);
+    }
+
+    @Override
     public int countByXyGoodsId(String xyGoodsId) {
         LambdaQueryWrapper<XianyuGoodsSku> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(XianyuGoodsSku::getXyGoodsId, xyGoodsId);
         return Math.toIntExact(goodsSkuMapper.selectCount(wrapper));
+    }
+
+    @Override
+    public int countByXyGoodsId(String xyGoodsId, Long xianyuAccountId) {
+        LambdaQueryWrapper<XianyuGoodsSku> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(XianyuGoodsSku::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsSku::getXyGoodsId, xyGoodsId);
+        return Math.toIntExact(goodsSkuMapper.selectCount(wrapper));
+    }
+
+    @Override
+    public XianyuGoodsSku findByXyGoodsIdAndSkuId(String xyGoodsId, Long xianyuAccountId, String skuId) {
+        LambdaQueryWrapper<XianyuGoodsSku> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(XianyuGoodsSku::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsSku::getXyGoodsId, xyGoodsId)
+                .eq(XianyuGoodsSku::getSkuId, skuId);
+        return goodsSkuMapper.selectOne(wrapper);
     }
 
     @Override

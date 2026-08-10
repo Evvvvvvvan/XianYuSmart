@@ -32,6 +32,16 @@ public class GoodsSkuPropertyServiceImpl implements GoodsSkuPropertyService {
     }
 
     @Override
+    public List<XianyuGoodsSkuProperty> listByXyGoodsId(String xyGoodsId, Long xianyuAccountId) {
+        LambdaQueryWrapper<XianyuGoodsSkuProperty> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(XianyuGoodsSkuProperty::getXianyuAccountId, xianyuAccountId)
+                .eq(XianyuGoodsSkuProperty::getXyGoodsId, xyGoodsId);
+        wrapper.orderByAsc(XianyuGoodsSkuProperty::getPropertySortOrder);
+        wrapper.orderByAsc(XianyuGoodsSkuProperty::getValueSortOrder);
+        return mapper.selectList(wrapper);
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void saveProperties(String xyGoodsId, Long xianyuAccountId, List<XianyuGoodsSkuProperty> propertyList) {
         deleteByXyGoodsId(xyGoodsId, xianyuAccountId);
