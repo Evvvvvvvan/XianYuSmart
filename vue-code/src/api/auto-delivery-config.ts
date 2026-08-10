@@ -119,18 +119,18 @@ export interface GoodsSkuDetail {
   propertyList: GoodsSkuProperty[];
 }
 
-export function getGoodsSkuList(xyGoodsId: string) {
+export function getGoodsSkuList(xianyuAccountId: number, xyGoodsId: string) {
   return request<GoodsSku[]>({
     url: '/goods-sku/list',
     method: 'POST',
-    params: { xyGoodsId }
+    params: { xianyuAccountId, xyGoodsId }
   });
 }
 
-export function getGoodsSkuDetail(xyGoodsId: string) {
+export function getGoodsSkuDetail(xianyuAccountId: number, xyGoodsId: string) {
   return request<GoodsSkuDetail>({
     url: '/goods-sku/detail',
     method: 'POST',
-    params: { xyGoodsId }
+    params: { xianyuAccountId, xyGoodsId }
   });
 }

@@ -36,7 +36,13 @@ const {
   skuList,
   selectedSkuId,
   skuConfigs,
-  hasMultipleSku,
+  skuLoading,
+  skuLoadError,
+  configLoading,
+  configLoadError,
+  hasSku,
+  configuredSkuCount,
+  hasUnsavedChanges,
   hasFixedDelivery,
   hasCardDelivery,
   fixedTemplateOptions,
@@ -72,6 +78,7 @@ const {
   handleDialogConfirm,
   handleDialogCancel,
   handleSkuChange,
+  retrySkuLoad,
   handleGoodsScroll,
   goBackToGoods,
   toggleOnlyOnSale,
@@ -362,15 +369,24 @@ onMounted(() => {
           </div>
 
           <!-- SKU Selector -->
-          <div v-if="hasMultipleSku" class="ad__config-section ad__config-section--no-pad-bottom">
-            <div class="ad__config-section-title">选择规格</div>
-            <div class="ad__sku-tabs">
+          <div v-if="skuLoading || skuLoadError || configLoadError || hasSku" class="ad__config-section ad__config-section--no-pad-bottom">
+            <div class="ad__sku-heading">
+              <div class="ad__config-section-title">{{ hasSku ? '选择规格' : '配置状态' }}</div>
+              <span v-if="hasSku" class="ad__sku-progress">已配置 {{ configuredSkuCount }} / {{ skuList.length }}</span>
+            </div>
+            <div v-if="skuLoading || configLoading" class="ad__sku-state">正在加载规格配置…</div>
+            <div v-else-if="skuLoadError || configLoadError" class="ad__sku-state ad__sku-state--error">
+              <span>{{ skuLoadError || configLoadError }}</span>
+              <button type="button" @click="retrySkuLoad">重新加载</button>
+            </div>
+            <div v-else class="ad__sku-tabs">
               <button
                 v-for="sku in skuList"
                 :key="sku.skuId || sku.id"
                 class="ad__sku-tab"
                 :class="{ 'ad__sku-tab--active': selectedSkuId === sku.skuId, 'ad__sku-tab--configured': skuConfigs.has(sku.skuId || '') }"
-                @click="selectedSkuId = sku.skuId || null; handleSkuChange()"
+                :disabled="saving || configLoading"
+                @click="handleSkuChange(sku.skuId || null)"
               >
                 <span class="ad__sku-tab__name">{{ sku.valueText || `规格${sku.skuId}` }}</span>
                 <span class="ad__sku-tab__price">¥{{ (sku.price / 100).toFixed(2) }}</span>
@@ -549,10 +565,11 @@ onMounted(() => {
             </label>
 
             <div class="ad__save-row">
-              <button class="btn btn--primary" :class="{ 'btn--loading': saving }" :disabled="saving" @click="saveConfig">
+              <button class="btn btn--primary" :class="{ 'btn--loading': saving }" :disabled="saving || skuLoading || configLoading || !!skuLoadError || !!configLoadError || (hasSku && !selectedSkuId)" @click="saveConfig">
                 <IconCheck />
                 {{ saving ? '保存中' : '保存全部配置' }}
               </button>
+              <span v-if="hasUnsavedChanges" class="ad__save-pending">有未保存修改</span>
               <span v-if="currentConfig" class="ad__save-time">更新于 {{ formatTime(currentConfig.updateTime) }}</span>
             </div>
           </div>
