@@ -59,12 +59,16 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             "https://www.goofish.com/im",
             "https://passport.goofish.com",
             "https://h5api.m.goofish.com");
+    private static final List<String> RISK_COOKIE_NAMES = List.of(
+            "x5secdata", "x5sec", "x5sectag", "x5pref",
+            "bx-cookie-test", "tfstk", "cbc", "sca", "isg");
     private static final List<String> SLIDER_HANDLE_SELECTORS = List.of(
             "#nc_1_n1z",
             ".btn_slide",
             ".nc_iconfont",
             ".slide-btn",
             "#nc_1_n1t",
+            ".nc-lang-cnt",
             "[data-role='slider']",
             "#nc_1_n1z .icon",
             ".btn_slide > i",
@@ -144,11 +148,64 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 delete Object.getPrototypeOf(navigator).webdriver;
                 Object.defineProperty(navigator, 'webdriver', {
                   configurable: true,
-                  get: () => undefined
+                  get: () => false
                 });
                 Object.defineProperty(Navigator.prototype, 'webdriver', {
                   configurable: true,
-                  get: () => undefined
+                  get: () => false
+                });
+              } catch (ignored) {
+              }
+              try {
+                Object.defineProperty(Navigator.prototype, 'platform', {
+                  configurable: true,
+                  get: () => 'Win32'
+                });
+                Object.defineProperty(navigator, 'platform', {
+                  configurable: true,
+                  get: () => 'Win32'
+                });
+                Object.defineProperty(navigator, 'vendor', {
+                  configurable: true,
+                  get: () => 'Google Inc.'
+                });
+                Object.defineProperty(navigator, 'appVersion', {
+                  configurable: true,
+                  get: () => navigator.userAgent.startsWith('Mozilla/')
+                    ? navigator.userAgent.substring(8) : navigator.userAgent
+                });
+                const chromeVersion = (navigator.userAgent.split('Chrome/')[1] || '146.0.0.0')
+                  .split(' ')[0];
+                const majorVersion = chromeVersion.split('.')[0];
+                const userAgentData = {
+                  brands: [
+                    { brand: 'Google Chrome', version: majorVersion },
+                    { brand: 'Chromium', version: majorVersion },
+                    { brand: 'Not.A/Brand', version: '8' }
+                  ],
+                  mobile: false,
+                  platform: 'Windows',
+                  getHighEntropyValues: () => Promise.resolve({
+                    architecture: 'x86',
+                    bitness: '64',
+                    brands: userAgentData.brands,
+                    fullVersionList: userAgentData.brands,
+                    mobile: false,
+                    model: '',
+                    platform: 'Windows',
+                    platformVersion: '15.0.0',
+                    uaFullVersion: chromeVersion,
+                    wow64: false
+                  }),
+                  toJSON: () => ({
+                    brands: userAgentData.brands,
+                    mobile: false,
+                    platform: 'Windows'
+                  })
+                };
+                Object.defineProperty(navigator, 'userAgentData', {
+                  configurable: true,
+                  get: () => userAgentData
                 });
               } catch (ignored) {
               }
@@ -271,6 +328,27 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
               patchWebGL(window.WebGLRenderingContext && WebGLRenderingContext.prototype);
               patchWebGL(window.WebGL2RenderingContext && WebGL2RenderingContext.prototype);
               try {
+                const originalToDataUrl = HTMLCanvasElement.prototype.toDataURL;
+                HTMLCanvasElement.prototype.toDataURL = function(...args) {
+                  const context = this.getContext('2d');
+                  if (context && this.width > 0 && this.height > 0) {
+                    try {
+                      const image = context.getImageData(0, 0, this.width, this.height);
+                      for (let index = 0; index < image.data.length; index += 4) {
+                        if (Math.random() < 0.03) {
+                          image.data[index] = (image.data[index]
+                            + (Math.random() < 0.5 ? -1 : 1)) & 0xff;
+                        }
+                      }
+                      context.putImageData(image, 0, 0);
+                    } catch (ignored) {
+                    }
+                  }
+                  return originalToDataUrl.apply(this, args);
+                };
+              } catch (ignored) {
+              }
+              try {
                 delete window.__playwright__binding__;
                 delete window.__pwInitScripts;
                 delete window.__webdriver_script_fn;
@@ -371,10 +449,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                              .setTimezoneId("Asia/Shanghai")
                              .setViewportSize(VIEWPORT_WIDTH, VIEWPORT_HEIGHT));
             context.setDefaultTimeout(10_000);
-            if (automatic || headless) {
-                // 无桌面浏览器复用现有环境配置，保证人工画面与自动模式使用同一页面上下文。
-                applyFingerprint(context);
-            }
+            // 自动和人工模式使用同一浏览器指纹，避免有头模式暴露自动化特征。
+            applyFingerprint(context);
             failureStage = "加载账号Cookie";
             context.addCookies(buildBrowserCookies(cookieText));
 
@@ -386,6 +462,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                     .setTimeout(45_000));
             if (!isAllowedCaptchaUrl(page.url())) {
                 return new RunResult(Outcome.FAILED, null, "验证页面跳转地址不受支持");
+            }
+            if (pageShowsLoadFailure(page)) {
+                return new RunResult(Outcome.FAILED, null, "验证页面加载失败，请稍后重试");
             }
 
             long deadline = System.currentTimeMillis() + TASK_TIMEOUT_MS;
@@ -678,13 +757,27 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 if (isLoginPage(page)) {
                     return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
                 }
-                if (hasSuccessSignal(page) || (captchaSeen && !isCaptchaVisible(page))) {
+                boolean confirmedGone = captchaSeen && waitForCaptchaGone(
+                        page, Math.min(deadline, System.currentTimeMillis() + 1_500));
+                if (!pageShowsLoadFailure(page) && (hasSuccessSignal(page) || confirmedGone)) {
                     return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
                 }
                 return new RunResult(Outcome.FAILED, null,
                         sliderMissingMessage(sliderWait.captchaContainerSeen()));
             }
             captchaSeen = true;
+
+            if (hasRefreshDialog(page) && attempt < MAX_AUTO_ATTEMPTS) {
+                reportProgress(progress, "RESETTING_SESSION",
+                        "检测到页面连接中断，正在重新打开消息页", attempt);
+                ReopenResult reopenResult = reopenFromHome(context, page, deadline);
+                if (reopenResult.page() == null) {
+                    return new RunResult(Outcome.FAILED, null, reopenResult.message());
+                }
+                page = reopenResult.page();
+                captchaSeen = false;
+                continue;
+            }
 
             reportProgress(progress, "DRAGGING_SLIDER",
                     "第" + attempt + "次：正在拖动滑块", attempt);
@@ -694,7 +787,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
             reportProgress(progress, "WAITING_RESULT",
                     "第" + attempt + "次：正在等待验证结果", attempt);
-            if (waitForCaptchaGone(page, Math.min(deadline, System.currentTimeMillis() + 10_000))) {
+            boolean captchaGone = waitForCaptchaGone(
+                    page, Math.min(deadline, System.currentTimeMillis() + 10_000));
+            if (captchaGone && !hasDownloadFailure(page) && !hasRefreshDialog(page)) {
                 if (isLoginPage(page)) {
                     return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
                 }
@@ -743,7 +838,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             SliderTarget target = findSlider(page);
             if (target != null) {
                 captchaSeen = true;
-            } else if (captchaSeen && !isCaptchaContainerVisible(page)) {
+            } else if (captchaSeen && waitForCaptchaGone(
+                    page, Math.min(deadline, System.currentTimeMillis() + 1_500))) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
             long now = System.currentTimeMillis();
@@ -789,12 +885,11 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private void replayManualDrag(Page page, CaptchaSolveService.ManualDrag drag) {
         List<CaptchaSolveService.DragPoint> points = drag.points();
         CaptchaSolveService.DragPoint first = points.getFirst();
-        Mouse mouse = page.mouse();
-        boolean mouseDown = false;
-        try {
-            mouse.move(first.x() * VIEWPORT_WIDTH, first.y() * VIEWPORT_HEIGHT);
-            mouse.down();
-            mouseDown = true;
+        double startX = first.x() * VIEWPORT_WIDTH;
+        double startY = first.y() * VIEWPORT_HEIGHT;
+        try (CaptchaDragMouse mouse = CaptchaDragMouse.create(page, startX, startY)) {
+            mouse.move(startX, startY, 1);
+            mouse.down(startX, startY);
             long previousElapsed = first.elapsedMs();
             for (int index = 1; index < points.size(); index++) {
                 CaptchaSolveService.DragPoint point = points.get(index);
@@ -802,13 +897,11 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 if (delay > 0) {
                     page.waitForTimeout(delay);
                 }
-                mouse.move(point.x() * VIEWPORT_WIDTH, point.y() * VIEWPORT_HEIGHT);
+                mouse.move(point.x() * VIEWPORT_WIDTH, point.y() * VIEWPORT_HEIGHT, 1);
                 previousElapsed = point.elapsedMs();
             }
-        } finally {
-            if (mouseDown) {
-                mouse.up();
-            }
+            CaptchaSolveService.DragPoint last = points.getLast();
+            mouse.up(last.x() * VIEWPORT_WIDTH, last.y() * VIEWPORT_HEIGHT);
         }
     }
 
@@ -851,6 +944,20 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         if (handleBox == null) {
             return false;
         }
+        simulatePreDragBehavior(page, handleBox);
+        return switch (attempt % 3) {
+            case 2 -> dragOutOfContainer(page, target, scratchCaptcha);
+            case 0 -> dragWithMinimumJerk(page, target, scratchCaptcha);
+            default -> dragInContainer(page, target, attempt, scratchCaptcha);
+        };
+    }
+
+    private boolean dragInContainer(Page page, SliderTarget target, int attempt,
+                                    boolean scratchCaptcha) {
+        BoundingBox handleBox = target.handle().boundingBox();
+        if (handleBox == null) {
+            return false;
+        }
 
         ThreadLocalRandom random = ThreadLocalRandom.current();
         double startX = handleBox.x + handleBox.width / 2;
@@ -867,29 +974,31 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         boolean pauseDuringDrag = false;
         switch (attempt) {
             case 1 -> {
-                stepsBase = 30;
-                delayMin = 20;
-                delayMax = 50;
-            }
-            case 2 -> {
-                stepsBase = 35;
+                stepsBase = 50;
                 delayMin = 30;
                 delayMax = 70;
+                pauseDuringDrag = true;
+            }
+            case 2 -> {
+                stepsBase = 55;
+                delayMin = 40;
+                delayMax = 80;
+                pauseDuringDrag = true;
             }
             case 3 -> {
-                stepsBase = 25;
-                delayMin = 15;
-                delayMax = 40;
+                stepsBase = 45;
+                delayMin = 25;
+                delayMax = 60;
             }
             case 4 -> {
-                stepsBase = 40;
-                delayMin = 40;
-                delayMax = 90;
+                stepsBase = 60;
+                delayMin = 50;
+                delayMax = 100;
                 pauseDuringDrag = true;
             }
             default -> {
-                stepsBase = 30 + random.nextInt(15);
-                delayMin = 20 + random.nextInt(30);
+                stepsBase = 40 + random.nextInt(20);
+                delayMin = 30 + random.nextInt(30);
                 delayMax = delayMin + 30 + random.nextInt(40);
             }
         }
@@ -900,30 +1009,28 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         double approachDistance = random.nextDouble(40, 120);
         double approachX = actualStartX + Math.cos(approachAngle) * approachDistance;
         double approachY = actualStartY + Math.sin(approachAngle) * approachDistance;
-        Mouse mouse = page.mouse();
-        boolean mouseDown = false;
-        try {
-            // 先自然接近滑块再按下，避免鼠标瞬移到固定中心点。
-            mouse.move(approachX, approachY, new Mouse.MoveOptions().setSteps(8));
-            page.waitForTimeout(random.nextInt(80, 201));
-            int approachSteps = random.nextInt(3, 6);
-            for (int index = 1; index <= approachSteps; index++) {
-                double progress = (double) index / approachSteps;
-                double eased = progress * progress * (3 - 2 * progress);
-                mouse.move(
-                        approachX + (actualStartX - approachX) * eased,
-                        approachY + (actualStartY - approachY) * eased,
-                        new Mouse.MoveOptions().setSteps(5));
-                page.waitForTimeout(random.nextInt(12, 38));
-            }
-            page.waitForTimeout(random.nextInt(100, 251));
-            mouse.down();
-            mouseDown = true;
+        Mouse approachMouse = page.mouse();
+        // 先自然接近滑块再按下，避免鼠标瞬移到固定中心点。
+        approachMouse.move(approachX, approachY, new Mouse.MoveOptions().setSteps(8));
+        page.waitForTimeout(random.nextInt(80, 201));
+        int approachSteps = random.nextInt(3, 6);
+        for (int index = 1; index <= approachSteps; index++) {
+            double progress = (double) index / approachSteps;
+            double eased = progress * progress * (3 - 2 * progress);
+            approachMouse.move(
+                    approachX + (actualStartX - approachX) * eased,
+                    approachY + (actualStartY - approachY) * eased,
+                    new Mouse.MoveOptions().setSteps(5));
+            page.waitForTimeout(random.nextInt(12, 38));
+        }
+        page.waitForTimeout(random.nextInt(100, 251));
+        try (CaptchaDragMouse mouse = CaptchaDragMouse.create(page, actualStartX, actualStartY)) {
+            mouse.down(actualStartX, actualStartY);
             page.waitForTimeout(random.nextInt(80, 181));
             mouse.move(
                     actualStartX + random.nextDouble(-1.5, 1.5),
                     actualStartY + random.nextDouble(-1.5, 1.5),
-                    new Mouse.MoveOptions().setSteps(3));
+                    3);
             page.waitForTimeout(random.nextInt(30, 81));
 
             double pausePoint = random.nextDouble(0.3, 0.7);
@@ -952,7 +1059,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 double arcOffset = arcDirection * arcAmplitude * Math.sin(Math.PI * progress);
                 double targetY = actualStartY + arcOffset;
                 double y = (lastY + random.nextDouble(-3, 3)) * 0.6 + targetY * 0.4;
-                mouse.move(x, y, new Mouse.MoveOptions().setSteps(3));
+                mouse.move(x, y, 3);
                 double medianDelay = delayMin + (delayMax - delayMin) * 0.4;
                 double logNormalDelay = medianDelay * Math.exp(0.5 * random.nextGaussian());
                 double baseDelay = Math.max(delayMin, Math.min(delayMax * 2, logNormalDelay));
@@ -970,33 +1077,191 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             mouse.move(
                     actualStartX + distance + overshoot,
                     actualStartY + random.nextDouble(-5, 5),
-                    new Mouse.MoveOptions().setSteps(4));
+                    4);
             page.waitForTimeout(random.nextInt(50, 131));
             mouse.move(
                     actualStartX + distance,
                     actualStartY + random.nextDouble(-3, 3),
-                    new Mouse.MoveOptions().setSteps(4));
+                    4);
             int adjustments = random.nextDouble() < 0.7 ? 1 : 2;
             for (int index = 0; index < adjustments; index++) {
                 page.waitForTimeout(random.nextInt(40, 101));
                 mouse.move(
                         actualStartX + distance + random.nextDouble(-2, 2),
                         actualStartY + random.nextDouble(-2, 2),
-                        new Mouse.MoveOptions().setSteps(2));
+                        2);
             }
             page.waitForTimeout(random.nextInt(50, 121));
-            mouse.up();
-            mouseDown = false;
+            mouse.up(actualStartX + distance, lastY);
             return true;
-        } finally {
-            if (mouseDown) {
-                mouse.up();
-            }
         }
+    }
+
+    private void simulatePreDragBehavior(Page page, BoundingBox handleBox) {
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        Mouse mouse = page.mouse();
+        int movements = random.nextInt(2, 4);
+        for (int index = 0; index < movements; index++) {
+            mouse.move(random.nextDouble(100, VIEWPORT_WIDTH - 100),
+                    random.nextDouble(100, VIEWPORT_HEIGHT - 100),
+                    new Mouse.MoveOptions().setSteps(random.nextInt(3, 8)));
+            page.waitForTimeout(random.nextInt(200, 601));
+        }
+        double startX = handleBox.x + handleBox.width / 2;
+        double startY = handleBox.y + handleBox.height / 2;
+        mouse.move(startX + random.nextDouble(-30, 30),
+                startY + random.nextDouble(-20, 20),
+                new Mouse.MoveOptions().setSteps(5));
+        page.waitForTimeout(random.nextInt(1_100, 2_501));
+    }
+
+    private boolean dragOutOfContainer(Page page, SliderTarget target,
+                                       boolean scratchCaptcha) {
+        DragGeometry geometry = resolveDragGeometry(target, scratchCaptcha);
+        if (geometry == null) {
+            return false;
+        }
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        page.mouse().move(geometry.startX(), geometry.startY(),
+                new Mouse.MoveOptions().setSteps(5));
+        page.waitForTimeout(random.nextInt(100, 251));
+        int steps = 35 + random.nextInt(10);
+        double firstTurn = random.nextDouble(0.25, 0.4);
+        double secondTurn = random.nextDouble(0.6, 0.78);
+        double firstOffset = -random.nextDouble(50, 121);
+        double secondOffset = random.nextDouble(50, 121);
+        double lastX = geometry.startX();
+        try (CaptchaDragMouse mouse = CaptchaDragMouse.create(
+                page, geometry.startX(), geometry.startY())) {
+            mouse.down(geometry.startX(), geometry.startY());
+            page.waitForTimeout(random.nextInt(80, 181));
+            for (int index = 1; index <= steps; index++) {
+                double progress = (double) index / steps;
+                double eased = progress * progress * (3 - 2 * progress);
+                double x = geometry.startX() + geometry.distance() * eased;
+                if (random.nextDouble() < 0.05 && index > 3 && index < steps - 3) {
+                    x = lastX - random.nextDouble(2, 5);
+                }
+                double firstInfluence = gaussianInfluence(progress, firstTurn);
+                double secondInfluence = gaussianInfluence(progress, secondTurn);
+                double y = geometry.startY()
+                        + Math.sin(Math.PI * progress) * 5
+                        + firstOffset * firstInfluence
+                        + secondOffset * secondInfluence
+                        + random.nextDouble(-5, 5);
+                mouse.move(x, y, 1);
+                double speedWeight = 1 - Math.sin(Math.PI * progress) * 0.5;
+                page.waitForTimeout(random.nextDouble(25, 71) * speedWeight);
+                lastX = x;
+            }
+            double endX = geometry.startX() + geometry.distance();
+            double endY = geometry.startY() + random.nextDouble(-15, 15);
+            mouse.move(endX + random.nextDouble(5, 15),
+                    geometry.startY() + random.nextDouble(-20, 20), 2);
+            page.waitForTimeout(random.nextInt(50, 131));
+            mouse.move(endX, endY, 2);
+            page.waitForTimeout(random.nextInt(50, 121));
+            mouse.up(endX, endY);
+            return true;
+        }
+    }
+
+    private boolean dragWithMinimumJerk(Page page, SliderTarget target,
+                                        boolean scratchCaptcha) {
+        DragGeometry geometry = resolveDragGeometry(target, scratchCaptcha);
+        if (geometry == null) {
+            return false;
+        }
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        double startX = geometry.startX() + random.nextDouble(-0.5, 0.5);
+        double startY = geometry.startY() + random.nextDouble(-0.5, 0.5);
+        double distance = geometry.distance() + random.nextDouble(-1, 1);
+        int steps = random.nextInt(100, 141);
+        double averageDelay = random.nextDouble(700, 1_301) / steps;
+        double approachAngle = random.nextDouble(0, Math.PI * 2);
+        double approachDistance = random.nextDouble(30, 90);
+        page.mouse().move(startX + Math.cos(approachAngle) * approachDistance,
+                startY + Math.sin(approachAngle) * approachDistance,
+                new Mouse.MoveOptions().setSteps(6));
+        page.waitForTimeout(random.nextInt(80, 201));
+        page.mouse().move(startX, startY, new Mouse.MoveOptions().setSteps(5));
+        page.waitForTimeout(random.nextInt(100, 251));
+
+        int firstPauseStep = random.nextInt(20, 55);
+        int secondPauseStep = random.nextBoolean() ? random.nextInt(60, 90) : -1;
+        double noise = 0;
+        double lastX = startX;
+        double driftAmplitude = random.nextDouble(2, 5);
+        double driftPhase = random.nextDouble(0, Math.PI * 2);
+        try (CaptchaDragMouse mouse = CaptchaDragMouse.create(page, startX, startY)) {
+            mouse.down(startX, startY);
+            page.waitForTimeout(random.nextInt(80, 181));
+            mouse.move(startX + random.nextDouble(-1.5, 1.5),
+                    startY + random.nextDouble(-1.5, 1.5), 3);
+            page.waitForTimeout(random.nextInt(30, 81));
+            for (int index = 1; index <= steps; index++) {
+                double progress = (double) index / steps;
+                noise = Math.max(-1.2, Math.min(1.2,
+                        noise + random.nextDouble(-0.12, 0.12)));
+                double x = startX + distance * CaptchaDragMouse.minimumJerk(progress) + noise;
+                if (x < lastX) {
+                    x = lastX + random.nextDouble(0.1, 0.5);
+                }
+                double yDrift = Math.sin(progress * Math.PI + driftPhase)
+                        * driftAmplitude * 0.3;
+                double tremor = random.nextDouble(-1.5, 1.5)
+                        * (progress > 0.7 ? 0.5 : 1);
+                mouse.move(x, startY + yDrift + tremor, 1);
+                page.waitForTimeout(Math.max(3,
+                        averageDelay + random.nextDouble(-3.5, 3.5)));
+                lastX = x;
+                if (index == firstPauseStep || index == secondPauseStep) {
+                    page.waitForTimeout(random.nextInt(30, 81));
+                }
+            }
+            double endX = startX + distance;
+            mouse.move(endX + random.nextDouble(2, 6),
+                    startY + random.nextDouble(-1, 1), 1);
+            page.waitForTimeout(random.nextInt(40, 101));
+            for (int index = 0; index < random.nextInt(2, 4); index++) {
+                mouse.move(endX + random.nextDouble(-0.8, 0.8),
+                        startY + random.nextDouble(-1, 1), 1);
+                page.waitForTimeout(random.nextInt(40, 121));
+            }
+            double releaseY = startY - 2 + random.nextDouble(-1, 1);
+            mouse.move(endX + random.nextDouble(-0.5, 0.5), releaseY, 1);
+            page.waitForTimeout(random.nextInt(150, 351));
+            mouse.up(endX, releaseY);
+            page.waitForTimeout(random.nextInt(80, 201));
+            page.mouse().move(endX + random.nextDouble(20, 60),
+                    startY + random.nextDouble(-15, 25),
+                    new Mouse.MoveOptions().setSteps(3));
+            return true;
+        }
+    }
+
+    private DragGeometry resolveDragGeometry(SliderTarget target, boolean scratchCaptcha) {
+        BoundingBox handleBox = target.handle().boundingBox();
+        if (handleBox == null) {
+            return null;
+        }
+        BoundingBox trackBox = target.track() == null ? null : target.track().boundingBox();
+        double scratchRatio = ThreadLocalRandom.current().nextDouble(0.25, 0.35);
+        double distance = trackBox == null
+                ? (scratchCaptcha ? 300 * scratchRatio : 300)
+                : calculateDistance(trackBox.width, handleBox.width, scratchCaptcha, scratchRatio);
+        return new DragGeometry(handleBox.x + handleBox.width / 2,
+                handleBox.y + handleBox.height / 2, distance);
+    }
+
+    private double gaussianInfluence(double progress, double center) {
+        double difference = progress - center;
+        return Math.exp(-(difference * difference) / (2 * 0.05 * 0.05));
     }
 
     private ReopenResult reopenFromHome(BrowserContext context, Page currentPage, long deadline) {
         try {
+            clearRiskCookies(context);
             try {
                 currentPage.evaluate("""
                         () => {
@@ -1091,6 +1356,40 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
     }
 
+    static boolean isPageLoadFailureUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.contains("chrome-error://") || normalized.contains("chromewebdata");
+    }
+
+    private boolean pageShowsLoadFailure(Page page) {
+        try {
+            return isPageLoadFailureUrl(page.url());
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private boolean hasRefreshDialog(Page page) {
+        return mainPageTextMatches(page, "(?s).*(连接中断|刷新页面|重新加载页面).*");
+    }
+
+    private boolean hasDownloadFailure(Page page) {
+        return mainPageTextMatches(page, "(?s).*下载消息失败.*");
+    }
+
+    private boolean mainPageTextMatches(Page page, String pattern) {
+        try {
+            String bodyText = (String) page.evaluate(
+                    "() => document.body ? document.body.innerText : ''");
+            return bodyText != null && bodyText.matches(pattern);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private boolean isLoginPage(Page page) {
         String url = page.url().toLowerCase(Locale.ROOT);
         if (url.contains("login.taobao.com") || url.contains("login.goofish.com")
@@ -1112,7 +1411,11 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     private boolean waitForCaptchaGone(Page page, long deadline) {
+        int consecutiveMissingChecks = 0;
         while (System.currentTimeMillis() < deadline) {
+            if (pageShowsLoadFailure(page)) {
+                return false;
+            }
             if (hasSuccessSignal(page)) {
                 return true;
             }
@@ -1120,7 +1423,15 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 return false;
             }
             if (!isCaptchaVisible(page)) {
-                return !isLoginPage(page);
+                if (isLoginPage(page)) {
+                    return false;
+                }
+                consecutiveMissingChecks++;
+                if (consecutiveMissingChecks >= 3) {
+                    return true;
+                }
+            } else {
+                consecutiveMissingChecks = 0;
             }
             page.waitForTimeout(300);
         }
@@ -1171,6 +1482,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     boolean hasSuccessSignal(Page page) {
+        if (pageShowsLoadFailure(page)) {
+            return false;
+        }
         for (Frame frame : page.frames()) {
             if (frame.isDetached()) {
                 continue;
@@ -1224,7 +1538,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         List<Cookie> cookies = new ArrayList<>();
         for (Map.Entry<String, String> entry : cookieMap.entrySet()) {
             if (entry.getKey() == null || entry.getKey().isBlank()
-                    || entry.getValue() == null || entry.getValue().isBlank()) {
+                    || entry.getValue() == null || entry.getValue().isBlank()
+                    || isRiskCookie(entry.getKey())) {
                 continue;
             }
             cookies.add(new Cookie(entry.getKey(), entry.getValue())
@@ -1237,6 +1552,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     private String buildCookieText(List<Cookie> cookies, String originalCookieText) {
         Map<String, String> originalCookieMap = XianyuSignUtils.parseCookies(originalCookieText);
+        RISK_COOKIE_NAMES.forEach(originalCookieMap::remove);
         Map<String, String> cookieMap = new LinkedHashMap<>(originalCookieMap);
         for (Cookie cookie : cookies) {
             if (cookie.name == null || cookie.name.isBlank()
@@ -1253,6 +1569,28 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             }
         }
         return XianyuSignUtils.formatCookies(cookieMap);
+    }
+
+    private void clearRiskCookies(BrowserContext context) {
+        try {
+            List<Cookie> currentCookies = context.cookies();
+            List<Cookie> cleanCookies = currentCookies.stream()
+                    .filter(cookie -> !isRiskCookie(cookie.name))
+                    .toList();
+            if (cleanCookies.size() == currentCookies.size()) {
+                return;
+            }
+            context.clearCookies();
+            if (!cleanCookies.isEmpty()) {
+                context.addCookies(cleanCookies);
+            }
+        } catch (Exception e) {
+            log.debug("清理滑块风险Cookie失败: {}", e.getClass().getSimpleName());
+        }
+    }
+
+    private static boolean isRiskCookie(String name) {
+        return name != null && RISK_COOKIE_NAMES.contains(name.toLowerCase(Locale.ROOT));
     }
 
     private boolean hasInteractiveDesktop() {
@@ -1340,6 +1678,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     record SliderTarget(ElementHandle track, ElementHandle handle) {
+    }
+
+    private record DragGeometry(double startX, double startY, double distance) {
     }
 
     private record SliderWaitResult(SliderTarget target, boolean captchaContainerSeen,
