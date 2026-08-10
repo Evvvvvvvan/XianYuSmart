@@ -74,6 +74,9 @@ export function useAutoDelivery() {
   const configLoading = ref(false)
   const configLoadError = ref('')
   const activeAccountId = ref<number | null>(null)
+  let skuRequestVersion = 0
+  let skuConfigRequestVersion = 0
+  let configRequestVersion = 0
 
   const goodsCurrentPage = ref(1)
   const goodsTotal = ref(0)
@@ -126,6 +129,8 @@ export function useAutoDelivery() {
   const confirmDiscardChanges = () => !hasUnsavedChanges.value
     || window.confirm('当前规格的配置尚未保存，确定放弃修改吗？')
   const markConfigSaved = () => { savedConfigSnapshot.value = serializeConfig() }
+  const isCurrentGoods = (accountId: number, goodsId: string) =>
+    selectedAccountId.value === accountId && selectedGoods.value?.item.xyGoodId === goodsId
 
   const kamiConfigOptions = ref<KamiConfig[]>([])
   const fixedTemplateOptions = ref<FixedDeliveryTemplate[]>([])
@@ -390,6 +395,9 @@ export function useAutoDelivery() {
       return
     }
     activeAccountId.value = selectedAccountId.value
+    skuRequestVersion++
+    skuConfigRequestVersion++
+    configRequestVersion++
     savedConfigSnapshot.value = ''
     selectedGoods.value = null
     currentConfig.value = null
@@ -397,6 +405,8 @@ export function useAutoDelivery() {
     selectedSkuId.value = null
     skuLoadError.value = ''
     configLoadError.value = ''
+    skuLoading.value = false
+    configLoading.value = false
     fixedTemplateOptions.value = []
     goodsCurrentPage.value = 1
     loadFixedTemplateOptions()
@@ -408,10 +418,14 @@ export function useAutoDelivery() {
       skuList.value = []
       return
     }
+    const accountId = selectedAccountId.value
+    const goodsId = selectedGoods.value.item.xyGoodId
+    const requestVersion = ++skuRequestVersion
     skuLoading.value = true
     skuLoadError.value = ''
     try {
-      const res = await getGoodsSkuList(selectedAccountId.value, selectedGoods.value.item.xyGoodId)
+      const res = await getGoodsSkuList(accountId, goodsId)
+      if (requestVersion !== skuRequestVersion || !isCurrentGoods(accountId, goodsId)) return
       if (res.code === 200 || res.code === 0) {
         skuList.value = (res.data || []).sort((a, b) => {
           if (a.propertySortOrder !== b.propertySortOrder) return (a.propertySortOrder ?? 0) - (b.propertySortOrder ?? 0)
@@ -421,10 +435,11 @@ export function useAutoDelivery() {
         throw new Error(res.msg || '获取商品规格失败')
       }
     } catch (error: any) {
+      if (requestVersion !== skuRequestVersion || !isCurrentGoods(accountId, goodsId)) return
       skuList.value = []
       skuLoadError.value = error?.message || '商品规格加载失败，请重试'
     } finally {
-      skuLoading.value = false
+      if (requestVersion === skuRequestVersion) skuLoading.value = false
     }
   }
 
@@ -433,11 +448,15 @@ export function useAutoDelivery() {
       skuConfigs.value = new Map()
       return
     }
+    const accountId = selectedAccountId.value
+    const goodsId = selectedGoods.value.item.xyGoodId
+    const requestVersion = ++skuConfigRequestVersion
     try {
       const res = await getAutoDeliveryConfigsByGoodsId({
-        xianyuAccountId: selectedAccountId.value,
-        xyGoodsId: selectedGoods.value.item.xyGoodId
+        xianyuAccountId: accountId,
+        xyGoodsId: goodsId
       })
+      if (requestVersion !== skuConfigRequestVersion || !isCurrentGoods(accountId, goodsId)) return
       if (res.code === 200 || res.code === 0) {
         const configs = res.data || []
         const map = new Map<string, AutoDeliveryConfig>()
@@ -450,6 +469,7 @@ export function useAutoDelivery() {
         throw new Error(res.msg || '获取规格配置进度失败')
       }
     } catch (error: any) {
+      if (requestVersion !== skuConfigRequestVersion || !isCurrentGoods(accountId, goodsId)) return
       skuConfigs.value = new Map()
       skuLoadError.value = error?.message || '规格配置进度加载失败，请重试'
     }
@@ -460,6 +480,8 @@ export function useAutoDelivery() {
     if (!confirmDiscardChanges()) return
 
     selectedGoods.value = goods
+    const accountId = selectedAccountId.value!
+    const goodsId = goods.item.xyGoodId
     currentConfig.value = null
     savedConfigSnapshot.value = ''
     selectedSkuId.value = null
@@ -470,10 +492,12 @@ export function useAutoDelivery() {
     recordsPageNum.value = 1
 
     await loadSkuList()
+    if (!isCurrentGoods(accountId, goodsId)) return
 
     if (!skuLoadError.value && skuList.value.length > 0) {
       selectedSkuId.value = skuList.value[0]?.skuId || null
       await loadAllSkuConfigs()
+      if (!isCurrentGoods(accountId, goodsId)) return
     }
 
     if (!skuLoadError.value) await loadConfig()
@@ -531,15 +555,21 @@ export function useAutoDelivery() {
   const loadConfig = async () => {
     if (!selectedGoods.value || !selectedAccountId.value) return
 
+    const accountId = selectedAccountId.value
+    const goodsId = selectedGoods.value.item.xyGoodId
+    const skuId = selectedSkuId.value
+    const requestVersion = ++configRequestVersion
     configLoading.value = true
     configLoadError.value = ''
     try {
       const baseReq: GetAutoDeliveryConfigReq = {
-        xianyuAccountId: selectedAccountId.value,
-        xyGoodsId: selectedGoods.value.item.xyGoodId,
+        xianyuAccountId: accountId,
+        xyGoodsId: goodsId,
         skuId: null
       }
       const baseResponse = await getAutoDeliveryConfig(baseReq)
+      if (requestVersion !== configRequestVersion
+          || !isCurrentGoods(accountId, goodsId) || skuId !== selectedSkuId.value) return
       if (baseResponse.code === 0 || baseResponse.code === 200) {
         if (baseResponse.data) {
           configForm.value.autoConfirmShipment = baseResponse.data.autoConfirmShipment || 0
@@ -549,12 +579,14 @@ export function useAutoDelivery() {
       }
 
       const req: GetAutoDeliveryConfigReq = {
-        xianyuAccountId: selectedAccountId.value,
-        xyGoodsId: selectedGoods.value.item.xyGoodId,
-        skuId: selectedSkuId.value
+        xianyuAccountId: accountId,
+        xyGoodsId: goodsId,
+        skuId
       }
 
       const response = await getAutoDeliveryConfig(req)
+      if (requestVersion !== configRequestVersion
+          || !isCurrentGoods(accountId, goodsId) || skuId !== selectedSkuId.value) return
       if (response.code === 0 || response.code === 200) {
         currentConfig.value = response.data || null
         if (response.data) {
@@ -592,13 +624,15 @@ export function useAutoDelivery() {
         throw new Error(response.msg || '获取配置失败')
       }
     } catch (error: any) {
+      if (requestVersion !== configRequestVersion
+          || !isCurrentGoods(accountId, goodsId) || skuId !== selectedSkuId.value) return
       console.error('加载配置失败:', error)
       currentConfig.value = null
       resetDeliveryConfigFields()
       savedConfigSnapshot.value = ''
       configLoadError.value = error?.message || '发货配置加载失败，请重试'
     } finally {
-      configLoading.value = false
+      if (requestVersion === configRequestVersion) configLoading.value = false
     }
   }
 
