@@ -15,6 +15,7 @@ import com.xianyusmart.controller.dto.AutoDeliveryConfigQueryReqDTO;
 import com.xianyusmart.service.AutoDeliveryConfigService;
 import com.xianyusmart.service.BuyerMessageService;
 import com.xianyusmart.service.FixedDeliveryTemplateService;
+import com.xianyusmart.service.GoodsSkuService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +45,9 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
 
     @Autowired
     private XianyuKamiConfigMapper kamiConfigMapper;
+
+    @Autowired
+    private GoodsSkuService goodsSkuService;
     
     @Override
     public ResultObject<AutoDeliveryConfigRespDTO> saveOrUpdateConfig(AutoDeliveryConfigReqDTO reqDTO) {
@@ -139,8 +143,7 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
                 if (skuId != null && !skuId.isEmpty()) {
                     config = autoDeliveryConfigMapper.findByAccountIdAndGoodsIdAndSkuId(
                             reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId(), skuId);
-                }
-                if (config == null) {
+                } else {
                     config = autoDeliveryConfigMapper.findByAccountIdAndGoodsIdNoSku(
                             reqDTO.getXianyuAccountId(), reqDTO.getXyGoodsId());
                 }
@@ -282,6 +285,23 @@ public class AutoDeliveryConfigServiceImpl implements AutoDeliveryConfigService 
                 .eq(XianyuGoodsInfo::getXyGoodId, reqDTO.getXyGoodsId());
         if (goodsInfoMapper.selectCount(goodsQuery) == 0) {
             throw new IllegalArgumentException("商品不存在或不属于当前账号");
+        }
+        String skuId = reqDTO.getSkuId();
+        if (skuId == null || skuId.isBlank()) {
+            reqDTO.setSkuId(null);
+            reqDTO.setSkuName(null);
+            if (goodsSkuService.countByXyGoodsId(reqDTO.getXyGoodsId(), accountId) > 0) {
+                throw new IllegalArgumentException("该商品存在多个规格，请先选择商品规格");
+            }
+        } else {
+            skuId = skuId.trim();
+            var sku = goodsSkuService.findByXyGoodsIdAndSkuId(reqDTO.getXyGoodsId(), accountId, skuId);
+            if (sku == null) {
+                throw new IllegalArgumentException("商品规格不存在或不属于当前账号商品");
+            }
+            // 规格名称以商品同步数据为准，避免前端参数伪造或过期。
+            reqDTO.setSkuId(skuId);
+            reqDTO.setSkuName(sku.getValueText());
         }
         if (reqDTO.getDeliveryMode() == null || reqDTO.getDeliveryMode() != 2
                 || reqDTO.getKamiConfigIds() == null || reqDTO.getKamiConfigIds().isBlank()) {
