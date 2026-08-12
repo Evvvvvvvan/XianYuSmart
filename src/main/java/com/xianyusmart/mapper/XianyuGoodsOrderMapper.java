@@ -274,10 +274,9 @@ public interface XianyuGoodsOrderMapper {
             "delivery_message_next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL, " +
             "exception_revision = exception_revision + 1 " +
             "WHERE delivery_message_state = 3 AND delivery_message_next_retry_time <= NOW(3) " +
-            "AND NOT EXISTS (SELECT 1 FROM xianyu_kami_usage_record r JOIN xianyu_kami_item i " +
-            "ON i.id = r.kami_item_id WHERE r.xianyu_account_id = xianyu_goods_order.xianyu_account_id " +
-            "AND r.order_id = xianyu_goods_order.order_id AND r.delivery_status = 'DELIVERED' " +
-            "AND i.order_id = xianyu_goods_order.order_id AND i.status = 1) LIMIT #{limit}")
+            "AND NOT EXISTS (SELECT 1 FROM xianyu_kami_usage_record r " +
+            "WHERE r.xianyu_account_id = xianyu_goods_order.xianyu_account_id " +
+            "AND r.order_id = xianyu_goods_order.order_id AND r.delivery_status = 'DELIVERED') LIMIT #{limit}")
     int markStaleCardHeldMessagesReviewRequired(@Param("limit") int limit);
 
     @Update("UPDATE xianyu_goods_order SET delivery_message_state = 1, delivery_message_next_retry_time = NULL WHERE id = #{id}")
@@ -301,9 +300,8 @@ public interface XianyuGoodsOrderMapper {
 
     @Select("SELECT o.* FROM xianyu_goods_order o WHERE o.delivery_message_content IS NOT NULL AND (" +
             "(o.delivery_message_state = 3 AND EXISTS (SELECT 1 FROM xianyu_kami_usage_record r " +
-            "JOIN xianyu_kami_item i ON i.id = r.kami_item_id WHERE r.xianyu_account_id = o.xianyu_account_id " +
-            "AND r.order_id = o.order_id AND r.delivery_status = 'DELIVERED' " +
-            "AND i.order_id = o.order_id AND i.status = 1)) OR " +
+            "WHERE r.xianyu_account_id = o.xianyu_account_id " +
+            "AND r.order_id = o.order_id AND r.delivery_status = 'DELIVERED')) OR " +
             "o.delivery_message_state = 5) " +
             "ORDER BY o.create_time ASC LIMIT #{limit}")
     List<XianyuGoodsOrder> selectCommittedHeldDeliveryMessages(@Param("limit") int limit);
