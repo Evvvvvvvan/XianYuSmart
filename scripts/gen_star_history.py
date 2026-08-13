@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import matplotlib
@@ -33,6 +33,12 @@ THEMES = {
     "light": dict(bg="#ffffff", text="#1f2328", subtext="#6a737d", grid="#dfe3e8"),
     "dark": dict(bg="#0d1117", text="#e6edf3", subtext="#8b949e", grid="#272d35"),
 }
+
+# 限制横轴标签数量，避免日期范围增长后文字重叠。
+MAX_XTICKS = 12
+DAY_STEPS = (1, 2, 3, 7, 14)
+MONTH_STEPS = (1, 2, 3, 6)
+YEAR_STEPS = (1, 2, 5, 10)
 
 
 def get_token() -> str | None:
@@ -114,6 +120,108 @@ def build_series(starred: list[str], start: datetime) -> tuple[np.ndarray, np.nd
     x = [mdates.date2num(start)] + [mdates.date2num(value) for value in visible_times]
     y = [base] + [base + index for index in range(1, len(visible_times) + 1)]
     return np.array(x), np.array(y)
+
+
+def pick_xticks(x_start: float, x_end: float) -> tuple[list[float], str]:
+    """按时间跨度选择横轴刻度，并保留最新日期。"""
+    start = mdates.num2date(x_start)
+    end = mdates.num2date(x_end)
+    span_days = x_end - x_start
+
+    for step in DAY_STEPS:
+        if span_days / step <= MAX_XTICKS:
+            anchor = end.replace(hour=0, minute=0, second=0, microsecond=0)
+            ticks = []
+            while (value := mdates.date2num(anchor)) >= x_start:
+                ticks.append(value)
+                anchor -= timedelta(days=step)
+            date_format = "day-year" if start.year != end.year else "day"
+            return sorted(ticks), date_format
+
+    span_months = (end.year - start.year) * 12 + end.month - start.month
+    for step in MONTH_STEPS:
+        if span_months / step <= MAX_XTICKS:
+            year = end.year
+            month = end.month
+            ticks = []
+            while (
+                value := mdates.date2num(
+                    end.replace(
+                        year=year,
+                        month=month,
+                        day=1,
+                        hour=0,
+                        minute=0,
+                        second=0,
+                        microsecond=0,
+                    )
+                )
+            ) >= x_start:
+                ticks.append(value)
+                month -= step
+                while month < 1:
+                    month += 12
+                    year -= 1
+            date_format = "month-year" if start.year != end.year else "month"
+            return sorted(ticks), date_format
+
+    span_years = end.year - start.year
+    step = next(
+        (value for value in YEAR_STEPS if span_years / value <= MAX_XTICKS),
+        max(1, -(-span_years // MAX_XTICKS)),
+    )
+    year = end.year
+    ticks = []
+    while (
+        value := mdates.date2num(
+            end.replace(
+                year=year,
+                month=1,
+                day=1,
+                hour=0,
+                minute=0,
+                second=0,
+                microsecond=0,
+            )
+        )
+    ) >= x_start:
+        ticks.append(value)
+        year -= step
+    return sorted(ticks), "year"
+
+
+def format_xtick(value: float, date_format: str) -> str:
+    """使用跨平台格式输出横轴日期。"""
+    date = mdates.num2date(value)
+    if date_format == "day":
+        return f"{date:%b} {date.day}"
+    if date_format == "day-year":
+        return f"{date:%b} {date.day}, {date.year}"
+    if date_format == "month":
+        return f"{date:%b}"
+    if date_format == "month-year":
+        return f"{date:%b} {date.year}"
+    return str(date.year)
+
+
+def thin_xticklabels(figure, axes, minimum_gap: float = 14.0) -> None:
+    """按实际渲染宽度继续精简标签，并保留最新日期。"""
+    ticks = list(axes.get_xticks())
+    for interval in range(1, max(len(ticks), 1) + 1):
+        visible_ticks = ticks[::-1][::interval][::-1]
+        axes.set_xticks(visible_ticks)
+        figure.canvas.draw()
+        renderer = figure.canvas.get_renderer()
+        boxes = [
+            label.get_window_extent(renderer=renderer)
+            for label in axes.get_xticklabels()
+            if label.get_text()
+        ]
+        if all(
+            next_box.x0 - current_box.x1 >= minimum_gap
+            for current_box, next_box in zip(boxes, boxes[1:])
+        ):
+            return
 
 
 def draw(
@@ -204,9 +312,14 @@ def draw(
         axes.spines[side].set_visible(False)
     axes.spines["bottom"].set_color(grid)
     axes.tick_params(axis="both", length=0, labelsize=11.5, colors=subtext, pad=8)
-    axes.xaxis.set_major_locator(mdates.DayLocator())
-    axes.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    ticks, date_format = pick_xticks(*axes.get_xlim())
+    axes.set_xticks(ticks)
+    axes.xaxis.set_major_formatter(
+        FuncFormatter(lambda value, _position: format_xtick(value, date_format))
+    )
     axes.yaxis.set_major_formatter(FuncFormatter(lambda value, _position: f"{int(value):,}"))
+
+    thin_xticklabels(figure, axes)
 
     figure.savefig(output, facecolor=background, bbox_inches="tight", pad_inches=0.3)
     plt.close(figure)

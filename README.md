@@ -441,7 +441,7 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 
 下载、复制、修改、部署、运行或分发本项目，即表示已阅读并接受 [完整使用限制与免责声明](DISCLAIMER.md)。
 
-## Star History
+## ⭐ Star History
 
 <a href="docs/assets/star-history-light.png">
   <picture>
@@ -450,4 +450,4 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
     <img alt="XianYuSmart Star History Chart" src="docs/assets/star-history-light.png" width="100%" />
   </picture>
 </a>
-<sub>由 [`scripts/gen_star_history.py`](scripts/gen_star_history.py) 生成，[GitHub Actions](.github/workflows/star-history.yml) 每日自动更新 · 点击图片查看大图</sub>
+<sub>由 <a href="scripts/gen_star_history.py"><code>scripts/gen_star_history.py</code></a> 生成，<a href=".github/workflows/star-history.yml">GitHub Actions</a> 每日自动更新 · 点击图片查看大图</sub>
