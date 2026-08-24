@@ -37,6 +37,7 @@ const {
   selectedSkuId,
   skuConfigs,
   skuLoading,
+  skuSyncing,
   skuLoadError,
   configLoading,
   configLoadError,
@@ -79,6 +80,7 @@ const {
   handleDialogCancel,
   handleSkuChange,
   retrySkuLoad,
+  syncCurrentGoodsSku,
   handleGoodsScroll,
   goBackToGoods,
   toggleOnlyOnSale,
@@ -369,15 +371,21 @@ onMounted(() => {
           </div>
 
           <!-- SKU Selector -->
-          <div v-if="skuLoading || skuLoadError || configLoadError || hasSku" class="ad__config-section ad__config-section--no-pad-bottom">
+          <div class="ad__config-section ad__config-section--no-pad-bottom">
             <div class="ad__sku-heading">
               <div class="ad__config-section-title">{{ hasSku ? '选择规格' : '配置状态' }}</div>
               <span v-if="hasSku" class="ad__sku-progress">已配置 {{ configuredSkuCount }} / {{ skuList.length }}</span>
             </div>
-            <div v-if="skuLoading || configLoading" class="ad__sku-state">正在加载规格配置…</div>
+            <div v-if="skuLoading || configLoading || skuSyncing" class="ad__sku-state">
+              {{ skuSyncing ? '正在从闲鱼同步商品规格…' : '正在加载规格配置…' }}
+            </div>
             <div v-else-if="skuLoadError || configLoadError" class="ad__sku-state ad__sku-state--error">
               <span>{{ skuLoadError || configLoadError }}</span>
               <button type="button" @click="retrySkuLoad">重新加载</button>
+            </div>
+            <div v-else-if="!hasSku" class="ad__sku-state">
+              <span>未检测到商品规格；多规格商品需要先同步，单规格商品可直接配置。</span>
+              <button type="button" @click="syncCurrentGoodsSku">立即同步规格</button>
             </div>
             <div v-else class="ad__sku-tabs">
               <button
@@ -516,6 +524,9 @@ onMounted(() => {
             </div>
             <div v-if="!configForm.voucherDeliveryEnabled && !configForm.chatDeliveryEnabled" class="ad__limit-note">
               至少开启一个发送渠道。
+            </div>
+            <div v-else-if="configForm.voucherDeliveryEnabled && !configForm.chatDeliveryEnabled" class="ad__limit-note">
+              当前只会写入发货凭证，不会向买家发送私聊；需要双通道发货时请开启“买家私聊”。
             </div>
             <div v-else-if="configForm.voucherDeliveryEnabled" class="ad__limit-note">
               发货凭证限制最终内容不超过200字；内容较长时可只开启买家私聊。

@@ -43,6 +43,7 @@ const {
   handleStatusFilter,
   handlePageChange,
   viewDetail,
+  configureDelivery,
   editGoods,
   saveGoodsInfo,
   openPlatformGoods,
@@ -479,6 +480,7 @@ const getPageButtons = () => {
           :goods-list="goodsList"
           :loading="loading"
           @view="viewDetail"
+          @config-delivery="configureDelivery"
           @edit="editGoods"
           @sync="syncSingleGoods"
           @toggle-listing-status="toggleListingStatus"

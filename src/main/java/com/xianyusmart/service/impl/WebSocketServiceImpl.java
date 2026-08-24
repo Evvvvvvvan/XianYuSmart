@@ -161,7 +161,7 @@ public class WebSocketServiceImpl implements WebSocketService {
             // 检查是否已经连接
             if (webSocketClients.containsKey(accountId)) {
                 XianyuWebSocketClient existingClient = webSocketClients.get(accountId);
-                if (existingClient.isConnected()) {
+                if (isConnectionHealthy(accountId, existingClient)) {
                     log.info("WebSocket已连接: accountId={}", accountId);
                     return true;
                 } else {
@@ -229,7 +229,7 @@ public class WebSocketServiceImpl implements WebSocketService {
             // 检查是否已经连接
             if (webSocketClients.containsKey(accountId)) {
                 XianyuWebSocketClient existingClient = webSocketClients.get(accountId);
-                if (existingClient.isConnected()) {
+                if (isConnectionHealthy(accountId, existingClient)) {
                     log.info("【账号{}】WebSocket已连接", accountId);
                     return true;
                 } else {
@@ -524,7 +524,19 @@ public class WebSocketServiceImpl implements WebSocketService {
     @Override
     public boolean isConnected(Long accountId) {
         XianyuWebSocketClient client = webSocketClients.get(accountId);
-        return client != null && client.isConnected();
+        return isConnectionHealthy(accountId, client);
+    }
+
+    private boolean isConnectionHealthy(Long accountId, XianyuWebSocketClient client) {
+        if (client == null || !client.isConnected()) {
+            return false;
+        }
+        Long lastResponseTime = lastHeartbeatResponseTimes.get(accountId);
+        if (lastResponseTime == null) {
+            return true;
+        }
+        long timeout = config.getHeartbeatInterval() + config.getHeartbeatTimeout();
+        return System.currentTimeMillis() / 1000 - lastResponseTime <= timeout;
     }
 
     @Override
@@ -763,6 +775,8 @@ public class WebSocketServiceImpl implements WebSocketService {
      */
     private void handleConnectionLost(Long accountId) {
         log.warn("【账号{}】检测到连接丢失（心跳超时），准备重连...", accountId);
+        // 心跳超时后立即移除失活客户端，使状态接口和消息通道同步反映掉线。
+        stopWebSocketInternal(accountId, false);
         scheduleReconnect(accountId, config.getReconnectDelay(), false);
     }
     
@@ -953,7 +967,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                 return false;
             }
             
-            if (!client.isConnected()) {
+            if (!isConnected(accountId)) {
                 log.error("WebSocket未连接: accountId={}", accountId);
                 return false;
             }
@@ -979,7 +993,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                 return false;
             }
             
-            if (!client.isConnected()) {
+            if (!isConnected(accountId)) {
                 log.error("WebSocket未连接: accountId={}", accountId);
                 return false;
             }
@@ -1003,7 +1017,7 @@ public class WebSocketServiceImpl implements WebSocketService {
     @Override
     public java.util.List<Map<String, Object>> listConversationHistory(Long accountId, String cid, int maxMessages) {
         XianyuWebSocketClient client = webSocketClients.get(accountId);
-        if (client == null || !client.isConnected()) {
+        if (client == null || !isConnected(accountId)) {
             throw new IllegalStateException("账号实时连接未建立，请先恢复连接");
         }
         return client.listConversationHistory(cid, maxMessages);
@@ -1021,7 +1035,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                 return false;
             }
             
-            if (!client.isConnected()) {
+            if (!isConnected(accountId)) {
                 log.error("WebSocket未连接: accountId={}", accountId);
                 return false;
             }
@@ -1047,7 +1061,7 @@ public class WebSocketServiceImpl implements WebSocketService {
                 return false;
             }
 
-            if (!client.isConnected()) {
+            if (!isConnected(accountId)) {
                 log.error("WebSocket未连接: accountId={}", accountId);
                 return false;
             }

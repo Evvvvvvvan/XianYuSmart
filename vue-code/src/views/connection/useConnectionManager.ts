@@ -50,7 +50,8 @@ export function useConnectionManager() {
       const response = await getAccountList()
       if (response.code === 0 || response.code === 200) {
         accounts.value = response.data?.accounts || []
-        loadAllConnectionStatuses()
+        await loadAllConnectionStatuses()
+        startAutoRefresh()
       } else {
         throw new Error(response.msg || '获取账号列表失败')
       }
@@ -73,6 +74,9 @@ export function useConnectionManager() {
         if (response.code === 0 || response.code === 200) {
           const status = response.data as ConnectionStatus
           newMap.set(accountId, status)
+          if (selectedAccountId.value === accountId) {
+            connectionStatus.value = status
+          }
         }
       } catch {
       }
@@ -120,9 +124,7 @@ export function useConnectionManager() {
   const startAutoRefresh = () => {
     stopAutoRefresh()
     statusInterval = window.setInterval(() => {
-      if (selectedAccountId.value) {
-        loadConnectionStatus(selectedAccountId.value, true)
-      }
+      loadAllConnectionStatuses()
     }, 10000) // 从5000ms延长到10000ms（10秒）
   }
 
