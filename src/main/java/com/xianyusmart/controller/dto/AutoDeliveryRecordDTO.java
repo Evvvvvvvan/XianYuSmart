@@ -45,6 +45,11 @@ public class AutoDeliveryRecordDTO {
     private String deliveryStatus;
 
     /**
+     * 私聊发送状态：null-未启用，1-已发送，其他-待发送或重试中
+     */
+    private Integer deliveryMessageState;
+
+    /**
      * 履约失败原因
      */
     private String failReason;

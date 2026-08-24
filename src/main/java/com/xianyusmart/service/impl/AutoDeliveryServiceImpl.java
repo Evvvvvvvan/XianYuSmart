@@ -283,6 +283,8 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             dto.setContent(record.getContent());
             dto.setState(record.getState());
             dto.setDeliveryStatus(record.getDeliveryStatus());
+            dto.setDeliveryMessageState(record.getDeliveryMessageContent() == null
+                    ? null : record.getDeliveryMessageState());
             dto.setFailReason(record.getFailReason() != null && !record.getFailReason().isBlank()
                     ? record.getFailReason() : record.getLastErrorMessage());
             dto.setConfirmState(record.getConfirmState());

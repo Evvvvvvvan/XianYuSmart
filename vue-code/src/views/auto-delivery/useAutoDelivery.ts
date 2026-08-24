@@ -1,7 +1,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getAccountList } from '@/api/account'
-import { getGoodsList, updateAutoDeliveryStatus, updateAutoConfirmShipment } from '@/api/goods'
+import { getGoodsList, syncSingleItem, updateAutoDeliveryStatus, updateAutoConfirmShipment } from '@/api/goods'
 import {
   getAutoDeliveryConfig,
   saveOrUpdateAutoDeliveryConfig,
@@ -70,6 +70,7 @@ export function useAutoDelivery() {
   const selectedSkuId = ref<string | null>(null)
   const skuConfigs = ref<Map<string, AutoDeliveryConfig>>(new Map())
   const skuLoading = ref(false)
+  const skuSyncing = ref(false)
   const skuLoadError = ref('')
   const configLoading = ref(false)
   const configLoadError = ref('')
@@ -532,6 +533,38 @@ export function useAutoDelivery() {
     await loadConfig()
   }
 
+  const syncCurrentGoodsSku = async () => {
+    if (!selectedGoods.value || !selectedAccountId.value || skuSyncing.value) return
+    const accountId = selectedAccountId.value
+    const goodsId = selectedGoods.value.item.xyGoodId
+    skuSyncing.value = true
+    try {
+      const response = await syncSingleItem({
+        xianyuAccountId: accountId,
+        xyGoodsId: goodsId
+      })
+      if (response.code !== 0 && response.code !== 200) {
+        throw new Error(response.msg || '规格同步失败')
+      }
+      if (!isCurrentGoods(accountId, goodsId)) return
+      await retrySkuLoad()
+      if (!isCurrentGoods(accountId, goodsId)) return
+      if (skuList.value.length > 0) {
+        selectedGoods.value.item.skuCount = skuList.value.length
+        const goods = goodsList.value.find(item => item.item.xyGoodId === goodsId)
+        if (goods) goods.item.skuCount = skuList.value.length
+        showSuccess(`已同步 ${skuList.value.length} 个商品规格`)
+      } else {
+        showInfo('平台暂未返回规格；单规格商品可直接配置，多规格商品请稍后重试')
+      }
+    } catch (error: any) {
+      console.error('同步商品规格失败:', error)
+      if (!error.messageShown) showError(error?.message || '规格同步失败，请重试')
+    } finally {
+      skuSyncing.value = false
+    }
+  }
+
   const loadKamiConfigOptions = async () => {
     if (!selectedAccountId.value) return
     try {
@@ -653,6 +686,10 @@ export function useAutoDelivery() {
       showInfo('请先选择商品规格')
       return
     }
+    if (selectedGoods.value.item.skuCount > 1 && !hasSku.value) {
+      showInfo('该商品存在多个规格，请先同步规格后再保存')
+      return
+    }
 
     if (hasFixedDelivery.value && !configForm.value.fixedTemplateId) {
       showInfo('请选择固定内容模板')
@@ -737,6 +774,10 @@ export function useAutoDelivery() {
   const toggleAutoDelivery = async (value: boolean) => {
     if (!selectedGoods.value || !selectedAccountId.value) {
       showInfo('请先选择商品')
+      return
+    }
+    if (value && selectedGoods.value.item.skuCount > 1 && !hasSku.value) {
+      showInfo('该商品存在多个规格，请先同步规格并逐个配置')
       return
     }
 
@@ -1012,6 +1053,7 @@ export function useAutoDelivery() {
     selectedSkuId,
     skuConfigs,
     skuLoading,
+    skuSyncing,
     skuLoadError,
     configLoading,
     configLoadError,
@@ -1068,6 +1110,7 @@ export function useAutoDelivery() {
     handleDialogCancel,
     handleSkuChange,
     retrySkuLoad,
+    syncCurrentGoodsSku,
     copyApiUrl,
     copyApiParams,
     copyConfirmShipmentUrl,

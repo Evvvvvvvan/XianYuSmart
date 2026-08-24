@@ -173,10 +173,7 @@ public class ItemDetailSyncServiceImpl implements ItemDetailSyncService {
                 return false;
             }
 
-            JsonNode skuDataNode = itemDONode.get("skuList");
-            if (skuDataNode == null || !skuDataNode.isArray()) {
-                skuDataNode = itemDONode.get("idleItemSkuList");
-            }
+            JsonNode skuDataNode = ItemDetailUtils.findSkuListNode(itemDONode);
             List<XianyuGoodsSku> skuList = ItemDetailUtils.extractSkuList(response);
             if (!skuList.isEmpty()) {
                 goodsSkuService.saveSkus(itemId, accountId, skuList);

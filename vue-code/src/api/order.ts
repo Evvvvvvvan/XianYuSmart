@@ -20,6 +20,7 @@ export interface DeliveryRecordVO {
   content?: string
   state: number
   deliveryStatus?: string
+  deliveryMessageState?: number | null
   failReason?: string
   confirmState: number
   rateStatus: number

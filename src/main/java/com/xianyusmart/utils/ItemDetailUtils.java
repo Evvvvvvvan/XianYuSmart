@@ -24,13 +24,7 @@ public class ItemDetailUtils {
         try {
             JsonNode rootNode = objectMapper.readTree(detailJson);
             
-            JsonNode itemDONode = rootNode.get("itemDO");
-            if (itemDONode == null || itemDONode.isNull()) {
-                JsonNode dataNode = rootNode.get("data");
-                if (dataNode != null && !dataNode.isNull()) {
-                    itemDONode = dataNode.get("itemDO");
-                }
-            }
+            JsonNode itemDONode = findItemNode(rootNode);
             
             if (itemDONode != null && !itemDONode.isNull()) {
                 JsonNode descNode = itemDONode.get("desc");
@@ -62,23 +56,14 @@ public class ItemDetailUtils {
         try {
             JsonNode rootNode = objectMapper.readTree(detailJson);
 
-            JsonNode itemDONode = rootNode.get("itemDO");
-            if (itemDONode == null || itemDONode.isNull()) {
-                JsonNode dataNode = rootNode.get("data");
-                if (dataNode != null && !dataNode.isNull()) {
-                    itemDONode = dataNode.get("itemDO");
-                }
-            }
+            JsonNode itemDONode = findItemNode(rootNode);
 
             if (itemDONode == null || itemDONode.isNull()) {
                 log.warn("未找到itemDO字段，无法解析SKU");
                 return result;
             }
 
-            JsonNode skuListNode = itemDONode.get("skuList");
-            if (skuListNode == null || !skuListNode.isArray()) {
-                skuListNode = itemDONode.get("idleItemSkuList");
-            }
+            JsonNode skuListNode = findSkuListNode(itemDONode);
 
             if (skuListNode == null || !skuListNode.isArray() || skuListNode.size() == 0) {
                 log.info("商品无SKU数据");
@@ -88,11 +73,15 @@ public class ItemDetailUtils {
             for (JsonNode skuNode : skuListNode) {
                 XianyuGoodsSku sku = new XianyuGoodsSku();
 
-                if (skuNode.has("skuId") && !skuNode.get("skuId").isNull()) {
-                    sku.setSkuId(String.valueOf(skuNode.get("skuId").asLong()));
+                String skuId = skuNode.path("skuId").asText("").trim();
+                if (skuId.isEmpty()) {
+                    continue;
                 }
-                if (skuNode.has("price") && !skuNode.get("price").isNull()) {
-                    sku.setPrice(skuNode.get("price").asInt());
+                sku.setSkuId(skuId);
+                JsonNode priceNode = skuNode.hasNonNull("price")
+                        ? skuNode.get("price") : skuNode.get("priceInCent");
+                if (priceNode != null && !priceNode.isNull()) {
+                    sku.setPrice(priceNode.asInt());
                 }
                 if (skuNode.has("quantity") && !skuNode.get("quantity").isNull()) {
                     sku.setQuantity(skuNode.get("quantity").asInt());
@@ -156,22 +145,13 @@ public class ItemDetailUtils {
         try {
             JsonNode rootNode = objectMapper.readTree(detailJson);
 
-            JsonNode itemDONode = rootNode.get("itemDO");
-            if (itemDONode == null || itemDONode.isNull()) {
-                JsonNode dataNode = rootNode.get("data");
-                if (dataNode != null && !dataNode.isNull()) {
-                    itemDONode = dataNode.get("itemDO");
-                }
-            }
+            JsonNode itemDONode = findItemNode(rootNode);
 
             if (itemDONode == null || itemDONode.isNull()) {
                 return result;
             }
 
-            JsonNode skuListNode = itemDONode.get("skuList");
-            if (skuListNode == null || !skuListNode.isArray()) {
-                skuListNode = itemDONode.get("idleItemSkuList");
-            }
+            JsonNode skuListNode = findSkuListNode(itemDONode);
 
             if (skuListNode == null || !skuListNode.isArray() || skuListNode.size() == 0) {
                 return result;
@@ -206,5 +186,62 @@ public class ItemDetailUtils {
             log.error("解析SKU属性维度失败: {}", e.getMessage());
             return result;
         }
+    }
+
+    public static JsonNode findSkuListNode(JsonNode itemDONode) {
+        if (itemDONode == null || itemDONode.isNull()) {
+            return null;
+        }
+        JsonNode emptySkuListNode = null;
+        JsonNode skuListNode = itemDONode.get("skuList");
+        if (skuListNode != null && skuListNode.isArray()) {
+            if (!skuListNode.isEmpty()) {
+                return skuListNode;
+            }
+            emptySkuListNode = skuListNode;
+        }
+        skuListNode = itemDONode.get("idleItemSkuList");
+        if (skuListNode != null && skuListNode.isArray()) {
+            if (!skuListNode.isEmpty()) {
+                return skuListNode;
+            }
+            emptySkuListNode = skuListNode;
+        }
+        // 平台响应层级可能调整，按SKU元素特征定位数组，避免依赖固定包装字段。
+        JsonNode nestedSkuListNode = findSkuArray(itemDONode, 0);
+        return nestedSkuListNode != null ? nestedSkuListNode : emptySkuListNode;
+    }
+
+    private static JsonNode findItemNode(JsonNode rootNode) {
+        JsonNode itemDONode = rootNode.get("itemDO");
+        if (itemDONode == null || itemDONode.isNull()) {
+            JsonNode dataNode = rootNode.get("data");
+            if (dataNode != null && !dataNode.isNull()) {
+                itemDONode = dataNode.get("itemDO");
+            }
+        }
+        return itemDONode;
+    }
+
+    private static JsonNode findSkuArray(JsonNode node, int depth) {
+        if (node == null || depth > 8) {
+            return null;
+        }
+        if (node.isArray()) {
+            for (JsonNode child : node) {
+                if (child.isObject() && child.hasNonNull("skuId")) {
+                    return node;
+                }
+            }
+        }
+        if (node.isContainerNode()) {
+            for (JsonNode child : node) {
+                JsonNode result = findSkuArray(child, depth + 1);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+        return null;
     }
 }

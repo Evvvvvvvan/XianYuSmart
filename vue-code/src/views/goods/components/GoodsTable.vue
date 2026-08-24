@@ -9,6 +9,7 @@ import IconImage from '@/components/icons/IconImage.vue'
 import IconCheck from '@/components/icons/IconCheck.vue'
 import IconSparkle from '@/components/icons/IconSparkle.vue'
 import IconEdit from '@/components/icons/IconEdit.vue'
+import IconTruck from '@/components/icons/IconTruck.vue'
 
 interface Props {
   goodsList: GoodsItemWithConfig[]
@@ -17,6 +18,7 @@ interface Props {
 
 interface Emits {
   (e: 'view', xyGoodId: string): void
+  (e: 'configDelivery', item: GoodsItemWithConfig): void
   (e: 'sync', xyGoodId: string): void
   (e: 'edit', item: GoodsItemWithConfig): void
   (e: 'toggleAutoPolish', item: GoodsItemWithConfig, value: boolean): void
@@ -127,6 +129,13 @@ const handleImgError = (e: Event) => {
 
       <!-- 底部操作栏 -->
       <div class="goods-card__actions">
+        <button
+          class="goods-card__action goods-card__action--config"
+          @click.stop="emit('configDelivery', item)"
+        >
+          <IconTruck />
+          <span>发货配置</span>
+        </button>
         <button
           class="goods-card__action goods-card__action--edit"
           @click.stop="emit('edit', item)"
@@ -253,6 +262,10 @@ const handleImgError = (e: Event) => {
             </button>
           </td>
           <td class="table__td table__td--actions">
+            <button class="table__action table__action--config" @click="emit('configDelivery', item)">
+              <IconTruck />
+              <span>发货配置</span>
+            </button>
             <button class="table__action table__action--edit" @click="emit('edit', item)">
               <IconEdit />
               <span>编辑</span>

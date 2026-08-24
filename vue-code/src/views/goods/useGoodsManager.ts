@@ -1,4 +1,5 @@
 import { ref, reactive, computed, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { getAccountList } from '@/api/account'
 import {
   getGoodsList,
@@ -20,6 +21,7 @@ import type { GoodsEditForm } from './goods-edit'
 import { resolvePlatformItemUrl } from './goods-edit'
 
 export function useGoodsManager() {
+  const router = useRouter()
   const loading = ref(false)
   const refreshing = ref(false)
   const accounts = ref<Account[]>([])
@@ -193,6 +195,17 @@ export function useGoodsManager() {
   const viewDetail = (xyGoodId: string) => {
     selectedGoodsId.value = xyGoodId
     dialogs.detail = true
+  }
+
+  const configureDelivery = (item: GoodsItemWithConfig) => {
+    if (!selectedAccountId.value) return
+    router.push({
+      path: '/auto-delivery',
+      query: {
+        accountId: String(selectedAccountId.value),
+        goodsId: item.item.xyGoodId
+      }
+    })
   }
 
   const editGoods = (item: GoodsItemWithConfig) => {
@@ -387,6 +400,7 @@ export function useGoodsManager() {
     handleStatusFilter,
     handlePageChange,
     viewDetail,
+    configureDelivery,
     editGoods,
     saveGoodsInfo,
     openPlatformGoods,

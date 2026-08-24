@@ -126,6 +126,9 @@ const getStatusText = (state: number) => {
 
 const getDeliveryMeta = (order: DeliveryRecordItem) => getDeliveryStatusMeta(order.deliveryStatus, order.state)
 const getRateMeta = (order: DeliveryRecordItem) => getRateStatusMeta(order)
+const getChatMeta = (state?: number | null) => state === 1
+  ? { text: '私聊已发送', color: '#30D158', background: 'rgba(48,209,88,.2)' }
+  : { text: '私聊待重试', color: '#FF9F0A', background: 'rgba(255,159,10,.15)' }
 const showFailReason = (order: DeliveryRecordItem) => Boolean(order.failReason)
   && shouldShowDeliveryError(order.deliveryStatus, order.state)
 const isRetryable = (order: DeliveryRecordItem) =>
@@ -164,6 +167,16 @@ const getConfirmBg = (state: number) => {
             {{ getDeliveryMeta(order).text }}
           </span>
           <span v-if="showFailReason(order)" class="order-card__fail-reason">{{ order.failReason }}</span>
+          <span
+            v-if="order.deliveryMessageState != null"
+            class="order-card__status"
+            :style="{
+              color: getChatMeta(order.deliveryMessageState).color,
+              background: getChatMeta(order.deliveryMessageState).background
+            }"
+          >
+            {{ getChatMeta(order.deliveryMessageState).text }}
+          </span>
           <span
             class="order-card__status"
             :style="{
@@ -315,6 +328,13 @@ const getConfirmBg = (state: number) => {
             >
               {{ getDeliveryMeta(order).text }}
             </span>
+            <small
+              v-if="order.deliveryMessageState != null"
+              class="chat-status"
+              :style="{ color: getChatMeta(order.deliveryMessageState).color }"
+            >
+              {{ getChatMeta(order.deliveryMessageState).text }}
+            </small>
             <span v-if="showFailReason(order)" class="fail-reason" :title="order.failReason">{{ order.failReason }}</span>
           </td>
           <td class="table__td table__td--center">
@@ -845,6 +865,12 @@ const getConfirmBg = (state: number) => {
   padding: 3px 10px;
   border-radius: 20px;
   line-height: 1;
+}
+
+.chat-status {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
 }
 
 .fail-reason {

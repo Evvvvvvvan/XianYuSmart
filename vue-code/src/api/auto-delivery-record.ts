@@ -10,6 +10,7 @@ export interface AutoDeliveryRecord {
   buyerUserName?: string;
   content?: string;
   state: number; // 1-成功，-1-失败，0-待发货
+  deliveryMessageState?: number | null;
   failReason?: string;
   orderId?: string;
   createTime: string;

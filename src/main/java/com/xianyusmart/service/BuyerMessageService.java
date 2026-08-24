@@ -256,11 +256,17 @@ public class BuyerMessageService {
 
     private boolean sendMessage(XianyuGoodsOrder order, String message) {
         String recipientId = resolveRecipientId(order);
-        if (recipientId == null || !webSocketService.isConnected(order.getXianyuAccountId())) {
+        if (recipientId == null) {
+            return false;
+        }
+        Long accountId = order.getXianyuAccountId();
+        // 私聊发送前主动恢复实时连接，避免凭证成功后消息长期停留在重试队列。
+        if (!webSocketService.isConnected(accountId)
+                && (!webSocketService.ensureConnected(accountId) || !webSocketService.isConnected(accountId))) {
             return false;
         }
         boolean success = webSocketService.sendMessageWithResult(
-                order.getXianyuAccountId(), recipientId, recipientId, message);
+                accountId, recipientId, recipientId, message);
         if (success) {
             sentMessageSaveService.saveAiAssistantReply(
                     order.getXianyuAccountId(), recipientId, recipientId, message, order.getXyGoodsId());
