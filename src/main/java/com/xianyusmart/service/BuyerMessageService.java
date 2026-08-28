@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xianyusmart.context.TenantContext;
 import com.xianyusmart.entity.XianyuGoodsAutoDeliveryConfig;
 import com.xianyusmart.entity.XianyuGoodsOrder;
+import com.xianyusmart.event.DeliveryMessageSentEvent;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -29,15 +31,18 @@ public class BuyerMessageService {
     private final SentMessageSaveService sentMessageSaveService;
     private final XianyuGoodsOrderMapper orderMapper;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public BuyerMessageService(WebSocketService webSocketService,
                                SentMessageSaveService sentMessageSaveService,
                                XianyuGoodsOrderMapper orderMapper,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               ApplicationEventPublisher eventPublisher) {
         this.webSocketService = webSocketService;
         this.sentMessageSaveService = sentMessageSaveService;
         this.orderMapper = orderMapper;
         this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -248,6 +253,9 @@ public class BuyerMessageService {
         boolean success = sendMessage(order, message);
         if (success) {
             orderMapper.markDeliveryMessageSent(order.getId());
+            order.setDeliveryMessageState(1);
+            // 立即发送和重试发送共用成功事件，保证后续平台确认不会遗漏。
+            eventPublisher.publishEvent(new DeliveryMessageSentEvent(order));
             return true;
         }
         deferDeliveryMessage(order);

@@ -5,6 +5,7 @@ import com.xianyusmart.entity.XianyuGoodsOrder;
 import com.xianyusmart.entity.XianyuGoodsAutoReplyRecord;
 import com.xianyusmart.entity.XianyuGoodsConfig;
 import com.xianyusmart.enums.DeliveryStatus;
+import com.xianyusmart.event.DeliveryMessageSentEvent;
 import com.xianyusmart.mapper.XianyuGoodsAutoDeliveryConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsConfigMapper;
 import com.xianyusmart.mapper.XianyuGoodsOrderMapper;
@@ -27,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -681,6 +683,29 @@ public class AutoDeliveryServiceImpl implements AutoDeliveryService {
             } catch (Exception e) {
                 log.error("【账号{}】自动发货图片[{}/{}]发送异常: xyGoodsId={}", accountId, i + 1, imageUrls.length, xyGoodsId, e);
             }
+        }
+    }
+
+    @EventListener
+    public void handleDeliveryMessageSent(DeliveryMessageSentEvent event) {
+        XianyuGoodsOrder order = event == null ? null : event.order();
+        if (order == null || order.getXianyuAccountId() == null || order.getXyGoodsId() == null
+                || order.getOrderId() == null || Integer.valueOf(1).equals(order.getConfirmState())) {
+            return;
+        }
+        try {
+            XianyuGoodsAutoDeliveryConfig config = resolveDeliveryConfig(
+                    order.getXianyuAccountId(), order.getXyGoodsId(), order.getSkuId());
+            if (config == null || !Integer.valueOf(0).equals(config.getVoucherDeliveryEnabled())
+                    || Integer.valueOf(0).equals(config.getChatDeliveryEnabled())
+                    || !Integer.valueOf(1).equals(config.getAutoConfirmShipment())) {
+                return;
+            }
+            // 私聊独立交付成功后再确认平台订单，避免卡密未送达时提前标记发货。
+            executeAutoConfirmShipment(order.getXianyuAccountId(), order.getOrderId());
+        } catch (Exception e) {
+            log.error("【账号{}】私聊交付后自动确认发货异常: orderId={}",
+                    order.getXianyuAccountId(), order.getOrderId(), e);
         }
     }
 
