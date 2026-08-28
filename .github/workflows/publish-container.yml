@@ -8,7 +8,7 @@ on:
       tag:
         description: Git tag to publish
         required: true
-        default: v2.0.6
+        default: v2.0.7
 
 permissions:
   contents: read
