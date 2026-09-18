@@ -62,7 +62,7 @@ RUN apt-get update \
 
 # 创建低权限运行用户和数据目录
 RUN groupadd --system xianyusmart && useradd --system --gid xianyusmart --home-dir /app xianyusmart \
-    && mkdir -p /app/data /app/logs \
+    && mkdir -p /app/data/pw-driver /app/logs \
     && chown -R xianyusmart:xianyusmart /app
 
 # 从构建阶段复制 JAR
@@ -77,6 +77,7 @@ ENV JAVA_OPTS="-XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -XX:+ExitOnOu
 ENV SERVER_PORT=12400
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_DRIVER_TMPDIR=/app/data/pw-driver
 
 USER xianyusmart
 
@@ -84,4 +85,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1:12400/actuator/health || exit 1
 
 # 启动命令
-ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -Dserver.port=${SERVER_PORT} -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "java ${JAVA_OPTS} -Dplaywright.driver.tmpdir=${PLAYWRIGHT_DRIVER_TMPDIR} -Dserver.port=${SERVER_PORT} -jar app.jar"]
