@@ -30,6 +30,7 @@ services:
     build:
       context: .
     image: ${APP_IMAGE:-xianyusmart:2.0.7}
+    init: true
     restart: unless-stopped
     depends_on:
       mysql:
@@ -48,6 +49,7 @@ services:
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
       DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-2}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=20 -XX:+ExitOnOutOfMemoryError}
+      PLAYWRIGHT_DRIVER_TMPDIR: ${PLAYWRIGHT_DRIVER_TMPDIR:-/app/data/pw-driver}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
       - "127.0.0.1:12400:12400"
