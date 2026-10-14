@@ -508,7 +508,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     static String browserFailureMessage(String stage, Exception exception) {
-        String rawMessage = exception == null ? null : exception.getMessage();
+        String rawMessage = causeChainSummary(exception);
         String normalized = rawMessage == null ? "" : rawMessage
                 .replaceAll("https?://\\S+", "验证地址")
                 .replaceAll("(?i)(cookie|token|authorization)[=:]\\S+", "$1=<redacted>")
@@ -533,6 +533,28 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                     : normalized;
         }
         return stage + "失败：" + reason;
+    }
+
+    private static String causeChainSummary(Throwable throwable) {
+        if (throwable == null) {
+            return "";
+        }
+        StringBuilder summary = new StringBuilder();
+        Throwable current = throwable;
+        int depth = 0;
+        while (current != null && depth < 5) {
+            String message = current.getMessage();
+            if (message != null && !message.isBlank()) {
+                if (summary.length() > 0) {
+                    summary.append(" | cause: ");
+                    summary.append(current.getClass().getSimpleName()).append(": ");
+                }
+                summary.append(message);
+            }
+            current = current.getCause();
+            depth++;
+        }
+        return summary.toString();
     }
 
     @Override
@@ -581,6 +603,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                         "--disable-blink-features=AutomationControlled",
                         "--disable-infobars",
                         "--disable-dev-shm-usage",
+                        "--no-sandbox",
                         "--no-first-run",
                         "--no-default-browser-check"));
     }
