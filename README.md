@@ -445,6 +445,16 @@ docker compose exec mysql mysqldump -uxianyusmart -p xianyusmart > xianyusmart.s
 
 下载、复制、修改、部署、运行或分发本项目，即表示已阅读并接受 [完整使用限制与免责声明](DISCLAIMER.md)。
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=evvvvvvvan%2Fxianyusmart&type=date&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=evvvvvvvan/xianyusmart&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=evvvvvvvan/xianyusmart&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=evvvvvvvan/xianyusmart&type=date&legend=top-left" />
+ </picture>
+</a>
+
 ## ⭐ Star History
 
 <a href="docs/assets/star-history-light.png">
