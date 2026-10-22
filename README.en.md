@@ -31,8 +31,13 @@ Issues, experience, and suggestions from real-world use help make XianYuSmart mo
     <td width="50%" align="center" valign="top">
       <strong>Join the WeChat Group</strong>
       <p>Discuss configuration, troubleshooting, and practical experience with maintainers and users, and stay informed about project progress. Feature requests, shared practices, and project contributions are all welcome.</p>
-      <img src="docs/assets/community/wechat-group-qr.jpg" width="360" alt="XianYuSmart WeChat group QR code">
-      <p><sub>The QR code expires periodically and will be updated in the repository</sub></p>
+      <img src="docs/assets/community/wechat-group-qr.webp" width="360" alt="XianYuSmart WeChat group QR code">
+      <p><sub>Group QR codes expire periodically. Use the contact option below to request a fresh invitation.</sub></p>
+      <hr>
+      <strong>Alternative: Add on WeChat</strong>
+      <p>If the group QR code has expired or does not work, scan the code below to add the contact on WeChat. Mention "XianYuSmart group" in the friend request to receive the latest group invitation.</p>
+      <img src="docs/assets/community/wechat-contact-qr.webp" width="220" alt="WeChat contact QR code, NullPointerException">
+      <p><sub>WeChat nickname: NullPointerException</sub></p>
     </td>
     <td width="50%" align="center" valign="top">
       <strong>Support the Project</strong>

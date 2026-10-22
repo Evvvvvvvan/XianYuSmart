@@ -31,8 +31,13 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
     <td width="50%" align="center" valign="top">
       <strong>加入微信群聊</strong>
       <p>与开发者和实际使用者交流配置、排错与使用经验，及时了解项目进展。欢迎提出需求、分享实践，也欢迎参与项目共建。</p>
-      <img src="docs/assets/community/wechat-group-qr.jpg" width="360" alt="XianYuSmart 微信群聊二维码">
-      <p><sub>二维码具有时效性，失效后将在仓库更新</sub></p>
+      <img src="docs/assets/community/wechat-group-qr.webp" width="360" alt="XianYuSmart 微信群聊二维码">
+      <p><sub>群二维码具有时效性，过期后可通过下方方式获取最新邀请</sub></p>
+      <hr>
+      <strong>备用入群方式 · 添加微信好友</strong>
+      <p>如果群聊二维码已过期或无法加入，可扫描下方二维码添加微信好友，备注「XianYuSmart 进群」，获取最新入群邀请。</p>
+      <img src="docs/assets/community/wechat-contact-qr.webp" width="220" alt="微信好友二维码，昵称 NullPointerException">
+      <p><sub>微信昵称：NullPointerException</sub></p>
     </td>
     <td width="50%" align="center" valign="top">
       <strong>赞赏项目</strong>
