@@ -28,21 +28,22 @@ Issues, experience, and suggestions from real-world use help make XianYuSmart mo
 
 <table>
   <tr>
-    <td width="50%" align="center" valign="top">
+    <td width="33%" align="center" valign="top">
       <strong>Join the WeChat Group</strong>
       <p>Discuss configuration, troubleshooting, and practical experience with maintainers and users, and stay informed about project progress. Feature requests, shared practices, and project contributions are all welcome.</p>
-      <img src="docs/assets/community/wechat-group-qr.webp" width="360" alt="XianYuSmart WeChat group QR code">
-      <p><sub>Group QR codes expire periodically. Use the contact option below to request a fresh invitation.</sub></p>
-      <hr>
+      <img src="docs/assets/community/wechat-group-qr.webp" width="220" alt="XianYuSmart WeChat group QR code">
+      <p><sub>Group QR codes expire periodically. Use the WeChat contact option to request a fresh invitation.</sub></p>
+    </td>
+    <td width="33%" align="center" valign="top">
       <strong>Alternative: Add on WeChat</strong>
       <p>If the group QR code has expired or does not work, scan the code below to add the contact on WeChat. Mention "XianYuSmart group" in the friend request to receive the latest group invitation.</p>
       <img src="docs/assets/community/wechat-contact-qr.webp" width="220" alt="WeChat contact QR code, NullPointerException">
       <p><sub>WeChat nickname: NullPointerException</sub></p>
     </td>
-    <td width="50%" align="center" valign="top">
+    <td width="33%" align="center" valign="top">
       <strong>Support the Project</strong>
       <p>Every contribution supports documentation improvements, compatibility verification, issue fixes, and continued maintenance. Any amount is an encouragement to keep the project moving forward.</p>
-      <img src="docs/assets/community/wechat-reward-qr.jpg" width="360" alt="XianYuSmart donation QR code">
+      <img src="docs/assets/community/wechat-reward-qr.jpg" width="220" alt="XianYuSmart donation QR code">
       <p><sub>Donations are entirely voluntary and do not include commercial services, feature priority, or any commitment</sub></p>
     </td>
   </tr>

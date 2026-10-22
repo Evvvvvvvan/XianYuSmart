@@ -28,21 +28,22 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 <table>
   <tr>
-    <td width="50%" align="center" valign="top">
+    <td width="33%" align="center" valign="top">
       <strong>加入微信群聊</strong>
       <p>与开发者和实际使用者交流配置、排错与使用经验，及时了解项目进展。欢迎提出需求、分享实践，也欢迎参与项目共建。</p>
-      <img src="docs/assets/community/wechat-group-qr.webp" width="360" alt="XianYuSmart 微信群聊二维码">
-      <p><sub>群二维码具有时效性，过期后可通过下方方式获取最新邀请</sub></p>
-      <hr>
+      <img src="docs/assets/community/wechat-group-qr.webp" width="220" alt="XianYuSmart 微信群聊二维码">
+      <p><sub>群二维码具有时效性，过期后可通过微信好友入口获取最新邀请</sub></p>
+    </td>
+    <td width="33%" align="center" valign="top">
       <strong>备用入群方式 · 添加微信好友</strong>
       <p>如果群聊二维码已过期或无法加入，可扫描下方二维码添加微信好友，备注「XianYuSmart 进群」，获取最新入群邀请。</p>
       <img src="docs/assets/community/wechat-contact-qr.webp" width="220" alt="微信好友二维码，昵称 NullPointerException">
       <p><sub>微信昵称：NullPointerException</sub></p>
     </td>
-    <td width="50%" align="center" valign="top">
+    <td width="33%" align="center" valign="top">
       <strong>赞赏项目</strong>
       <p>每一份支持都会转化为文档完善、兼容性验证、问题修复和持续维护的动力。金额不论多少，都是对项目继续向前的鼓励。</p>
-      <img src="docs/assets/community/wechat-reward-qr.jpg" width="360" alt="XianYuSmart 项目赞赏码">
+      <img src="docs/assets/community/wechat-reward-qr.jpg" width="220" alt="XianYuSmart 项目赞赏码">
       <p><sub>赞赏完全自愿，不对应商业服务、功能优先权或任何承诺</sub></p>
     </td>
   </tr>
