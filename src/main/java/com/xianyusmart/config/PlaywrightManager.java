@@ -13,8 +13,10 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Stream;
 
 @Slf4j
 @Component
@@ -61,6 +63,14 @@ public class PlaywrightManager {
 
     @PostConstruct
     public void init() {
+        String driverTmpDir = System.getProperty("playwright.driver.tmpdir");
+        if (driverTmpDir != null && !driverTmpDir.isBlank()) {
+            try {
+                Files.createDirectories(Path.of(driverTmpDir));
+            } catch (Exception e) {
+                throw new IllegalStateException("无法创建Playwright驱动目录: " + driverTmpDir, e);
+            }
+        }
         log.info("PlaywrightManager初始化，浏览器缓存目录: {}", BROWSER_CACHE_DIR);
     }
 
@@ -105,7 +115,8 @@ public class PlaywrightManager {
             }
             this.playwright = Playwright.create();
             BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
-                    .setHeadless(true);
+                    .setHeadless(true)
+                    .setArgs(List.of("--no-sandbox", "--disable-dev-shm-usage"));
             this.browser = this.playwright.chromium().launch(launchOptions);
             this.initialized = true;
             log.info("Playwright浏览器初始化成功");
@@ -168,34 +179,30 @@ public class PlaywrightManager {
             long[] deletedCount = {0};
             long[] deletedSize = {0};
 
-            Files.list(tmpDir)
-                    .filter(path -> {
-                        String name = path.getFileName().toString();
-                        return name.startsWith("playwright") || name.contains("chromium")
-                                || name.startsWith("core.") || name.endsWith(".pipe")
-                                || name.endsWith(".sock");
-                    })
-                    .forEach(path -> {
-                        try {
-                            File file = path.toFile();
-                            long fileAge = now - file.lastModified();
-                            if (fileAge <= thresholdMs) {
-                                return;
-                            }
-                            if (file.isDirectory()) {
-                                long dirSize = deleteDirectory(file);
-                                deletedCount[0]++;
-                                deletedSize[0] += dirSize;
-                            } else {
-                                long fileSize = file.length();
-                                if (file.delete()) {
-                                    deletedCount[0]++;
-                                    deletedSize[0] += fileSize;
+            try (Stream<Path> paths = Files.list(tmpDir)) {
+                paths.filter(path -> isCleanableTempEntry(path.getFileName().toString()))
+                        .forEach(path -> {
+                            try {
+                                File file = path.toFile();
+                                long fileAge = now - file.lastModified();
+                                if (fileAge <= thresholdMs) {
+                                    return;
                                 }
+                                if (file.isDirectory()) {
+                                    long dirSize = deleteDirectory(file);
+                                    deletedCount[0]++;
+                                    deletedSize[0] += dirSize;
+                                } else {
+                                    long fileSize = file.length();
+                                    if (file.delete()) {
+                                        deletedCount[0]++;
+                                        deletedSize[0] += fileSize;
+                                    }
+                                }
+                            } catch (Exception ignored) {
                             }
-                        } catch (Exception ignored) {
-                        }
-                    });
+                        });
+            }
 
             if (deletedCount[0] > 0) {
                 log.info("清理Playwright临时文件: {}个文件, 释放空间: {}KB",
@@ -204,6 +211,19 @@ public class PlaywrightManager {
         } catch (Exception e) {
             log.warn("清理Playwright临时文件失败", e);
         }
+    }
+
+    static boolean isCleanableTempEntry(String name) {
+        if (name == null || name.startsWith("playwright-java-")) {
+            // Playwright Java只在JVM生命周期内解压一次驱动，删除后无法自行恢复。
+            return false;
+        }
+        return name.startsWith("playwright_chromiumdev_profile")
+                || name.startsWith("playwright-artifacts-")
+                || name.startsWith(".org.chromium.Chromium.")
+                || name.startsWith("core.")
+                || name.endsWith(".pipe")
+                || name.endsWith(".sock");
     }
 
     private long deleteDirectory(File directory) {

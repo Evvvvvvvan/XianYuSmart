@@ -5,6 +5,7 @@ services:
     build:
       context: ../..
     image: xianyusmart:2.0.7
+    init: true
     restart: unless-stopped
     environment:
       DB_URL: ${DB_URL:?DB_URL is required}
@@ -21,6 +22,7 @@ services:
       DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
       DB_POOL_MIN_IDLE: ${DB_POOL_MIN_IDLE:-2}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=42 -XX:InitialRAMPercentage=15 -XX:+ExitOnOutOfMemoryError}
+      PLAYWRIGHT_DRIVER_TMPDIR: ${PLAYWRIGHT_DRIVER_TMPDIR:-/app/data/pw-driver}
       TZ: ${TZ:-Asia/Shanghai}
     extra_hosts:
       # 复用宿主机 MySQL，避免低内存服务器重复运行数据库实例。
