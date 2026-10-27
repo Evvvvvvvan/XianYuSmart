@@ -723,10 +723,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private BoundingBox findTrackBox(Frame frame, ElementHandle handle, BoundingBox handleBox) {
         double handleCenterX = handleBox.x + handleBox.width / 2;
         double handleCenterY = handleBox.y + handleBox.height / 2;
-        BoundingBox tightest = null;
+        List<BoundingBox> candidates = new ArrayList<>();
         for (String selector : SLIDER_TRACK_SELECTORS) {
-            List<ElementHandle> candidates = frame.querySelectorAll(selector);
-            for (ElementHandle candidate : candidates) {
+            for (ElementHandle candidate : frame.querySelectorAll(selector)) {
                 try {
                     if (!candidate.isVisible()) {
                         continue;
@@ -743,16 +742,40 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                             || handleCenterY > box.y + box.height + handleBox.height) {
                         continue;
                     }
-                    // 选择包含句柄的最窄容器，避免把整页包装层当成轨道导致拖动距离过大。
-                    if (tightest == null || box.width < tightest.width) {
-                        tightest = box;
-                    }
+                    candidates.add(box);
                 } finally {
                     candidate.dispose();
                 }
             }
         }
-        return tightest != null ? tightest : inferTrackBoxFromHandle(frame, handle);
+        BoundingBox trackBox = selectTrackBox(candidates, handleBox);
+        return trackBox != null ? trackBox : inferTrackBoxFromHandle(frame, handle);
+    }
+
+    /**
+     * 从覆盖句柄的候选容器中选出真实轨道。
+     * 轨道左边缘应与句柄左边缘对齐；同位置取最窄容器，避免选中轨道内的文案层
+     * （左边缘偏右、宽度偏小）导致拖动距离不足。
+     */
+    static BoundingBox selectTrackBox(List<BoundingBox> candidates, BoundingBox handleBox) {
+        if (candidates == null || candidates.isEmpty() || handleBox == null) {
+            return null;
+        }
+        BoundingBox best = null;
+        double bestLeftDelta = Double.MAX_VALUE;
+        for (BoundingBox box : candidates) {
+            if (box == null) {
+                continue;
+            }
+            double leftDelta = Math.abs(box.x - handleBox.x);
+            if (best == null
+                    || leftDelta < bestLeftDelta - 0.5
+                    || (Math.abs(leftDelta - bestLeftDelta) <= 0.5 && box.width < best.width)) {
+                best = box;
+                bestLeftDelta = leftDelta;
+            }
+        }
+        return best;
     }
 
     private BoundingBox inferTrackBoxFromHandle(Frame frame, ElementHandle handle) {
