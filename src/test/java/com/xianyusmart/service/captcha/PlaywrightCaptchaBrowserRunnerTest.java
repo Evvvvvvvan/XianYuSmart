@@ -1,5 +1,6 @@
 package com.xianyusmart.service.captcha;
 
+import com.microsoft.playwright.options.BoundingBox;
 import com.xianyusmart.service.CaptchaSolveService;
 import org.junit.jupiter.api.Test;
 
@@ -8,10 +9,20 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PlaywrightCaptchaBrowserRunnerTest {
+
+    private static BoundingBox box(double x, double y, double width, double height) {
+        BoundingBox box = new BoundingBox();
+        box.x = x;
+        box.y = y;
+        box.width = width;
+        box.height = height;
+        return box;
+    }
 
     @Test
     void browserFailureMessageIncludesSanitizedRootCause() {
@@ -71,6 +82,36 @@ class PlaywrightCaptchaBrowserRunnerTest {
     void sliderMissingMessagePointsToManualFallback() {
         assertTrue(PlaywrightCaptchaBrowserRunner.sliderMissingMessage(true).contains("人工拖动"));
         assertTrue(PlaywrightCaptchaBrowserRunner.sliderMissingMessage(false).contains("人工拖动"));
+    }
+
+    @Test
+    void trackSelectionPrefersContainerAlignedWithHandle() {
+        BoundingBox handle = box(100, 300, 40, 34);
+        // .nc_scale：与句柄左边缘对齐，是真实轨道
+        BoundingBox scale = box(100, 298, 300, 38);
+        // 轨道内的文案层：左边缘偏右、宽度更小，不能用它算拖动距离
+        BoundingBox textLayer = box(140, 300, 250, 34);
+        // 外包装层：左边缘再往外，宽度更大
+        BoundingBox wrapper = box(90, 292, 320, 50);
+
+        BoundingBox selected = PlaywrightCaptchaBrowserRunner.selectTrackBox(
+                List.of(textLayer, wrapper, scale), handle);
+
+        assertEquals(scale, selected);
+        assertEquals(260.0, PlaywrightCaptchaBrowserRunner.calculateDistance(
+                selected.width, handle.width));
+    }
+
+    @Test
+    void trackSelectionFallsBackToNarrowestCandidateAtSameLeftEdge() {
+        BoundingBox handle = box(100, 300, 40, 34);
+        BoundingBox wideWrapper = box(100, 292, 320, 50);
+        BoundingBox scale = box(100, 298, 300, 38);
+
+        assertEquals(scale, PlaywrightCaptchaBrowserRunner.selectTrackBox(
+                List.of(wideWrapper, scale), handle));
+        assertNull(PlaywrightCaptchaBrowserRunner.selectTrackBox(List.of(), handle));
+        assertNull(PlaywrightCaptchaBrowserRunner.selectTrackBox(null, handle));
     }
 
     @Test
