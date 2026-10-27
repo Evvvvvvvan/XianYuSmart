@@ -109,6 +109,8 @@ public class AuthServiceImpl implements AuthService {
         SysUser user = sysUserMapper.selectOne(wrapper);
 
         if (user == null) {
+            log.warn("[Auth] 登录失败: 用户名未匹配, username={}, ip={}",
+                    reqBO.getUsername(), reqBO.getIp());
             throw new RuntimeException("用户名或密码错误");
         }
 
@@ -118,6 +120,10 @@ public class AuthServiceImpl implements AuthService {
 
         // 验证密码
         if (!passwordEncoder.matches(reqBO.getPassword(), user.getPassword())) {
+            String storedHash = user.getPassword() == null ? "" : user.getPassword();
+            log.warn("[Auth] 登录失败: 密码不匹配, username={}, ip={}, hashLength={}, bcryptFormat={}",
+                    reqBO.getUsername(), reqBO.getIp(), storedHash.length(),
+                    com.xianyusmart.service.AdminCredentialRecovery.isBcryptHash(storedHash));
             throw new RuntimeException("用户名或密码错误");
         }
 

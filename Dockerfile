@@ -50,14 +50,19 @@ LABEL org.opencontainers.image.licenses="PolyForm-Noncommercial-1.0.0"
 
 WORKDIR /app
 
-# Chromium 仅在刷新凭证时按需启动，运行库不会产生常驻进程
+# Chromium 仅在刷新凭证时按需启动，运行库不会产生常驻进程。
+# 中文字体：缺少时滑块/登录页截图里的提示文字会渲染成方块（乱码）。
+# fonts-noto-cjk 覆盖完整，安装不可用时回退到体积更小的 fonts-wqy-zenhei。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 libatk1.0-0 \
-        libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 libfontconfig1 \
-        libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 \
-        libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
-        libxkbcommon0 libxrandr2 libxshmfence1 wget \
+        ca-certificates fonts-liberation libasound2 libatk-bridge2.0-0 \
+        libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2 \
+        libfontconfig1 libgbm1 libglib2.0-0 libgtk-3-0 libnspr4 libnss3 \
+        libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 \
+        libxfixes3 libxkbcommon0 libxrandr2 libxshmfence1 wget \
+    && (apt-get install -y --no-install-recommends fonts-noto-cjk \
+        || apt-get install -y --no-install-recommends fonts-wqy-zenhei) \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 # 创建低权限运行用户和数据目录

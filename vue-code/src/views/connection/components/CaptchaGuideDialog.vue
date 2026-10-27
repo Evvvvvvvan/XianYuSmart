@@ -50,6 +50,7 @@ const phaseLabels: Record<string, string> = {
   RESETTING_SESSION: '重建验证会话',
   WAITING_BROWSER: '等待浏览器响应',
   WAITING_MANUAL: '等待人工拖动',
+  WAITING_LOGIN: '等待扫码登录',
   WAITING_SLIDER: '等待滑块加载',
   CAPTURING_MANUAL_FRAME: '同步人工画面',
   REPLAYING_MANUAL_DRAG: '执行人工拖动',

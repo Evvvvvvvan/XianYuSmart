@@ -9,6 +9,9 @@ app:
   admin:
     bootstrap-username: ${BOOTSTRAP_ADMIN_USERNAME:}
     bootstrap-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+    # 一次性重置已有管理员密码：配置后启动即生效，建议登录成功后立即移除
+    reset-username: ${ADMIN_RESET_USERNAME:}
+    reset-password: ${ADMIN_RESET_PASSWORD:}
   executor:
     core-size: ${EXECUTOR_CORE_SIZE:4}
     max-size: ${EXECUTOR_MAX_SIZE:8}

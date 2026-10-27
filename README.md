@@ -308,6 +308,10 @@ docker compose --profile proxy up -d --build
 | `DB_PASSWORD` | 业务数据库密码 | 随机强密码 |
 | `DB_ROOT_PASSWORD` | MySQL root 密码 | 与业务密码不同 |
 | `JWT_SECRET` | 登录令牌签名密钥 | 48 字节以上随机值 |
+| `BOOTSTRAP_ADMIN_USERNAME` | 全新环境初始化管理员账号 | `admin` |
+| `BOOTSTRAP_ADMIN_PASSWORD` | 全新环境初始化管理员密码 | 12 字节随机值，仅在首次启动且无管理员时生效 |
+| `ADMIN_RESET_USERNAME` | 需要重置密码的管理员账号 | 仅在需要重置时临时填写 |
+| `ADMIN_RESET_PASSWORD` | 管理员重置后的新密码 | 至少 8 位且包含字母/数字/符号中的两类，重置成功后立即从配置中移除 |
 | `ALLOWED_ORIGINS` | 允许访问的前端来源 | 完整 HTTPS 域名 |
 | `TRUST_PROXY` | 是否信任代理头 | 仅 Nginx 部署设为 `true` |
 | `UPDATE_RELEASE_API` | GitHub 发行版 API | 默认使用本项目最新 Release，留空可关闭更新检查 |
@@ -419,6 +423,28 @@ docker compose logs -f --tail=200 mysql
 ```bash
 docker compose up -d --build
 ```
+
+### 管理员无法登录
+
+1. 查看启动日志中的 `管理员账号自检` 行，确认用户名是否带首尾空白、`password` 是否为合法 BCrypt 哈希、角色和状态是否正常：
+
+   ```bash
+   docker compose logs --since=10m app | grep "管理员账号自检"
+   ```
+
+2. 仍无法登录时，在 `.env` 中临时加入以下两行，然后重启应用：
+
+   ```bash
+   ADMIN_RESET_USERNAME=admin
+   ADMIN_RESET_PASSWORD=新密码
+   docker compose up -d app
+   ```
+
+3. 重置会同时写入 BCrypt 哈希、把角色恢复为 `ADMIN`、把状态恢复为启用，并清除该账号的历史登录令牌。登录成功后请删除这两行并再次重启，避免明文密码留在环境变量中。
+
+### 滑块验证提示 Cookie 失效
+
+自动模式检测到平台把验证地址重定向到扫码登录页时，会直接提示 Cookie 失效，不再空等滑块。此时在验证弹窗中选择“人工拖动”，在服务器画面里用手机扫码登录；登录成功后系统会自动回收新 Cookie 并重连。
 
 备份 MySQL：
 
