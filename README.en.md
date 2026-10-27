@@ -308,6 +308,10 @@ Copy `.env.example` to `.env`, then update it for the environment:
 | `DB_PASSWORD` | Application database password | Random strong password |
 | `DB_ROOT_PASSWORD` | MySQL root password | Different from the application password |
 | `JWT_SECRET` | Login token signing secret | At least 48 random bytes |
+| `BOOTSTRAP_ADMIN_USERNAME` | Admin account created on a brand-new environment | `admin` |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Admin password for the first startup | 12 random bytes; only applied when no admin exists |
+| `ADMIN_RESET_USERNAME` | Admin account whose password should be reset | Fill in only while resetting |
+| `ADMIN_RESET_PASSWORD` | New admin password | At least 8 characters with two of letters/digits/symbols; remove the variables after a successful login |
 | `ALLOWED_ORIGINS` | Frontend origins allowed to access the application | Complete HTTPS domain |
 | `TRUST_PROXY` | Whether proxy headers are trusted | Set to `true` only behind Nginx |
 | `UPDATE_RELEASE_API` | GitHub Releases API | Uses this project's latest Release by default; leave empty to disable update checks |
@@ -419,6 +423,28 @@ After updating local code:
 ```bash
 docker compose up -d --build
 ```
+
+### Admin cannot sign in
+
+1. Check the `管理员账号自检` (admin credential self-check) line in the startup logs. It reports whether the username contains leading/trailing whitespace, whether `password` is a valid BCrypt hash, and whether the role and status are correct:
+
+   ```bash
+   docker compose logs --since=10m app | grep "管理员账号自检"
+   ```
+
+2. If signing in still fails, add these two lines to `.env` temporarily, then restart the app:
+
+   ```bash
+   ADMIN_RESET_USERNAME=admin
+   ADMIN_RESET_PASSWORD=your-new-password
+   docker compose up -d app
+   ```
+
+3. The reset rewrites the BCrypt hash, restores the `ADMIN` role and the enabled status, and clears every login token of that account. Remove both variables and restart again after signing in successfully so the plaintext password no longer sits in the environment.
+
+### Captcha says the Cookie expired
+
+When the automated mode detects that the platform redirected the challenge URL to the sign-in page, it reports the Cookie as expired instead of waiting for a slider that will never appear. Switch to "人工拖动" (manual drag), scan the QR code shown in the server browser frame with your phone, and the app collects the refreshed Cookie and reconnects automatically once the sign-in completes.
 
 Back up MySQL:
 
