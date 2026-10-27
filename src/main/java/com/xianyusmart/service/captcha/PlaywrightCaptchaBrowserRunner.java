@@ -48,6 +48,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private static final int VIEWPORT_WIDTH = 1365;
     private static final int VIEWPORT_HEIGHT = 768;
     private static final long MANUAL_FRAME_INTERVAL_MS = 700;
+    private static final double MAX_SLIDER_DISTANCE = 600;
     private static final String GOOFISH_HOME_URL = "https://www.goofish.com";
     private static final String COOKIE_EXPIRED_MESSAGE =
             "Cookie Session已过期，请重新扫码登录后再连接";
@@ -62,31 +63,31 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     private static final List<String> RISK_COOKIE_NAMES = List.of(
             "x5secdata", "x5sec", "x5sectag", "x5pref",
             "bx-cookie-test", "tfstk", "cbc", "sca", "isg");
+    // 句柄只保留“可拖动的小按钮”，不要把 #nc_1_n1t / .nc-lang-cnt 这类整条轨道文案容器误当成句柄。
     private static final List<String> SLIDER_HANDLE_SELECTORS = List.of(
             "#nc_1_n1z",
+            "#nc_1_n1z .icon",
             ".btn_slide",
+            ".btn_slide > i",
+            "span.nc_iconfont",
             ".nc_iconfont",
             ".slide-btn",
-            "#nc_1_n1t",
-            ".nc-lang-cnt",
             "[data-role='slider']",
-            "#nc_1_n1z .icon",
-            ".btn_slide > i",
             "#aliyunCaptcha-sliding-slider",
+            "[id*='sliding-slider']",
             "#scratch-captcha-btn",
             ".scratch-captcha-slider .button",
-            "#nc_1_n1z[style]",
             ".J_MIDDLEWARE_FRAME .btn_slide",
-            "span.nc_iconfont",
             "#baxia-dialog .btn_slide",
+            ".nc_scale .btn_slide",
             "div[role='button'][class*='slide']",
             "div[draggable='true'][class*='slide']",
             "[class*='slider-button'], [class*='slider-btn'], [class*='slider-handle']");
     private static final List<String> SLIDER_TRACK_SELECTORS = List.of(
             ".nc_scale",
+            "#nc_1__scale",
             ".scale_text",
             ".slide-track",
-            "#nc_1__scale",
             ".nc-lang",
             ".nc_wrapper",
             ".slide-verify-track",
@@ -94,8 +95,26 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             ".baxia-slider-track",
             ".scratch-captcha-slider",
             "#nc_1_n1t",
+            "#aliyunCaptcha-sliding-track",
             "[class*='scale']",
             "[class*='track']");
+    // 登录页特征：Cookie 失效后平台会先跳登录/扫码，此时等待滑块只会浪费时间。
+    private static final List<String> LOGIN_URL_HINTS = List.of(
+            "login.taobao.com",
+            "login.goofish.com",
+            "passport.goofish.com",
+            "passport.taobao.com",
+            "login.alibaba.com",
+            "mini_login",
+            "havana");
+    private static final List<String> LOGIN_SELECTORS = List.of(
+            "#fm-login-id",
+            "#fm-login-password",
+            "#login-form",
+            "#J_QRCodeImg",
+            "#alibaba-login-box",
+            ".login-blocks",
+            ".havana-id");
     private static final List<String> CAPTCHA_CONTAINER_SELECTORS = List.of(
             "#nc_1_wrapper",
             "#nc_1",
@@ -466,6 +485,10 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             if (pageShowsLoadFailure(page)) {
                 return new RunResult(Outcome.FAILED, null, "验证页面加载失败，请稍后重试");
             }
+            if (automatic && isLoginPage(page)) {
+                // 自动模式无法扫码：验证地址被重定向到登录页即说明 Cookie 已失效。
+                return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
+            }
 
             long deadline = System.currentTimeMillis() + TASK_TIMEOUT_MS;
             failureStage = automatic ? "执行自动拖动" : "等待人工拖动";
@@ -628,10 +651,9 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                 continue;
             }
             try {
-                ElementHandle handle = findVisibleElement(frame, SLIDER_HANDLE_SELECTORS);
-                if (handle != null) {
-                    ElementHandle track = findVisibleElement(frame, SLIDER_TRACK_SELECTORS);
-                    return new SliderTarget(track, handle);
+                SliderTarget target = findSliderBySelector(frame);
+                if (target != null) {
+                    return target;
                 }
             } catch (Exception ignored) {
                 // iframe刷新期间继续检查其余上下文。
@@ -653,6 +675,37 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         return null;
     }
 
+    private SliderTarget findSliderBySelector(Frame frame) {
+        for (String selector : SLIDER_HANDLE_SELECTORS) {
+            ElementHandle handle = frame.querySelector(selector);
+            if (handle == null) {
+                continue;
+            }
+            boolean accepted = false;
+            try {
+                BoundingBox handleBox = handle.boundingBox();
+                if (!handle.isVisible() || handleBox == null
+                        || handleBox.width <= 0 || handleBox.height <= 0) {
+                    continue;
+                }
+                BoundingBox trackBox = findTrackBox(frame, handle, handleBox);
+                // 忽略把整条轨道误识别成句柄的匹配，否则拖动距离会退化成固定值。
+                if (!isPlausibleHandle(handleBox, trackBox)) {
+                    continue;
+                }
+                accepted = true;
+                return new SliderTarget(handle, trackBox);
+            } catch (Exception ignored) {
+                // 句柄在脚本执行期间被重建。
+            } finally {
+                if (!accepted) {
+                    handle.dispose();
+                }
+            }
+        }
+        return null;
+    }
+
     private ElementHandle findVisibleElement(Frame frame, List<String> selectors) {
         for (String selector : selectors) {
             ElementHandle element = frame.querySelector(selector);
@@ -667,36 +720,129 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         return null;
     }
 
+    private BoundingBox findTrackBox(Frame frame, ElementHandle handle, BoundingBox handleBox) {
+        double handleCenterX = handleBox.x + handleBox.width / 2;
+        double handleCenterY = handleBox.y + handleBox.height / 2;
+        BoundingBox tightest = null;
+        for (String selector : SLIDER_TRACK_SELECTORS) {
+            List<ElementHandle> candidates = frame.querySelectorAll(selector);
+            for (ElementHandle candidate : candidates) {
+                try {
+                    if (!candidate.isVisible()) {
+                        continue;
+                    }
+                    BoundingBox box = candidate.boundingBox();
+                    if (box == null || box.width < handleBox.width * 1.5) {
+                        continue;
+                    }
+                    if (handleCenterX < box.x - handleBox.width
+                            || handleCenterX > box.x + box.width + handleBox.width) {
+                        continue;
+                    }
+                    if (handleCenterY < box.y - handleBox.height
+                            || handleCenterY > box.y + box.height + handleBox.height) {
+                        continue;
+                    }
+                    // 选择包含句柄的最窄容器，避免把整页包装层当成轨道导致拖动距离过大。
+                    if (tightest == null || box.width < tightest.width) {
+                        tightest = box;
+                    }
+                } finally {
+                    candidate.dispose();
+                }
+            }
+        }
+        return tightest != null ? tightest : inferTrackBoxFromHandle(frame, handle);
+    }
+
+    private BoundingBox inferTrackBoxFromHandle(Frame frame, ElementHandle handle) {
+        try {
+            Object result = frame.evaluate("""
+                    (handle) => {
+                      if (!handle) {
+                        return null;
+                      }
+                      const handleBox = handle.getBoundingClientRect();
+                      let best = null;
+                      let element = handle.parentElement;
+                      let depth = 0;
+                      while (element && depth < 8) {
+                        const box = element.getBoundingClientRect();
+                        const width = box.width;
+                        const height = box.height;
+                        const sameRow = box.top < handleBox.bottom + handleBox.height * 2
+                          && box.bottom > handleBox.top - handleBox.height * 2;
+                        const fitsRow = height <= Math.max(80, handleBox.height * 3);
+                        if (width >= handleBox.width * 2 && fitsRow && sameRow) {
+                          if (!best || width < best.width) {
+                            best = { x: box.x, y: box.y, width, height };
+                          }
+                        }
+                        element = element.parentElement;
+                        depth++;
+                      }
+                      return best;
+                    }
+                    """, handle);
+            if (!(result instanceof Map<?, ?> box)) {
+                return null;
+            }
+            double width = toDouble(box.get("width"));
+            double height = toDouble(box.get("height"));
+            if (width <= 0 || height <= 0) {
+                return null;
+            }
+            BoundingBox track = new BoundingBox();
+            track.x = toDouble(box.get("x"));
+            track.y = toDouble(box.get("y"));
+            track.width = width;
+            track.height = height;
+            return track;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static double toDouble(Object value) {
+        return value instanceof Number number ? number.doubleValue() : 0;
+    }
+
+    private boolean isPlausibleHandle(BoundingBox handleBox, BoundingBox trackBox) {
+        if (handleBox == null) {
+            return false;
+        }
+        double maximumHandleWidth = trackBox == null
+                ? 90
+                : Math.max(80, trackBox.width * 0.5);
+        return handleBox.width <= maximumHandleWidth
+                && handleBox.height <= Math.max(90, handleBox.width * 2.5);
+    }
+
     private SliderTarget findSliderByHeuristic(Frame frame) {
         JSHandle result = frame.evaluateHandle(SLIDER_HEURISTIC_SCRIPT);
         ElementHandle element = result.asElement();
-        BoundingBox handleBox = element == null ? null : element.boundingBox();
-        if (element == null || !element.isVisible() || handleBox == null) {
+        if (element == null) {
             result.dispose();
             return null;
         }
-        ElementHandle track = findVisibleElement(frame, SLIDER_TRACK_SELECTORS);
-        BoundingBox trackBox = track == null ? null : track.boundingBox();
-        if (!isRelatedSliderTrack(trackBox, handleBox)) {
-            if (track != null) {
-                track.dispose();
+        BoundingBox handleBox;
+        try {
+            handleBox = element.boundingBox();
+            if (!element.isVisible() || handleBox == null) {
+                result.dispose();
+                return null;
             }
+        } catch (Exception ignored) {
             result.dispose();
             return null;
         }
-        return new SliderTarget(track, element);
-    }
-
-    private boolean isRelatedSliderTrack(BoundingBox track, BoundingBox handle) {
-        if (track == null || handle == null || track.width < 150) {
-            return false;
+        BoundingBox trackBox = findTrackBox(frame, element, handleBox);
+        if (trackBox != null && trackBox.width < handleBox.width * 1.5) {
+            result.dispose();
+            return null;
         }
-        double handleCenterX = handle.x + handle.width / 2;
-        boolean horizontal = handleCenterX >= track.x - handle.width
-                && handleCenterX <= track.x + track.width + handle.width;
-        boolean vertical = handle.y < track.y + track.height + handle.height
-                && handle.y + handle.height > track.y - handle.height;
-        return horizontal && vertical;
+        // 不释放 result：ElementHandle 与 JSHandle 共享底层句柄，提前释放会让后续拖动失效。
+        return new SliderTarget(element, trackBox);
     }
 
     static boolean isAllowedCaptchaUrl(String value) {
@@ -716,7 +862,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     static double calculateDistance(double trackWidth, double handleWidth) {
-        return Math.max(180, Math.min(360, trackWidth - handleWidth));
+        double available = Math.max(0, trackWidth - handleWidth);
+        return Math.min(MAX_SLIDER_DISTANCE, available);
     }
 
     static double calculateDistance(double trackWidth, double handleWidth,
@@ -757,8 +904,8 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
 
     static String sliderMissingMessage(boolean captchaContainerSeen) {
         return captchaContainerSeen
-                ? "验证组件已出现，但滑块按钮未加载"
-                : "未识别到可拖动滑块";
+                ? "验证组件已出现，但滑块按钮未加载，请重试或改用人工拖动/粘贴 Cookie"
+                : "未识别到可拖动滑块，请重试或改用人工拖动/粘贴 Cookie";
     }
 
     private static boolean isDomain(String host, String rootDomain) {
@@ -770,6 +917,10 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         boolean captchaSeen = false;
         for (int attempt = 1; attempt <= MAX_AUTO_ATTEMPTS
                 && System.currentTimeMillis() < deadline; attempt++) {
+            if (isLoginPage(page)) {
+                // 自动模式无法扫码，直接提示重新登录，避免在登录页反复等待滑块。
+                return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
+            }
             reportProgress(progress, "FINDING_SLIDER",
                     "第" + attempt + "次：正在识别滑块", attempt);
             SliderWaitResult sliderWait = waitForSlider(
@@ -784,6 +935,18 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                         page, Math.min(deadline, System.currentTimeMillis() + 1_500));
                 if (!pageShowsLoadFailure(page) && (hasSuccessSignal(page) || confirmedGone)) {
                     return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
+                }
+                if (sliderWait.captchaContainerSeen() && attempt < MAX_AUTO_ATTEMPTS) {
+                    // 验证组件在、句柄没渲染，通常是验证会话没加载完成；重建会话后再试。
+                    reportProgress(progress, "RETRYING_SLIDER",
+                            "第" + attempt + "次：滑块按钮未加载，正在重建验证会话", attempt);
+                    ReopenResult reopenResult = reopenFromHome(context, page, deadline);
+                    if (reopenResult.page() == null) {
+                        return new RunResult(Outcome.FAILED, null, reopenResult.message());
+                    }
+                    page = reopenResult.page();
+                    captchaSeen = false;
+                    continue;
                 }
                 return new RunResult(Outcome.FAILED, null,
                         sliderMissingMessage(sliderWait.captchaContainerSeen()));
@@ -850,10 +1013,34 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         reportProgress(progress, "CAPTURING_MANUAL_FRAME",
                 "正在同步服务器验证画面", 0);
         boolean captchaSeen = false;
+        boolean loginPageSeen = false;
         long lastFrameAt = 0;
+        long lastLoginCheckAt = 0;
+        boolean loginPageVisible = false;
         while (System.currentTimeMillis() < deadline) {
-            if (isLoginPage(page)) {
-                return new RunResult(Outcome.FAILED, null, COOKIE_EXPIRED_MESSAGE);
+            long now = System.currentTimeMillis();
+            // 登录页检查包含多 frame 正文和 DOM 扫描，按固定间隔执行避免拖慢画面回传。
+            if (now - lastLoginCheckAt >= 500) {
+                loginPageVisible = isLoginPage(page);
+                lastLoginCheckAt = now;
+            }
+            if (loginPageVisible) {
+                // Cookie 失效时验证地址会落在扫码登录页，允许用户直接扫码登录后继续。
+                loginPageSeen = true;
+                if (now - lastFrameAt >= MANUAL_FRAME_INTERVAL_MS) {
+                    captureManualFrame(page, processSession);
+                    lastFrameAt = now;
+                }
+                reportProgress(progress, "WAITING_LOGIN",
+                        "服务器浏览器已跳转到登录页，请用手机扫码登录，登录成功后会自动继续", 0);
+                page.waitForTimeout(200);
+                continue;
+            }
+            if (loginPageSeen) {
+                if (findSlider(page) == null && waitForLoginCompleted(page, deadline)) {
+                    return new RunResult(Outcome.SOLVED, null, "已完成扫码登录，正在回收新凭证");
+                }
+                loginPageSeen = false;
             }
             if (hasSuccessSignal(page)) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
@@ -865,7 +1052,6 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
                     page, Math.min(deadline, System.currentTimeMillis() + 1_500))) {
                 return new RunResult(Outcome.SOLVED, null, "滑块验证完成");
             }
-            long now = System.currentTimeMillis();
             if (now - lastFrameAt >= MANUAL_FRAME_INTERVAL_MS) {
                 captureManualFrame(page, processSession);
                 lastFrameAt = now;
@@ -895,10 +1081,32 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         return new RunResult(Outcome.TIMEOUT, null, "人工滑块验证超时");
     }
 
+    private boolean waitForLoginCompleted(Page page, long deadline) {
+        int stableChecks = 0;
+        long waitUntil = Math.min(deadline, System.currentTimeMillis() + 10_000);
+        while (System.currentTimeMillis() < waitUntil) {
+            if (pageShowsLoadFailure(page)) {
+                return false;
+            }
+            boolean platformPage = isAllowedCaptchaUrl(page.url());
+            if (!platformPage || isLoginPage(page)) {
+                stableChecks = 0;
+            } else {
+                stableChecks++;
+                if (stableChecks >= 3) {
+                    return true;
+                }
+            }
+            page.waitForTimeout(500);
+        }
+        return false;
+    }
+
     private void captureManualFrame(Page page, BrowserProcessSession processSession) {
         byte[] image = page.screenshot(new Page.ScreenshotOptions()
                 .setType(ScreenshotType.JPEG)
-                .setQuality(60));
+                // 画质过低会让中文提示和滑块边缘变成糊块，影响人工拖动判断。
+                .setQuality(80));
         long version = processSession.frameVersion.incrementAndGet();
         processSession.manualFrame = new CaptchaSolveService.ManualFrame(
                 version, VIEWPORT_WIDTH, VIEWPORT_HEIGHT, System.currentTimeMillis(),
@@ -985,7 +1193,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         double startX = handleBox.x + handleBox.width / 2;
         double startY = handleBox.y + handleBox.height / 2;
-        BoundingBox trackBox = target.track() == null ? null : target.track().boundingBox();
+        BoundingBox trackBox = target.trackBox();
         double scratchRatio = random.nextDouble(0.25, 0.35);
         double distance = trackBox == null
                 ? (scratchCaptcha ? 300 * scratchRatio : 300)
@@ -1268,7 +1476,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         if (handleBox == null) {
             return null;
         }
-        BoundingBox trackBox = target.track() == null ? null : target.track().boundingBox();
+        BoundingBox trackBox = target.trackBox();
         double scratchRatio = ThreadLocalRandom.current().nextDouble(0.25, 0.35);
         double distance = trackBox == null
                 ? (scratchCaptcha ? 300 * scratchRatio : 300)
@@ -1413,24 +1621,95 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
     }
 
+    /**
+     * 判断当前页面是否已经变成登录/扫码页。
+     * 平台在 Cookie 失效时会把验证地址重定向到 passport/login，并在 iframe 中渲染登录框，
+     * 因此需要同时检查主页面、所有子 frame 的地址、正文和登录 DOM 标识。
+     */
     private boolean isLoginPage(Page page) {
-        String url = page.url().toLowerCase(Locale.ROOT);
-        if (url.contains("login.taobao.com") || url.contains("login.goofish.com")
-                || url.matches(".*(?:/login|/uilogin)(?:[/?#].*)?$")) {
+        if (isLoginPageUrl(page.url())) {
             return true;
         }
+        Frame mainFrame = page.mainFrame();
+        if (isLoginFrame(mainFrame)) {
+            return true;
+        }
+        for (Frame frame : page.frames()) {
+            if (frame.isDetached() || frame == mainFrame) {
+                continue;
+            }
+            // 只统计可见 iframe，避免页面里常驻的隐藏登录 iframe 造成误判。
+            if (isVisibleFrame(frame) && isLoginFrame(frame)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isLoginFrame(Frame frame) {
         try {
-            String bodyText = (String) page.evaluate(
+            if (isLoginPageUrl(frame.url())) {
+                return true;
+            }
+            String bodyText = (String) frame.evaluate(
                     "() => document.body ? document.body.innerText : ''");
-            return isLoginBody(bodyText);
+            if (isLoginBody(bodyText)) {
+                return true;
+            }
+            for (String selector : LOGIN_SELECTORS) {
+                ElementHandle element = frame.querySelector(selector);
+                if (element != null && element.isVisible()) {
+                    return true;
+                }
+            }
         } catch (Exception ignored) {
+            // frame 正在切换，继续检查其余上下文。
+        }
+        return false;
+    }
+
+    private boolean isVisibleFrame(Frame frame) {
+        try {
+            ElementHandle element = frame.frameElement();
+            if (element == null) {
+                return false;
+            }
+            BoundingBox box = element.boundingBox();
+            return element.isVisible() && box != null && box.width >= 80 && box.height >= 60;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    static boolean isLoginPageUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String url = value.toLowerCase(Locale.ROOT);
+        for (String hint : LOGIN_URL_HINTS) {
+            if (url.contains(hint)) {
+                return true;
+            }
+        }
+        try {
+            URI uri = URI.create(value);
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            String path = uri.getPath() == null ? "" : uri.getPath().toLowerCase(Locale.ROOT);
+            if (host.startsWith("login.") || host.startsWith("passport.")) {
+                return true;
+            }
+            return path.equals("/login") || path.startsWith("/login/")
+                    || path.contains("mini_login") || path.contains("/uilogin")
+                    || path.equals("/havana") || path.startsWith("/havana/");
+        } catch (IllegalArgumentException e) {
             return false;
         }
     }
 
     static boolean isLoginBody(String bodyText) {
         return bodyText != null
-                && bodyText.matches("(?s).*(扫码登录|手机号登录|账号密码登录).*");
+                && bodyText.matches("(?s).*(扫码登录|手机扫码登录|手机号登录|账号密码登录"
+                        + "|密码登录|短信登录|登录/注册|请使用手机扫码).*");
     }
 
     private boolean waitForCaptchaGone(Page page, long deadline) {
@@ -1700,7 +1979,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
         }
     }
 
-    record SliderTarget(ElementHandle track, ElementHandle handle) {
+    record SliderTarget(ElementHandle handle, BoundingBox trackBox) {
     }
 
     private record DragGeometry(double startX, double startY, double distance) {
