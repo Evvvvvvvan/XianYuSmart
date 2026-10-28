@@ -60,9 +60,13 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
             "https://www.goofish.com/im",
             "https://passport.goofish.com",
             "https://h5api.m.goofish.com");
-    private static final List<String> RISK_COOKIE_NAMES = List.of(
-            "x5secdata", "x5sec", "x5sectag", "x5pref",
-            "bx-cookie-test", "tfstk", "cbc", "sca", "isg");
+    /**
+     * 开启新的验证会话时需要丢弃的旧挑战态 Cookie。
+     * 只丢弃验证挑战本身，保留 tfstk/cbc/sca/isg 等设备与登录凭证，
+     * 否则平台会认为会话缺少设备特征，验证更容易被风控拒绝。
+     */
+    private static final List<String> STALE_CHALLENGE_COOKIES = List.of(
+            "x5secdata", "x5sec", "x5sectag", "x5pref", "bx-cookie-test");
     // 句柄只保留“可拖动的小按钮”，不要把 #nc_1_n1t / .nc-lang-cnt 这类整条轨道文案容器误当成句柄。
     private static final List<String> SLIDER_HANDLE_SELECTORS = List.of(
             "#nc_1_n1z",
@@ -1876,22 +1880,16 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     private String buildCookieText(List<Cookie> cookies, String originalCookieText) {
-        Map<String, String> originalCookieMap = XianyuSignUtils.parseCookies(originalCookieText);
-        RISK_COOKIE_NAMES.forEach(originalCookieMap::remove);
-        Map<String, String> cookieMap = new LinkedHashMap<>(originalCookieMap);
+        Map<String, String> cookieMap = new LinkedHashMap<>(
+                XianyuSignUtils.parseCookies(originalCookieText));
+        // 浏览器产生的新值优先，且必须保留 x5sec/tfstk/cbc/sca/isg 等验证与设备凭证，
+        // 否则刚通过的滑块结果会在下一次 mtop 请求时立刻失效（表现为 RGV587 循环）。
         for (Cookie cookie : cookies) {
             if (cookie.name == null || cookie.name.isBlank()
-                    || cookie.value == null || cookie.value.isBlank()
-                    || cookie.domain == null
-                    || !isDomain(cookie.domain.replaceFirst("^\\.", ""), "goofish.com")) {
+                    || cookie.value == null || cookie.value.isBlank()) {
                 continue;
             }
-            String originalValue = originalCookieMap.get(cookie.name);
-            String selectedValue = cookieMap.get(cookie.name);
-            // 浏览器产生的新值优先，避免旧域同名Cookie覆盖滑块验证结果。
-            if (originalValue == null || !cookie.value.equals(originalValue) || selectedValue == null) {
-                cookieMap.put(cookie.name, cookie.value);
-            }
+            cookieMap.put(cookie.name, cookie.value);
         }
         return XianyuSignUtils.formatCookies(cookieMap);
     }
@@ -1915,7 +1913,7 @@ public class PlaywrightCaptchaBrowserRunner implements CaptchaBrowserRunner {
     }
 
     private static boolean isRiskCookie(String name) {
-        return name != null && RISK_COOKIE_NAMES.contains(name.toLowerCase(Locale.ROOT));
+        return name != null && STALE_CHALLENGE_COOKIES.contains(name.toLowerCase(Locale.ROOT));
     }
 
     private boolean hasInteractiveDesktop() {

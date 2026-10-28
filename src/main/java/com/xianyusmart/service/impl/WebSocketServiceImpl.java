@@ -118,6 +118,8 @@ public class WebSocketServiceImpl implements WebSocketService {
     
     // 重连次数记录（参考Python的无限重连但有退避）
     private final Map<Long, AtomicInteger> reconnectAttemptCounts = new ConcurrentHashMap<>();
+    /** 需要滑块验证(RGV587)时的连续失败次数，用于指数退避。 */
+    private final Map<Long, AtomicInteger> captchaRetryCounts = new ConcurrentHashMap<>();
 
     // 邮件通知防抖记录（避免频繁发送）
     private final Map<Long, Long> lastDisconnectNotifyTimes = new ConcurrentHashMap<>();
@@ -735,7 +737,8 @@ public class WebSocketServiceImpl implements WebSocketService {
                 if (attemptCount != null) {
                     attemptCount.set(0);
                 }
-                log.info("【账号{}】✅ Token刷新并重连成功", accountId);
+                captchaRetryCounts.remove(accountId);
+                                log.info("【账号{}】✅ Token刷新并重连成功", accountId);
             } else {
                 log.error("【账号{}】❌ Token刷新并重连失败，将在{}秒后重试", 
                         accountId, config.getTokenRetryInterval());
@@ -743,6 +746,13 @@ public class WebSocketServiceImpl implements WebSocketService {
                 // 参考Python: Token刷新失败后，在token_retry_interval后重试
                 scheduleTokenRefreshRetry(accountId);
             }
+        } catch (com.xianyusmart.exception.CaptchaRequiredException e) {
+            // 平台触发 RGV587/滑块验证时，高频刷新只会让风控更严，改为指数退避并等待人工处理。
+            int attempt = captchaRetryCounts.computeIfAbsent(accountId, id -> new AtomicInteger(0)).incrementAndGet();
+            int delay = captchaRetryDelaySeconds(attempt);
+            log.warn("【账号{}】需要滑块验证或平台风控(RGV587)，第{}次退避，{}秒后再尝试刷新；请尽快在连接管理中完成验证",
+                    accountId, attempt, delay);
+            scheduleTokenRefreshRetry(accountId, delay);
         } catch (Exception e) {
             log.error("【账号{}】Token刷新并重连异常，将在{}秒后重试", 
                     accountId, config.getTokenRetryInterval(), e);
@@ -753,9 +763,26 @@ public class WebSocketServiceImpl implements WebSocketService {
     }
 
     /**
+     * 计算需要滑块验证时的退避时间，避免持续请求 token 接口加重 RGV587 风控。
+     */
+    int captchaRetryDelaySeconds(int attempt) {
+        long base = Math.max(30, config.getCaptchaRetryInitialSeconds());
+        long max = Math.max(base, config.getCaptchaRetryMaxSeconds());
+        long delay = base * (1L << Math.min(Math.max(attempt - 1, 0), 5));
+        return (int) Math.min(max, delay);
+    }
+
+    /**
      * 调度Token刷新重试
      */
     private void scheduleTokenRefreshRetry(Long accountId) {
+        scheduleTokenRefreshRetry(accountId, config.getTokenRetryInterval());
+    }
+
+    /**
+     * 调度Token刷新重试（可指定间隔，用于滑块验证/风控退避）
+     */
+    private void scheduleTokenRefreshRetry(Long accountId, int delaySeconds) {
         // 同一账号只保留一个任务，凭证更新或连接停止时可立即取消
         tokenRetryTasks.compute(accountId, (id, existingTask) -> {
             if (existingTask != null && !existingTask.isDone()) {
@@ -763,9 +790,9 @@ public class WebSocketServiceImpl implements WebSocketService {
             }
             return webSocketScheduler.schedule(() -> runWithAccountTenant(id, () -> {
                 tokenRetryTasks.remove(id);
-                log.info("【账号{}】Token刷新重试间隔已到，开始重试...", id);
+                log.info("【账号{}】Token刷新重试间隔已到（{}秒），开始重试...", id, delaySeconds);
                 refreshTokenAndReconnect(id);
-            }), config.getTokenRetryInterval(), TimeUnit.SECONDS);
+            }), delaySeconds, TimeUnit.SECONDS);
         });
     }
     

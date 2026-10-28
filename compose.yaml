@@ -29,7 +29,7 @@ services:
   app:
     build:
       context: .
-    image: ${APP_IMAGE:-xianyusmart:2.0.8}
+    image: ${APP_IMAGE:-xianyusmart:2.0.9}
     init: true
     restart: unless-stopped
     depends_on:

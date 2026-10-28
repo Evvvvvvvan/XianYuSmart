@@ -38,6 +38,18 @@ public class WebSocketConfig {
     private int tokenRetryInterval = 300;
 
     /**
+     * 需要滑块验证时的首次重试间隔（秒）。
+     * 平台风控（RGV587::被挤爆）下高频刷新登录凭证只会加重限制，
+     * 因此验证未完成时改为指数退避，避免每 5 分钟就生成一次 punish 会话。
+     */
+    private int captchaRetryInitialSeconds = 300;
+
+    /**
+     * 需要滑块验证时的最大重试间隔（秒），默认 1 小时。
+     */
+    private int captchaRetryMaxSeconds = 3600;
+
+    /**
      * 凭证刷新最小间隔（分钟）
      * 用于Cookie保活和_m_h5_tk兜底刷新
      */

@@ -82,6 +82,13 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
 
             String captchaUrl = tokenService.getPendingCaptchaUrl(accountId);
             if (captchaUrl == null || captchaUrl.isBlank()) {
+                OnDemandResult onDemand = refreshCaptchaOnDemand(accountId, mode);
+                if (onDemand.completed() != null) {
+                    return onDemand.completed();
+                }
+                captchaUrl = onDemand.captchaUrl();
+            }
+            if (captchaUrl == null || captchaUrl.isBlank()) {
                 throw new IllegalStateException("未找到有效的滑块验证任务，请重新启动连接");
             }
             if (!browserPermits.tryAcquire()) {
@@ -93,8 +100,9 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
                     "QUEUED", 0, MAX_AUTO_ATTEMPTS, startedAt, startedAt,
                     startedAt + TASK_TIMEOUT_MS, null);
             TaskControl control = new TaskControl(pending);
+            String browserCaptchaUrl = captchaUrl;
             control.future = new FutureTask<>(() -> {
-                runTask(pending, captchaUrl, control);
+                runTask(pending, browserCaptchaUrl, control);
                 return null;
             });
             try {
@@ -115,6 +123,43 @@ public class CaptchaSolveServiceImpl implements CaptchaSolveService {
             }
             return tasks.get(accountId);
         }
+    }
+
+    /**
+     * 用户点击验证时按需刷新一次凭证：
+     * 1. 后台不再每 5 分钟刷新一次，避免持续触发 RGV587 风控；
+     * 2. 平台已放行时直接恢复连接并返回成功任务；
+     * 3. 仍要求验证时返回新的 punish 地址。
+     */
+    private OnDemandResult refreshCaptchaOnDemand(Long accountId, Mode mode) {
+        try {
+            String refreshedToken = tokenService.refreshToken(accountId);
+            if (refreshedToken != null && !refreshedToken.isBlank()) {
+                boolean connected = webSocketService.restartAfterCredentialUpdate(accountId);
+                long now = System.currentTimeMillis();
+                TaskView recovered = new TaskView(accountId, mode,
+                        connected ? Status.SUCCEEDED : Status.FAILED,
+                        connected ? "凭证已恢复并重新连接" : "凭证已恢复，但重新连接失败",
+                        connected ? "SUCCEEDED" : "RECONNECTING",
+                        0, MAX_AUTO_ATTEMPTS, now, now, now + TASK_TIMEOUT_MS, now);
+                synchronized (tasks) {
+                    tasks.put(accountId, recovered);
+                }
+                return new OnDemandResult(recovered, null);
+            }
+        } catch (CaptchaRequiredException e) {
+            if (e.getCaptchaUrl() != null && !e.getCaptchaUrl().isBlank()) {
+                return new OnDemandResult(null, e.getCaptchaUrl());
+            }
+        } catch (CookieExpiredException e) {
+            throw new IllegalStateException("Cookie Session已过期，请重新扫码登录后再连接");
+        } catch (Exception e) {
+            log.warn("【账号{}】按需刷新验证地址失败: {}", accountId, e.getClass().getSimpleName());
+        }
+        return new OnDemandResult(null, tokenService.getPendingCaptchaUrl(accountId));
+    }
+
+    private record OnDemandResult(TaskView completed, String captchaUrl) {
     }
 
     @Override

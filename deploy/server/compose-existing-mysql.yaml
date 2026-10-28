@@ -4,7 +4,7 @@ services:
   app:
     build:
       context: ../..
-    image: xianyusmart:2.0.8
+    image: xianyusmart:2.0.9
     init: true
     restart: unless-stopped
     environment:
