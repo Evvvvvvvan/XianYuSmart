@@ -36,7 +36,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
     </td>
     <td width="33%" align="center" valign="top">
       <strong>备用入群方式 · 添加微信好友</strong>
-      <p>如果群聊二维码已过期或无法加入，可扫描下方二维码添加微信好友，备注「XianYuSmart 进群」，获取最新入群邀请。</p>
+      <p>群聊二维码已过期或无法加入，可扫描下方二维码添加微信好友，备注「XianYuSmart 进群」，获取最新入群邀请。【不备注不通过】</p>
       <img src="docs/assets/community/wechat-contact-qr.webp" width="220" alt="微信好友二维码，昵称 NullPointerException">
       <p><sub>微信昵称：NullPointerException</sub></p>
     </td>
