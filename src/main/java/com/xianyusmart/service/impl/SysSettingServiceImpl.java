@@ -30,7 +30,8 @@ public class SysSettingServiceImpl implements SysSettingService {
 
     /** AI相关配置键，变更时需要触发ChatClient重建 */
     private static final Set<String> AI_RELATED_KEYS = Set.of(
-            "ai_provider", "ai_protocol", "ai_custom_name", "ai_api_key", "ai_base_url", "ai_model");
+            "ai_provider", "ai_protocol", "ai_custom_name", "ai_api_key", "ai_base_url", "ai_model",
+            "ai_reasoning_effort");
 
     /** Embedding相关配置键，变更时需要触发VectorStore重建 */
     private static final Set<String> EMBEDDING_RELATED_KEYS = Set.of(

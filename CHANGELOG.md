@@ -4,6 +4,39 @@
 
 ## [未发布]
 
+## [2.1.0] - 2026-11-09
+
+`2.1.0` 扩展 AI 配置能力：支持按厂商选择模型、可选推理强度，并覆盖国内外主流厂商与第三方中转站的 OpenAI / Anthropic 兼容接口。
+
+### AI 服务商与协议
+
+- 服务商预设扩充到 20 个：OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里云百炼 Qwen、月之暗面 Kimi、智谱 GLM、字节豆包（火山方舟）、腾讯混元、百度千帆、讯飞星火、MiniMax、硅基流动、OpenRouter、Groq、xAI Grok、Mistral、Ollama 本地、LM Studio 本地，以及第三方中转站 / 自定义。
+- 同时覆盖两种协议：OpenAI `chat/completions` 与 Anthropic `messages`；DeepSeek、百炼、中转站等双协议服务可一键切换。
+- 预设只填“官方文档确认过”的 Base URL 与协议，模型名保留为可编辑输入，并给出可确认的常用模型建议，避免出现界面声称支持、实际请求地址却不通的情况。
+- Base URL 支持根地址、`/v1`、完整 endpoint 三种写法，自动补齐路径；非法地址、带查询串或账号密码的地址在保存时即拦截。
+
+### 推理强度（可选）
+
+- 新增“推理强度”选项：不指定 / 低 / 中 / 高，默认不指定，保持模型原有行为。
+- OpenAI 兼容接口选择后下发 `reasoning_effort`；Anthropic 协议映射为扩展思考 `thinking.budget_tokens`（低 1024 / 中 4096 / 高 8192），并自动抬高 `max_tokens` 保证大于思考预算。
+- 新增配置项 `ai_reasoning_effort`，随租户隔离存储，修改后立即重建客户端生效；不支持的模型可保持“不指定”或用连通性测试验证。
+- 新增本地假服务协议测试，验证两种协议的实际请求路径、鉴权头、`reasoning_effort` / `thinking` 字段与响应解析，避免“配置支持但请求发不对”。
+
+### 升级说明
+
+1. 升级前备份 MySQL 数据库和运行环境配置。
+2. 本版本没有新增数据库迁移，新增的 `ai_reasoning_effort` 为可选配置项，不配置时行为与旧版本一致。
+3. 切换服务商后请先点“发送测试”，确认 Base URL、模型名与实际开通的模型一致。
+4. 火山方舟等按接入点计费的服务商，模型名填写推理接入点 ID（`ep-…`）；中转站请按其文档填写 Base URL 与模型名。
+
+### 获取与部署
+
+- 容器镜像：`ghcr.io/evvvvvvvan/xianyusmart:v2.1.0`
+- 滚动标签：`ghcr.io/evvvvvvvan/xianyusmart:latest`
+- GitHub Release 提供 `xianyusmart-2.1.0.jar` 与 `SHA256SUMS.txt`。
+
+完整提交差异：[v2.0.9...v2.1.0](https://github.com/Evvvvvvvan/XianYuSmart/compare/v2.0.9...v2.1.0)
+
 ## [2.0.9] - 2026-10-28
 
 `2.0.9` 聚焦平台风控（`RGV587_ERROR::被挤爆`）下的凭证恢复：不再高频刷新登录凭证、滑块验证改为按需取地址，并在验证通过后保留风控与设备 Cookie。

@@ -50,3 +50,6 @@ build/
 /.qoder/
 /.arts/
 /scripts/.star-history-cache.json
+
+### macOS ###
+.DS_Store

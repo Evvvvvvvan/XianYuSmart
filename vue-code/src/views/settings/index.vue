@@ -72,6 +72,7 @@ const AI_CUSTOM_NAME_SETTING = 'ai_custom_name'
 const AI_API_KEY_SETTING = 'ai_api_key'
 const AI_BASE_URL_SETTING = 'ai_base_url'
 const AI_MODEL_SETTING = 'ai_model'
+const AI_REASONING_EFFORT_SETTING = 'ai_reasoning_effort'
 
 type AIProtocol = 'openai' | 'anthropic'
 type AIProviderPreset = {
@@ -81,15 +82,32 @@ type AIProviderPreset = {
   tone: string
   protocols: AIProtocol[]
   defaults: Partial<Record<AIProtocol, { baseUrl: string; model: string }>>
+  models?: string[]
+  docs?: string
+  note?: string
 }
 
 const AI_PROVIDERS: AIProviderPreset[] = [
-  { id: 'openai', name: 'OpenAI', description: 'OpenAI 官方服务', tone: 'emerald', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.openai.com', model: 'gpt-5.6-terra' } } },
-  { id: 'anthropic', name: 'Anthropic Claude', description: 'Anthropic 官方 Messages API', tone: 'amber', protocols: ['anthropic'], defaults: { anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5' } } },
-  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek 官方双协议接口', tone: 'blue', protocols: ['openai', 'anthropic'], defaults: { openai: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-flash' }, anthropic: { baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-v4-flash' } } },
-  { id: 'qwen', name: '阿里云百炼 / Qwen', description: '百炼北京地域官方接口', tone: 'violet', protocols: ['openai', 'anthropic'], defaults: { openai: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3.7-plus' }, anthropic: { baseUrl: 'https://dashscope.aliyuncs.com/apps/anthropic', model: 'qwen3.7-plus' } } },
-  { id: 'gemini', name: 'Google Gemini', description: 'Gemini OpenAI 兼容接口', tone: 'cyan', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.6-flash' } } },
-  { id: 'custom', name: '第三方中转站', description: '自定义 OpenAI 或 Anthropic 兼容接口', tone: 'slate', protocols: ['openai', 'anthropic'], defaults: {} }
+  { id: 'openai', name: 'OpenAI', description: 'OpenAI 官方服务', tone: 'emerald', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.openai.com', model: 'gpt-5.6-terra' } }, models: ['gpt-5.6-terra'], docs: 'https://platform.openai.com/docs/models' },
+  { id: 'anthropic', name: 'Anthropic Claude', description: 'Anthropic 官方 Messages API', tone: 'amber', protocols: ['anthropic'], defaults: { anthropic: { baseUrl: 'https://api.anthropic.com', model: 'claude-sonnet-5' } }, models: ['claude-sonnet-5'], docs: 'https://platform.claude.com/docs' },
+  { id: 'deepseek', name: 'DeepSeek', description: 'DeepSeek 官方双协议接口', tone: 'blue', protocols: ['openai', 'anthropic'], defaults: { openai: { baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash' }, anthropic: { baseUrl: 'https://api.deepseek.com/anthropic', model: 'deepseek-flash' } }, models: ['deepseek-flash', 'deepseek-v4-pro'], docs: 'https://api-docs.deepseek.com/zh-cn/' },
+  { id: 'qwen', name: '阿里云百炼 / Qwen', description: '百炼北京地域官方接口', tone: 'violet', protocols: ['openai', 'anthropic'], defaults: { openai: { baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen3.7-plus' }, anthropic: { baseUrl: 'https://dashscope.aliyuncs.com/apps/anthropic', model: 'qwen3.7-plus' } }, models: ['qwen3.7-plus'], docs: 'https://help.aliyun.com/zh/model-studio/' },
+  { id: 'gemini', name: 'Google Gemini', description: 'Gemini OpenAI 兼容接口', tone: 'cyan', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.6-flash' } }, models: ['gemini-3.6-flash'], docs: 'https://ai.google.dev/gemini-api/docs/models' },
+  { id: 'moonshot', name: '月之暗面 Kimi', description: 'Moonshot OpenAI 兼容接口', tone: 'indigo', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.moonshot.cn/v1', model: '' } }, models: [], docs: 'https://platform.moonshot.cn/docs' },
+  { id: 'zhipu', name: '智谱 GLM', description: 'BigModel 开放平台接口', tone: 'teal', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.3' } }, models: ['glm-5.3'], docs: 'https://docs.bigmodel.cn' },
+  { id: 'volcengine', name: '字节豆包 / 火山方舟', description: 'Ark OpenAI 兼容接口', tone: 'sky', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', model: '' } }, models: [], docs: 'https://www.volcengine.com/docs/82379', note: '模型建议填写推理接入点 ID（ep-…）或开通的模型 ID' },
+  { id: 'hunyuan', name: '腾讯混元', description: '混元 OpenAI 兼容接口', tone: 'rose', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.hunyuan.cloud.tencent.com/v1', model: '' } }, models: [], docs: 'https://cloud.tencent.com/document/product/1729' },
+  { id: 'qianfan', name: '百度千帆 / 文心', description: '千帆 v2 OpenAI 兼容接口', tone: 'orange', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://qianfan.baidubce.com/v2', model: '' } }, models: [], docs: 'https://cloud.baidu.com/doc/qianfan-api/index.html' },
+  { id: 'spark', name: '讯飞星火', description: '星火 OpenAI 兼容接口', tone: 'lime', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://spark-api-open.xf-yun.com/v1', model: '' } }, models: [], docs: 'https://www.xfyun.cn/doc/spark/' },
+  { id: 'minimax', name: 'MiniMax', description: 'MiniMax OpenAI 兼容接口', tone: 'pink', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.minimax.chat/v1', model: '' } }, models: [], docs: 'https://platform.minimaxi.com/document' },
+  { id: 'siliconflow', name: '硅基流动 SiliconFlow', description: '多模型聚合 OpenAI 兼容接口', tone: 'slate', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.siliconflow.cn/v1', model: '' } }, models: [], docs: 'https://docs.siliconflow.cn' },
+  { id: 'openrouter', name: 'OpenRouter', description: '海外多模型聚合平台', tone: 'purple', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://openrouter.ai/api/v1', model: '' } }, models: [], docs: 'https://openrouter.ai/docs' },
+  { id: 'groq', name: 'Groq', description: 'Groq 高速推理接口', tone: 'orange', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.groq.com/openai/v1', model: '' } }, models: [], docs: 'https://console.groq.com/docs' },
+  { id: 'xai', name: 'xAI Grok', description: 'xAI OpenAI 兼容接口', tone: 'stone', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.x.ai/v1', model: '' } }, models: [], docs: 'https://docs.x.ai' },
+  { id: 'mistral', name: 'Mistral', description: 'Mistral OpenAI 兼容接口', tone: 'amber', protocols: ['openai'], defaults: { openai: { baseUrl: 'https://api.mistral.ai/v1', model: '' } }, models: [], docs: 'https://docs.mistral.ai' },
+  { id: 'ollama', name: 'Ollama 本地', description: '本机 Ollama OpenAI 兼容接口', tone: 'slate', protocols: ['openai'], defaults: { openai: { baseUrl: 'http://localhost:11434/v1', model: '' } }, models: [], docs: 'https://github.com/ollama/ollama/blob/main/docs/openai.md', note: '需与容器同机或可访问的 Ollama 地址' },
+  { id: 'lmstudio', name: 'LM Studio 本地', description: '本机 LM Studio OpenAI 兼容接口', tone: 'slate', protocols: ['openai'], defaults: { openai: { baseUrl: 'http://localhost:1234/v1', model: '' } }, models: [], docs: 'https://lmstudio.ai/docs/api/openai-api' },
+  { id: 'custom', name: '第三方中转站 / 自定义', description: '自定义 OpenAI 或 Anthropic 兼容接口', tone: 'slate', protocols: ['openai', 'anthropic'], defaults: {}, models: [], docs: '' }
 ]
 
 const aiProvider = ref('deepseek')
@@ -98,6 +116,14 @@ const aiCustomName = ref('')
 const aiApiKey = ref('')
 const aiBaseUrl = ref('https://api.deepseek.com')
 const aiModel = ref('deepseek-v4-flash')
+const aiReasoningEffort = ref('')
+
+const AI_EFFORT_OPTIONS = [
+  { value: '', label: '不指定' },
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' }
+] as const
 const aiApiKeySaving = ref(false)
 const showApiKey = ref(false)
 const showAIAdvanced = ref(false)
@@ -169,18 +195,21 @@ const aiStatus = ref({
   message: '',
   baseUrl: '',
   model: '',
+  reasoningEffort: '',
   provider: '',
   protocol: '',
   endpoint: ''
 })
 
 const selectedAIProvider = computed(() => AI_PROVIDERS.find(item => item.id === aiProvider.value) || AI_PROVIDERS[2]!)
+const aiModelSuggestions = computed(() => selectedAIProvider.value.models || [])
+const aiEffortLabel = computed(() => AI_EFFORT_OPTIONS.find(item => item.value === aiReasoningEffort.value)?.label || '不指定')
 const aiEndpointPreview = computed(() => resolveAIEndpointPreview(aiBaseUrl.value, aiProtocol.value))
 const aiStatusProviderName = computed(() => aiStatus.value.provider === 'custom'
   ? aiCustomName.value.trim() || '第三方中转站'
   : AI_PROVIDERS.find(item => item.id === aiStatus.value.provider)?.name || aiStatus.value.provider || selectedAIProvider.value.name)
 
-watch([aiProvider, aiProtocol, aiCustomName, aiApiKey, aiBaseUrl, aiModel, aiTestMessage], () => {
+watch([aiProvider, aiProtocol, aiCustomName, aiApiKey, aiBaseUrl, aiModel, aiReasoningEffort, aiTestMessage], () => {
   if (!aiTesting.value) aiTestResult.value = null
 })
 
@@ -265,13 +294,14 @@ onMounted(async () => {
 
 async function loadAIConfig() {
   try {
-    const [providerRes, protocolRes, customNameRes, apiKeyRes, baseUrlRes, modelRes] = await Promise.all([
+    const [providerRes, protocolRes, customNameRes, apiKeyRes, baseUrlRes, modelRes, effortRes] = await Promise.all([
       getSetting({ settingKey: AI_PROVIDER_SETTING }),
       getSetting({ settingKey: AI_PROTOCOL_SETTING }),
       getSetting({ settingKey: AI_CUSTOM_NAME_SETTING }),
       getSetting({ settingKey: AI_API_KEY_SETTING }),
       getSetting({ settingKey: AI_BASE_URL_SETTING }),
-      getSetting({ settingKey: AI_MODEL_SETTING })
+      getSetting({ settingKey: AI_MODEL_SETTING }),
+      getSetting({ settingKey: AI_REASONING_EFFORT_SETTING })
     ])
 
     const storedBaseUrl = baseUrlRes.code === 200 && baseUrlRes.data ? baseUrlRes.data.settingValue || '' : ''
@@ -294,6 +324,8 @@ async function loadAIConfig() {
     const preset = selectedAIProvider.value.defaults[aiProtocol.value]
     aiBaseUrl.value = storedBaseUrl || preset?.baseUrl || ''
     aiModel.value = storedModel || preset?.model || ''
+    const storedEffort = effortRes.code === 200 && effortRes.data ? effortRes.data.settingValue || '' : ''
+    aiReasoningEffort.value = storedEffort === 'low' || storedEffort === 'medium' || storedEffort === 'high' ? storedEffort : ''
     showAIAdvanced.value = aiProvider.value === 'custom'
   } catch (e) {
     console.error('获取AI配置失败:', e)
@@ -437,6 +469,7 @@ async function handleTestAIConnection() {
       apiKey: aiApiKey.value.trim(),
       baseUrl: aiBaseUrl.value.trim(),
       model: aiModel.value.trim(),
+      reasoningEffort: aiReasoningEffort.value,
       message: aiTestMessage.value.trim()
     })
     const payload = await response.json()
@@ -622,6 +655,11 @@ async function handleSaveAIConfig() {
         settingKey: AI_MODEL_SETTING,
         settingValue: aiModel.value.trim(),
         settingDesc: 'AI对话模型名称'
+      }),
+      saveSetting({
+        settingKey: AI_REASONING_EFFORT_SETTING,
+        settingValue: aiReasoningEffort.value,
+        settingDesc: 'AI推理强度（low/medium/high，留空表示不指定）'
       })
     ])
 
@@ -641,6 +679,7 @@ function handleResetAIConfig() {
   aiApiKey.value = ''
   selectAIProvider(AI_PROVIDERS.find(item => item.id === 'deepseek') || AI_PROVIDERS[0]!)
   aiCustomName.value = ''
+  aiReasoningEffort.value = ''
 }
 
 async function handleSaveEmbeddingConfig() {
@@ -1324,6 +1363,22 @@ async function saveMenuLayout() {
             <div class="settings__ai-preset-summary">
               <span>{{ aiProtocol === 'anthropic' ? 'Anthropic Messages' : 'OpenAI Chat Completions' }}</span>
               <strong>{{ aiModel || '待填写模型' }}</strong>
+              <span v-if="aiReasoningEffort">推理强度：{{ aiEffortLabel }}</span>
+            </div>
+
+            <div class="settings__field">
+              <label class="settings__label">推理强度
+                <span class="settings__label-hint">可选，不指定则沿用模型默认行为</span>
+              </label>
+              <div class="settings__protocol-tabs">
+                <button
+                  v-for="option in AI_EFFORT_OPTIONS"
+                  :key="option.value"
+                  :class="{ active: aiReasoningEffort === option.value }"
+                  @click="aiReasoningEffort = option.value"
+                >{{ option.label }}</button>
+              </div>
+              <p class="settings__label-hint">选择后会向支持的模型下发 reasoning_effort（OpenAI 兼容接口）或 thinking 预算（Anthropic）。不支持的模型请保持“不指定”，可用下方连通性测试验证。</p>
             </div>
 
             <button class="settings__advanced-trigger" @click="showAIAdvanced = !showAIAdvanced">
@@ -1347,8 +1402,16 @@ async function saveMenuLayout() {
               </div>
               <div class="settings__field">
                 <label class="settings__label">模型名称</label>
-                <input v-model="aiModel" type="text" class="settings__input" placeholder="请输入模型 ID" :disabled="aiApiKeySaving" />
+                <input v-model="aiModel" type="text" class="settings__input" list="ai-model-suggestions" placeholder="请输入模型 ID" :disabled="aiApiKeySaving" />
+                <datalist id="ai-model-suggestions">
+                  <option v-for="model in aiModelSuggestions" :key="model" :value="model" />
+                </datalist>
+                <p v-if="selectedAIProvider.note" class="settings__label-hint">{{ selectedAIProvider.note }}</p>
+                <p v-else class="settings__label-hint">模型 ID 以服务商文档为准，也可直接填写任意模型名</p>
               </div>
+              <p v-if="selectedAIProvider.docs" class="settings__label-hint">
+                官方文档：<a :href="selectedAIProvider.docs" target="_blank" rel="noopener noreferrer">{{ selectedAIProvider.docs }}</a>
+              </p>
               <div class="settings__endpoint-preview">
                 <span>最终请求地址</span>
                 <code>{{ aiEndpointPreview || '请输入有效的 Base URL' }}</code>

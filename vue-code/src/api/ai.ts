@@ -109,6 +109,7 @@ export interface AIConnectionTestRequest {
   apiKey: string
   baseUrl: string
   model: string
+  reasoningEffort?: string
   message: string
 }
 

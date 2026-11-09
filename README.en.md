@@ -18,7 +18,7 @@ XianYuSmart is a virtual product operations system for Xianyu in multi-tenant en
 
 The system does more than send a block of text after receiving an order. It connects **order discovery, idempotent queuing, inventory reservation, dual-channel delivery, failure retries, and manual review** into a complete recoverable workflow. Fixed content and card-key delivery modes are strictly mutually exclusive, while accounts, products, messages, orders, inventory, tasks, and AI knowledge bases are isolated by tenant. Core task workflows rely only on MySQL, without requiring Redis or a message queue, balancing deployment cost with future extensibility.
 
-Current version: [2.0.9](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.9) · [View changelog](CHANGELOG.md)
+Current version: [2.1.0](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.1.0) · [View changelog](CHANGELOG.md)
 
 [Community & Support](#community--support) · [Benefits for Merchants](#benefits-for-merchants) · [Technical Highlights](#technical-highlights) · [Problems Solved](#problems-solved) · [Feature Scope](#feature-scope) · [Feature Entry Points & Setup Order](#feature-entry-points--setup-order) · [Business Workflow](#business-workflow) · [Technical Baseline](#technical-baseline) · [Container Image Deployment](#container-image-deployment) · [Quick Start](#quick-start) · [Configuration](#configuration) · [Development Build](#development-build) · [Build & Verification](#build--verification) · [Directory Responsibilities](#directory-responsibilities) · [Routine Operations](#routine-operations) · [Usage Boundaries](#usage-boundaries) · [License & Disclaimer](#license--disclaimer) · [Star History](#star-history)
 
@@ -212,7 +212,7 @@ flowchart LR
 Every official Release automatically publishes a `linux/amd64` image to GitHub Container Registry. Fixed versions are suitable for production deployment, while `latest` is intended for trying the latest official release.
 
 ```bash
-docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.0.9
+docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.1.0
 docker pull ghcr.io/evvvvvvvan/xianyusmart:latest
 ```
 
@@ -223,7 +223,7 @@ Linux:
 ```bash
 cp .env.example .env
 # Update the database password and strong JWT secret in .env
-export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.0.9
+export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.1.0
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -233,7 +233,7 @@ Windows PowerShell:
 ```powershell
 Copy-Item .env.example .env
 notepad .env
-$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.0.9'
+$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.1.0'
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -333,6 +333,19 @@ The following tuning variables can be added under `app.environment` in `compose.
 | `PRINT_RAW_MESSAGE` | false | Raw message logging; keep disabled in production |
 
 Before increasing concurrency, evaluate Xianyu API rate limits, active tenant count, MySQL connections, and server memory together. Keep the defaults first and use the exception queue to identify real bottlenecks before tuning.
+
+### AI model configuration
+
+The AI settings page ships 20 provider presets: OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Bailian (Qwen), Moonshot Kimi, Zhipu GLM, ByteDance Doubao (Volcengine Ark), Tencent Hunyuan, Baidu Qianfan, iFlytek Spark, MiniMax, SiliconFlow, OpenRouter, Groq, xAI Grok, Mistral, Ollama, LM Studio, and custom/relay endpoints.
+
+| Field | Description |
+| --- | --- |
+| Protocol | OpenAI `chat/completions` or Anthropic `messages`; dual-protocol providers can switch |
+| Base URL | Root address, `/v1`, or a full endpoint. Paths are completed automatically; URLs with query strings or credentials are rejected |
+| Model | Use the provider's model ID (e.g. `ep-…` for Ark endpoints, `vendor/model` for aggregators) |
+| Reasoning effort | Optional low/medium/high. OpenAI-compatible endpoints receive `reasoning_effort`; Anthropic maps to extended-thinking budget. Leave unset when the model does not support it |
+
+Changes rebuild the client immediately. Use "send test" after switching providers to verify URL, key, and model together.
 
 ## Development Build
 

@@ -146,7 +146,7 @@ public class SysSettingController {
         }
         DynamicAIChatClientManager.ChatConfig config = new DynamicAIChatClientManager.ChatConfig(
                 reqDTO.getProvider(), reqDTO.getProtocol(), reqDTO.getCustomName(), reqDTO.getApiKey(),
-                reqDTO.getBaseUrl(), reqDTO.getModel());
+                reqDTO.getBaseUrl(), reqDTO.getModel(), reqDTO.getReasoningEffort());
         return ResultObject.success(dynamicAIChatClientManager.testConnection(config, reqDTO.getMessage()));
     }
 
@@ -192,6 +192,7 @@ public class SysSettingController {
         private String apiKey;
         private String baseUrl;
         private String model;
+        private String reasoningEffort;
         private String message;
 
         public String getProvider() { return provider; }
@@ -206,6 +207,8 @@ public class SysSettingController {
         public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
         public String getModel() { return model; }
         public void setModel(String model) { this.model = model; }
+        public String getReasoningEffort() { return reasoningEffort; }
+        public void setReasoningEffort(String reasoningEffort) { this.reasoningEffort = reasoningEffort; }
         public String getMessage() { return message; }
         public void setMessage(String message) { this.message = message; }
     }

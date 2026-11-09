@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 
+import java.util.Locale;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
@@ -38,6 +39,8 @@ public class DynamicAIChatClientManager {
     private static final String AI_PROVIDER_SETTING = "ai_provider";
     private static final String AI_PROTOCOL_SETTING = "ai_protocol";
     private static final String AI_CUSTOM_NAME_SETTING = "ai_custom_name";
+    /** 可选的推理强度（low/medium/high），留空表示不指定。 */
+    private static final String AI_REASONING_EFFORT_SETTING = "ai_reasoning_effort";
 
     private static final String DEFAULT_PROVIDER = "deepseek";
     private static final String DEFAULT_PROTOCOL = "openai";
@@ -57,6 +60,7 @@ public class DynamicAIChatClientManager {
     private final Map<Long, String> cachedModels = new ConcurrentHashMap<>();
     private final Map<Long, String> cachedProviders = new ConcurrentHashMap<>();
     private final Map<Long, String> cachedProtocols = new ConcurrentHashMap<>();
+    private final Map<Long, String> cachedEfforts = new ConcurrentHashMap<>();
     private final Map<Long, ChatClient> chatClients = new ConcurrentHashMap<>();
 
     /** 读写锁，保护ChatClient的线程安全 */
@@ -89,7 +93,8 @@ public class DynamicAIChatClientManager {
                 || !currentConfig.baseUrl().equals(cachedBaseUrls.get(tenantId))
                 || !currentConfig.model().equals(cachedModels.get(tenantId))
                 || !currentConfig.provider().equals(cachedProviders.get(tenantId))
-                || !currentConfig.protocol().equals(cachedProtocols.get(tenantId));
+                || !currentConfig.protocol().equals(cachedProtocols.get(tenantId))
+                || !currentConfig.reasoningEffort().equals(cachedEfforts.get(tenantId));
 
         if (needRebuild) {
             lock.writeLock().lock();
@@ -100,11 +105,13 @@ public class DynamicAIChatClientManager {
                         || !currentConfig.baseUrl().equals(cachedBaseUrls.get(tenantId))
                         || !currentConfig.model().equals(cachedModels.get(tenantId))
                         || !currentConfig.provider().equals(cachedProviders.get(tenantId))
-                        || !currentConfig.protocol().equals(cachedProtocols.get(tenantId));
+                        || !currentConfig.protocol().equals(cachedProtocols.get(tenantId))
+                || !currentConfig.reasoningEffort().equals(cachedEfforts.get(tenantId));
 
                 if (stillNeedRebuild) {
-                    log.info("[DynamicAI] 检测到AI配置变化，重建ChatClient: provider={}, protocol={}, baseUrl={}, model={}",
-                            currentConfig.provider(), currentConfig.protocol(), currentConfig.baseUrl(), currentConfig.model());
+                    log.info("[DynamicAI] 检测到AI配置变化，重建ChatClient: provider={}, protocol={}, baseUrl={}, model={}, reasoningEffort={}",
+                            currentConfig.provider(), currentConfig.protocol(), currentConfig.baseUrl(),
+                            currentConfig.model(), currentConfig.reasoningEffort().isEmpty() ? "未指定" : currentConfig.reasoningEffort());
 
                     chatClients.put(tenantId, buildChatClient(currentConfig));
                     cachedApiKeys.put(tenantId, currentConfig.apiKey());
@@ -112,6 +119,7 @@ public class DynamicAIChatClientManager {
                     cachedModels.put(tenantId, currentConfig.model());
                     cachedProviders.put(tenantId, currentConfig.provider());
                     cachedProtocols.put(tenantId, currentConfig.protocol());
+                    cachedEfforts.put(tenantId, currentConfig.reasoningEffort());
 
                     log.info("[DynamicAI] ChatClient重建完成");
                 }
@@ -162,6 +170,7 @@ public class DynamicAIChatClientManager {
         info.setProtocol(config.protocol());
         info.setBaseUrl(config.baseUrl());
         info.setModel(config.model());
+        info.setReasoningEffort(config.reasoningEffort());
 
         String endpointError = "";
         try {
@@ -206,6 +215,7 @@ public class DynamicAIChatClientManager {
                 cachedModels.clear();
                 cachedProviders.clear();
                 cachedProtocols.clear();
+                cachedEfforts.clear();
                 chatClients.clear();
             } else {
                 cachedApiKeys.remove(tenantId);
@@ -213,6 +223,7 @@ public class DynamicAIChatClientManager {
                 cachedModels.remove(tenantId);
                 cachedProviders.remove(tenantId);
                 cachedProtocols.remove(tenantId);
+                cachedEfforts.remove(tenantId);
                 chatClients.remove(tenantId);
             }
         } finally {
@@ -240,9 +251,13 @@ public class DynamicAIChatClientManager {
                 .baseUrl(endpoint.baseUrl())
                 .completionsPath(endpoint.path())
                 .build();
-        OpenAiChatOptions chatOptions = OpenAiChatOptions.builder()
-                .model(config.model())
-                .build();
+        OpenAiChatOptions.Builder optionsBuilder = OpenAiChatOptions.builder()
+                .model(config.model());
+        // 推理强度只在用户显式选择时下发，避免对不支持该参数的模型造成 400。
+        if (!config.reasoningEffort().isEmpty()) {
+            optionsBuilder.reasoningEffort(config.reasoningEffort());
+        }
+        OpenAiChatOptions chatOptions = optionsBuilder.build();
         return OpenAiChatModel.builder()
                 .openAiApi(openAiApi)
                 .defaultOptions(chatOptions)
@@ -255,10 +270,17 @@ public class DynamicAIChatClientManager {
                 .baseUrl(endpoint.baseUrl())
                 .completionsPath(endpoint.path())
                 .build();
-        AnthropicChatOptions chatOptions = AnthropicChatOptions.builder()
-                .model(config.model())
-                .maxTokens(2048)
-                .build();
+        AnthropicChatOptions.Builder optionsBuilder = AnthropicChatOptions.builder()
+                .model(config.model());
+        int budgetTokens = thinkingBudgetTokens(config.reasoningEffort());
+        if (budgetTokens > 0) {
+            // Claude 扩展思考要求 max_tokens 大于思考预算，这里保留 2048 的输出余量。
+            optionsBuilder.maxTokens(Math.max(2048, budgetTokens + 2048))
+                    .thinking(AnthropicApi.ThinkingType.ENABLED, budgetTokens);
+        } else {
+            optionsBuilder.maxTokens(2048);
+        }
+        AnthropicChatOptions chatOptions = optionsBuilder.build();
         return AnthropicChatModel.builder()
                 .anthropicApi(anthropicApi)
                 .defaultOptions(chatOptions)
@@ -308,7 +330,8 @@ public class DynamicAIChatClientManager {
         return new ChatConfig(provider, normalizeProtocol(getSettingValue(AI_PROTOCOL_SETTING), provider),
                 text(getSettingValue(AI_CUSTOM_NAME_SETTING)), text(getSettingValue(AI_API_KEY_SETTING)),
                 configuredBaseUrl.isBlank() ? DEFAULT_BASE_URL : configuredBaseUrl,
-                configuredModel.isBlank() ? DEFAULT_MODEL : configuredModel);
+                configuredModel.isBlank() ? DEFAULT_MODEL : configuredModel,
+                normalizeReasoningEffort(getSettingValue(AI_REASONING_EFFORT_SETTING)));
     }
 
     private ChatConfig validateTestConfig(ChatConfig config) {
@@ -325,7 +348,8 @@ public class DynamicAIChatClientManager {
             throw new IllegalArgumentException("模型名称不能为空");
         }
         return new ChatConfig(text(config.provider()), normalizeProtocol(config.protocol(), config.provider()), text(config.customName()),
-                text(config.apiKey()), text(config.baseUrl()), text(config.model()));
+                text(config.apiKey()), text(config.baseUrl()), text(config.model()),
+                normalizeReasoningEffort(config.reasoningEffort()));
     }
 
     private AIEndpointResolver.Endpoint resolveChatEndpoint(ChatConfig config) {
@@ -357,6 +381,29 @@ public class DynamicAIChatClientManager {
         return message.length() > 600 ? message.substring(0, 600) : message;
     }
 
+    /**
+     * 只接受 low/medium/high，其他值一律视为“不指定”，避免把用户输入直接透传给接口。
+     */
+    static String normalizeReasoningEffort(String effort) {
+        String normalized = text(effort).toLowerCase(Locale.ROOT);
+        return switch (normalized) {
+            case "low", "medium", "high" -> normalized;
+            default -> "";
+        };
+    }
+
+    /**
+     * Claude 扩展思考的预算映射，未指定推理强度时返回 0 表示不开启。
+     */
+    static int thinkingBudgetTokens(String effort) {
+        return switch (normalizeReasoningEffort(effort)) {
+            case "low" -> 1024;
+            case "medium" -> 4096;
+            case "high" -> 8192;
+            default -> 0;
+        };
+    }
+
     private static String normalizeProtocol(String protocol, String provider) {
         if ("anthropic".equalsIgnoreCase(text(protocol))) {
             return "anthropic";
@@ -386,7 +433,13 @@ public class DynamicAIChatClientManager {
     }
 
     public record ChatConfig(String provider, String protocol, String customName, String apiKey, String baseUrl,
-                             String model) {
+                             String model, String reasoningEffort) {
+
+        /** 兼容未携带推理强度的调用方。 */
+        public ChatConfig(String provider, String protocol, String customName, String apiKey, String baseUrl,
+                          String model) {
+            this(provider, protocol, customName, apiKey, baseUrl, model, "");
+        }
     }
 
     public record ConnectionTestResult(boolean success, String reply, long latencyMs, String provider,
@@ -406,6 +459,10 @@ public class DynamicAIChatClientManager {
         private String provider;
         private String protocol;
         private String endpoint;
+        private String reasoningEffort;
+
+        public String getReasoningEffort() { return reasoningEffort; }
+        public void setReasoningEffort(String reasoningEffort) { this.reasoningEffort = reasoningEffort; }
 
         public boolean isEnabled() { return enabled; }
         public void setEnabled(boolean enabled) { this.enabled = enabled; }

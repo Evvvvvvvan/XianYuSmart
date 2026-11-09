@@ -18,7 +18,7 @@ XianYuSmart 是一个面向多租户场景的闲鱼虚拟商品运营系统。�
 
 它不只是在收到订单后发送一段文本，而是把 **订单发现、幂等入队、库存预占、双通道交付、失败重试和人工复核** 串成可恢复的完整链路。固定内容与卡密两种交付模式严格互斥，账号、商品、消息、订单、库存、任务和 AI 知识库按租户隔离。核心任务链路只依赖 MySQL，不强制引入 Redis 或消息队列，兼顾部署成本与后续扩展。
 
-当前版本：[2.0.9](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.0.9) · [查看更新日志](CHANGELOG.md)
+当前版本：[2.1.0](https://github.com/Evvvvvvvan/XianYuSmart/releases/tag/v2.1.0) · [查看更新日志](CHANGELOG.md)
 
 [交流与支持](#交流与支持) · [商家能得到什么](#商家能得到什么) · [技术亮点](#技术亮点) · [解决的问题](#解决的问题) · [能力范围](#能力范围) · [功能入口与使用顺序](#功能入口与使用顺序) · [业务流程](#业务流程) · [技术基线](#技术基线) · [镜像部署](#镜像部署) · [快速启动](#快速启动) · [配置说明](#配置说明) · [开发构建](#开发构建) · [构建与验证](#构建与验证) · [目录与职责](#目录与职责) · [日常运维](#日常运维) · [使用边界](#使用边界) · [许可证与免责声明](#许可证与免责声明) · [Star History](#star-history)
 
@@ -212,7 +212,7 @@ flowchart LR
 每个正式 Release 会自动发布 `linux/amd64` 镜像到 GitHub Container Registry。固定版本适合生产部署，`latest` 适合体验最新正式版本。
 
 ```bash
-docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.0.9
+docker pull ghcr.io/evvvvvvvan/xianyusmart:v2.1.0
 docker pull ghcr.io/evvvvvvvan/xianyusmart:latest
 ```
 
@@ -223,7 +223,7 @@ Linux：
 ```bash
 cp .env.example .env
 # 修改 .env 中的数据库密码和 JWT 强密钥
-export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.0.9
+export APP_IMAGE=ghcr.io/evvvvvvvan/xianyusmart:v2.1.0
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -233,7 +233,7 @@ Windows PowerShell：
 ```powershell
 Copy-Item .env.example .env
 notepad .env
-$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.0.9'
+$env:APP_IMAGE = 'ghcr.io/evvvvvvvan/xianyusmart:v2.1.0'
 docker compose pull app
 docker compose up -d --no-build
 ```
@@ -333,6 +333,19 @@ docker compose --profile proxy up -d --build
 | `PRINT_RAW_MESSAGE` | false | 原始消息日志开关，生产环境保持关闭 |
 
 调大并发前应同步评估闲鱼接口频率、活跃租户数、MySQL 连接数和服务器内存。优先保持默认值，通过异常待办确认实际瓶颈后再调整。
+
+### AI 模型配置
+
+「设置 → AI」内置 20 个服务商预设：OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里云百炼 Qwen、月之暗面 Kimi、智谱 GLM、字节豆包（火山方舟）、腾讯混元、百度千帆、讯飞星火、MiniMax、硅基流动、OpenRouter、Groq、xAI Grok、Mistral、Ollama、LM Studio，以及第三方中转站/自定义。
+
+| 配置项 | 说明 |
+| --- | --- |
+| 协议 | OpenAI `chat/completions` 或 Anthropic `messages`；DeepSeek、百炼、中转站等双协议服务可切换 |
+| Base URL | 支持根地址、`/v1` 或完整 endpoint，自动补齐路径；带查询参数或账号密码的地址会被拒绝 |
+| 模型 | 以服务商文档为准、可自由填写；火山方舟填推理接入点 `ep-…`，OpenRouter 等聚合平台填 `厂商/模型` |
+| 推理强度 | 可选“低/中/高”，默认不指定。OpenAI 兼容接口下发 `reasoning_effort`，Anthropic 映射为扩展思考预算；不支持的模型保持“不指定” |
+
+保存后立即重建客户端生效。切换服务商后建议先点“发送测试”，确认地址、Key 和实际开通的模型一致；本地 Ollama / LM Studio 需要与容器网络互通。
 
 ## 开发构建
 
