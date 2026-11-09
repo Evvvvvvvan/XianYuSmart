@@ -410,6 +410,8 @@ const getPageButtons = () => {
               <option value="0">在售</option>
               <option value="1">已下架</option>
               <option value="2">已售出</option>
+              <option value="-1">已删除</option>
+              <option value="-9">平台失效</option>
             </select>
             <span class="goods__select-icon">
               <IconChevronDown />

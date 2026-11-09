@@ -43,7 +43,9 @@ export function getGoodsStatusText(status: number): { text: string; type: string
   const statusMap: Record<number, { text: string; type: string }> = {
     0: { text: '在售', type: 'success' },
     1: { text: '已下架', type: 'info' },
-    2: { text: '已售出', type: 'warning' }
+    2: { text: '已售出', type: 'warning' },
+    '-1': { text: '已删除', type: 'info' },
+    '-9': { text: '平台失效', type: 'warning' }
   }
   return statusMap[status] || { text: '未知', type: 'info' }
 }

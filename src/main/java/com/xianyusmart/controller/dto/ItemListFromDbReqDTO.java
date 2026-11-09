@@ -10,10 +10,15 @@ public class ItemListFromDbReqDTO {
     
     /**
      * 只显示在售商品
-     * true=只显示在售(status=0), false/null=显示全部
-     * 默认true
+     * true=只显示在售(status=0)，false/null=显示全部（默认）
      */
-    private Boolean onlyOnSale = true;
+    private Boolean onlyOnSale = false;
+
+    /**
+     * 精确筛选商品状态（可选，优先级高于 onlyOnSale）
+     * 0=在售 1=已下架 2=已售出 -1=已删除 -9=平台失效
+     */
+    private Integer status;
     
     /**
      * 闲鱼账号ID（可选）

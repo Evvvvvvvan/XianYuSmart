@@ -125,6 +125,8 @@ export function useGoodsManager() {
     try {
       const params: any = {
         xianyuAccountId: selectedAccountId.value,
+        // 默认展示全部状态（在售/已下架/已删除等），再由状态筛选精确过滤
+        onlyOnSale: false,
         pageNum: currentPage.value,
         pageSize: pageSize.value
       }

@@ -292,6 +292,16 @@ public class ItemServiceImpl implements ItemService {
         }
     }
     
+    /**
+     * 解析商品列表状态过滤：显式 status 优先，其次 onlyOnSale，两者都没有时返回 null 表示全部。
+     */
+    static Integer resolveStatusFilter(Integer status, Boolean onlyOnSale) {
+        if (status != null) {
+            return status;
+        }
+        return Boolean.TRUE.equals(onlyOnSale) ? Integer.valueOf(0) : null;
+    }
+
     @Override
     public ResultObject<ItemListFromDbRespDTO> getItemsFromDb(ItemListFromDbReqDTO reqDTO) {
         try {
@@ -307,12 +317,13 @@ public class ItemServiceImpl implements ItemService {
                 pageNum = 1;
             }
             
-            boolean onlyOnSale = reqDTO.getOnlyOnSale() == null || reqDTO.getOnlyOnSale();
+            // 显式状态优先；未指定状态且要求只看在售时才过滤 status=0，否则返回全部商品。
+            Integer statusFilter = resolveStatusFilter(reqDTO.getStatus(), reqDTO.getOnlyOnSale());
             
             // 统计总数
             int totalCount;
-            if (onlyOnSale) {
-                totalCount = goodsInfoService.countByStatusAndAccountId(0, reqDTO.getXianyuAccountId());
+            if (statusFilter != null) {
+                totalCount = goodsInfoService.countByStatusAndAccountId(statusFilter, reqDTO.getXianyuAccountId());
             } else {
                 totalCount = goodsInfoService.countByAccountId(reqDTO.getXianyuAccountId());
             }
@@ -332,8 +343,8 @@ public class ItemServiceImpl implements ItemService {
             
             // 获取当前页的商品列表
             List<XianyuGoodsInfo> pagedItems;
-            if (onlyOnSale) {
-                pagedItems = goodsInfoService.listByStatusAndAccountId(0, reqDTO.getXianyuAccountId(), pageNum, pageSize);
+            if (statusFilter != null) {
+                pagedItems = goodsInfoService.listByStatusAndAccountId(statusFilter, reqDTO.getXianyuAccountId(), pageNum, pageSize);
             } else {
                 pagedItems = goodsInfoService.listByAccountId(reqDTO.getXianyuAccountId(), pageNum, pageSize);
             }
