@@ -18,6 +18,14 @@ class AIReasoningEffortTest {
     }
 
     @Test
+    void sceneModelInheritsGlobalModelWhenEmpty() {
+        assertEquals("global-model", DynamicAIChatClientManager.resolveSceneModel("global-model", ""));
+        assertEquals("global-model", DynamicAIChatClientManager.resolveSceneModel("global-model", null));
+        assertEquals("fast-model", DynamicAIChatClientManager.resolveSceneModel("global-model", "fast-model"));
+        assertEquals("fast-model", DynamicAIChatClientManager.resolveSceneModel("global-model", " fast-model "));
+    }
+
+    @Test
     void claudeThinkingBudgetFollowsSelectedEffort() {
         assertEquals(0, DynamicAIChatClientManager.thinkingBudgetTokens(""));
         assertEquals(0, DynamicAIChatClientManager.thinkingBudgetTokens("unknown"));

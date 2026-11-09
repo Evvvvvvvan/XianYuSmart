@@ -87,7 +87,7 @@ public class AIServiceImpl implements AIService {
         log.info("[AI Chat] 收到请求, prompt={}, goodsId={}", prompt, goodsId);
 
         // 1. 检查AI是否可用
-        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient(DynamicAIChatClientManager.AIChatScene.REPLY);
         if (chatClient == null) {
             log.warn("[AI Chat] AI服务不可用，返回降级提示");
             return Flux.just(AI_NOT_AVAILABLE_MSG);
@@ -172,7 +172,7 @@ public class AIServiceImpl implements AIService {
         RAGReplyResult result = new RAGReplyResult();
         
         // 1. 检查AI是否可用
-        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient(DynamicAIChatClientManager.AIChatScene.REPLY);
         if (chatClient == null) {
             result.setReplyContent(AI_NOT_AVAILABLE_MSG);
             return result;
@@ -260,7 +260,7 @@ public class AIServiceImpl implements AIService {
     public RAGReplyResult chatByRAGWithDetails(String msg, String goodsId, String contextMessages) {
         RAGReplyResult result = new RAGReplyResult();
         
-        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient(DynamicAIChatClientManager.AIChatScene.REPLY);
         if (chatClient == null) {
             result.setReplyContent(AI_NOT_AVAILABLE_MSG);
             return result;
@@ -345,7 +345,7 @@ public class AIServiceImpl implements AIService {
         log.info("[AI Chat Test Stream] 开始流式对话: goodsId={}, msg={}, fixedMaterial={}, goodsDetail={}", 
                 goodsId, msg, fixedMaterial != null, goodsDetail != null);
         
-        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient(DynamicAIChatClientManager.AIChatScene.REPLY);
         if (chatClient == null) {
             return Flux.just(AI_NOT_AVAILABLE_MSG);
         }
@@ -422,7 +422,7 @@ public class AIServiceImpl implements AIService {
     public RAGReplyResult chatByRAGWithFixedMaterial(String msg, String goodsId, String contextMessages, String fixedMaterial, String goodsDetail) {
         RAGReplyResult result = new RAGReplyResult();
         
-        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient(DynamicAIChatClientManager.AIChatScene.REPLY);
         if (chatClient == null) {
             result.setReplyContent(AI_NOT_AVAILABLE_MSG);
             return result;
@@ -660,7 +660,7 @@ public class AIServiceImpl implements AIService {
 
     @Override
     public String simpleChat(String message) {
-        ChatClient chatClient = dynamicAIChatClientManager.getChatClient();
+        ChatClient chatClient = dynamicAIChatClientManager.getChatClient(DynamicAIChatClientManager.AIChatScene.POLISH);
         if (chatClient == null) {
             return null;
         }

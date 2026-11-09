@@ -344,6 +344,7 @@ The AI settings page ships 20 provider presets: OpenAI, Anthropic Claude, Google
 | Base URL | Root address, `/v1`, or a full endpoint. Paths are completed automatically; URLs with query strings or credentials are rejected |
 | Model | Use the provider's model ID (e.g. `ep-…` for Ark endpoints, `vendor/model` for aggregators) |
 | Reasoning effort | Optional low/medium/high. OpenAI-compatible endpoints receive `reasoning_effort`; Anthropic maps to extended-thinking budget. Leave unset when the model does not support it |
+| Scene models | Optional per-scene overrides for buyer auto-replies and copy polishing; empty inherits the global model |
 
 Changes rebuild the client immediately. Use "send test" after switching providers to verify URL, key, and model together.
 

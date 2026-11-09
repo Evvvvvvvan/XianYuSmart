@@ -41,6 +41,10 @@ public class DynamicAIChatClientManager {
     private static final String AI_CUSTOM_NAME_SETTING = "ai_custom_name";
     /** 可选的推理强度（low/medium/high），留空表示不指定。 */
     private static final String AI_REASONING_EFFORT_SETTING = "ai_reasoning_effort";
+    /** 买家自动回复场景的模型（留空继承全局模型）。 */
+    private static final String AI_MODEL_REPLY_SETTING = "ai_model_reply";
+    /** 文案润色/生成场景的模型（留空继承全局模型）。 */
+    private static final String AI_MODEL_POLISH_SETTING = "ai_model_polish";
 
     private static final String DEFAULT_PROVIDER = "deepseek";
     private static final String DEFAULT_PROTOCOL = "openai";
@@ -54,26 +58,31 @@ public class DynamicAIChatClientManager {
     @Value("${ai.enabled:false}")
     private boolean aiEnabled;
 
-    /** 每个租户独立缓存AI客户端和模型配置。 */
-    private final Map<Long, String> cachedApiKeys = new ConcurrentHashMap<>();
-    private final Map<Long, String> cachedBaseUrls = new ConcurrentHashMap<>();
-    private final Map<Long, String> cachedModels = new ConcurrentHashMap<>();
-    private final Map<Long, String> cachedProviders = new ConcurrentHashMap<>();
-    private final Map<Long, String> cachedProtocols = new ConcurrentHashMap<>();
-    private final Map<Long, String> cachedEfforts = new ConcurrentHashMap<>();
-    private final Map<Long, ChatClient> chatClients = new ConcurrentHashMap<>();
+    /** 每个租户的配置指纹；任一配置变化时重建该租户全部场景客户端。 */
+    private final Map<Long, String> cachedFingerprints = new ConcurrentHashMap<>();
+    /** key 为 tenantId:scene，不同场景可使用不同强度的模型。 */
+    private final Map<String, ChatClient> chatClients = new ConcurrentHashMap<>();
 
     /** 读写锁，保护ChatClient的线程安全 */
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
+    /** AI 调用场景：买家回复与文案生成对模型强度、时延的要求不同。 */
+    public enum AIChatScene {
+        DEFAULT, REPLY, POLISH
+    }
+
     /**
-     * 获取ChatClient实例
-     * 如果API Key未配置或为空，返回null
-     * 如果API Key发生变化，自动重建ChatClient
-     *
-     * @return ChatClient实例，未配置API Key时返回null
+     * 获取默认场景的ChatClient（兼容旧调用方）。
      */
     public ChatClient getChatClient() {
+        return getChatClient(AIChatScene.DEFAULT);
+    }
+
+    /**
+     * 获取指定场景的ChatClient。
+     * 场景模型留空时沿用全局模型；配置变化后自动重建。
+     */
+    public ChatClient getChatClient(AIChatScene scene) {
         if (!aiEnabled) {
             log.debug("[DynamicAI] AI功能未启用(ai.enabled=false)");
             return null;
@@ -81,52 +90,39 @@ public class DynamicAIChatClientManager {
 
         Long tenantId = currentTenantId();
         ChatConfig currentConfig = readCurrentConfig();
-
         if (currentConfig.apiKey().isBlank()) {
             log.debug("[DynamicAI] API Key未配置，AI功能不可用");
             return null;
         }
 
-        // 检查配置是否变化，需要重建
-        boolean needRebuild = !chatClients.containsKey(tenantId)
-                || !currentConfig.apiKey().equals(cachedApiKeys.get(tenantId))
-                || !currentConfig.baseUrl().equals(cachedBaseUrls.get(tenantId))
-                || !currentConfig.model().equals(cachedModels.get(tenantId))
-                || !currentConfig.provider().equals(cachedProviders.get(tenantId))
-                || !currentConfig.protocol().equals(cachedProtocols.get(tenantId))
-                || !currentConfig.reasoningEffort().equals(cachedEfforts.get(tenantId));
+        AIChatScene targetScene = scene == null ? AIChatScene.DEFAULT : scene;
+        String cacheKey = sceneCacheKey(tenantId, targetScene);
+        String fingerprint = fingerprint(currentConfig);
+
+        boolean needRebuild = !chatClients.containsKey(cacheKey)
+                || !fingerprint.equals(cachedFingerprints.get(tenantId));
 
         if (needRebuild) {
             lock.writeLock().lock();
             try {
-                // 双重检查，防止并发重建
-                boolean stillNeedRebuild = !chatClients.containsKey(tenantId)
-                        || !currentConfig.apiKey().equals(cachedApiKeys.get(tenantId))
-                        || !currentConfig.baseUrl().equals(cachedBaseUrls.get(tenantId))
-                        || !currentConfig.model().equals(cachedModels.get(tenantId))
-                        || !currentConfig.provider().equals(cachedProviders.get(tenantId))
-                        || !currentConfig.protocol().equals(cachedProtocols.get(tenantId))
-                || !currentConfig.reasoningEffort().equals(cachedEfforts.get(tenantId));
-
+                ChatConfig latestConfig = readCurrentConfig();
+                String latestFingerprint = fingerprint(latestConfig);
+                boolean stillNeedRebuild = !chatClients.containsKey(cacheKey)
+                        || !latestFingerprint.equals(cachedFingerprints.get(tenantId));
                 if (stillNeedRebuild) {
-                    log.info("[DynamicAI] 检测到AI配置变化，重建ChatClient: provider={}, protocol={}, baseUrl={}, model={}, reasoningEffort={}",
-                            currentConfig.provider(), currentConfig.protocol(), currentConfig.baseUrl(),
-                            currentConfig.model(), currentConfig.reasoningEffort().isEmpty() ? "未指定" : currentConfig.reasoningEffort());
-
-                    chatClients.put(tenantId, buildChatClient(currentConfig));
-                    cachedApiKeys.put(tenantId, currentConfig.apiKey());
-                    cachedBaseUrls.put(tenantId, currentConfig.baseUrl());
-                    cachedModels.put(tenantId, currentConfig.model());
-                    cachedProviders.put(tenantId, currentConfig.provider());
-                    cachedProtocols.put(tenantId, currentConfig.protocol());
-                    cachedEfforts.put(tenantId, currentConfig.reasoningEffort());
-
-                    log.info("[DynamicAI] ChatClient重建完成");
+                    log.info("[DynamicAI] 检测到AI配置变化，重建ChatClient: provider={}, protocol={}, baseUrl={}, model={}, effort={}, replyModel={}, polishModel={}",
+                            latestConfig.provider(), latestConfig.protocol(), latestConfig.baseUrl(), latestConfig.model(),
+                            latestConfig.reasoningEffort().isEmpty() ? "未指定" : latestConfig.reasoningEffort(),
+                            sceneModel(AIChatScene.REPLY).isEmpty() ? "继承" : sceneModel(AIChatScene.REPLY),
+                            sceneModel(AIChatScene.POLISH).isEmpty() ? "继承" : sceneModel(AIChatScene.POLISH));
+                    rebuildTenantClients(tenantId, latestConfig);
+                    cachedFingerprints.put(tenantId, latestFingerprint);
+                    log.info("[DynamicAI] ChatClient重建完成（默认/回复/文案三个场景）");
                 }
             } catch (Exception e) {
                 log.error("[DynamicAI] ChatClient重建失败", e);
-                chatClients.remove(tenantId);
-                cachedApiKeys.remove(tenantId);
+                clearTenantClients(tenantId);
+                cachedFingerprints.remove(tenantId);
             } finally {
                 lock.writeLock().unlock();
             }
@@ -134,10 +130,61 @@ public class DynamicAIChatClientManager {
 
         lock.readLock().lock();
         try {
-            return chatClients.get(tenantId);
+            return chatClients.get(cacheKey);
         } finally {
             lock.readLock().unlock();
         }
+    }
+
+    private void rebuildTenantClients(Long tenantId, ChatConfig config) {
+        clearTenantClients(tenantId);
+        for (AIChatScene scene : AIChatScene.values()) {
+            chatClients.put(sceneCacheKey(tenantId, scene), buildChatClient(effectiveConfig(config, scene)));
+        }
+    }
+
+    private void clearTenantClients(Long tenantId) {
+        String prefix = tenantId + ":";
+        chatClients.keySet().removeIf(key -> key.startsWith(prefix));
+    }
+
+    private static String sceneCacheKey(Long tenantId, AIChatScene scene) {
+        return tenantId + ":" + scene.name();
+    }
+
+    /**
+     * 场景模型：留空表示继承全局模型。
+     */
+    private String sceneModel(AIChatScene scene) {
+        return switch (scene) {
+            case REPLY -> text(getSettingValue(AI_MODEL_REPLY_SETTING));
+            case POLISH -> text(getSettingValue(AI_MODEL_POLISH_SETTING));
+            default -> "";
+        };
+    }
+
+    private ChatConfig effectiveConfig(ChatConfig config, AIChatScene scene) {
+        String overrideModel = sceneModel(scene);
+        if (overrideModel.isEmpty()) {
+            return config;
+        }
+        return new ChatConfig(config.provider(), config.protocol(), config.customName(), config.apiKey(),
+                config.baseUrl(), resolveSceneModel(config.model(), overrideModel), config.reasoningEffort());
+    }
+
+    /**
+     * 场景模型留空时继承全局模型。
+     */
+    static String resolveSceneModel(String globalModel, String sceneOverride) {
+        String override = text(sceneOverride);
+        return override.isEmpty() ? text(globalModel) : override;
+    }
+
+    private String fingerprint(ChatConfig config) {
+        return String.join("|",
+                config.provider(), config.protocol(), config.baseUrl(), config.apiKey(),
+                config.model(), config.reasoningEffort(),
+                sceneModel(AIChatScene.REPLY), sceneModel(AIChatScene.POLISH));
     }
 
     /**
@@ -210,21 +257,11 @@ public class DynamicAIChatClientManager {
         try {
             Long tenantId = TenantContext.get();
             if (tenantId == null) {
-                cachedApiKeys.clear();
-                cachedBaseUrls.clear();
-                cachedModels.clear();
-                cachedProviders.clear();
-                cachedProtocols.clear();
-                cachedEfforts.clear();
+                cachedFingerprints.clear();
                 chatClients.clear();
             } else {
-                cachedApiKeys.remove(tenantId);
-                cachedBaseUrls.remove(tenantId);
-                cachedModels.remove(tenantId);
-                cachedProviders.remove(tenantId);
-                cachedProtocols.remove(tenantId);
-                cachedEfforts.remove(tenantId);
-                chatClients.remove(tenantId);
+                cachedFingerprints.remove(tenantId);
+                clearTenantClients(tenantId);
             }
         } finally {
             lock.writeLock().unlock();

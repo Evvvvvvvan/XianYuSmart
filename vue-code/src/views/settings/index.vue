@@ -73,6 +73,8 @@ const AI_API_KEY_SETTING = 'ai_api_key'
 const AI_BASE_URL_SETTING = 'ai_base_url'
 const AI_MODEL_SETTING = 'ai_model'
 const AI_REASONING_EFFORT_SETTING = 'ai_reasoning_effort'
+const AI_MODEL_REPLY_SETTING = 'ai_model_reply'
+const AI_MODEL_POLISH_SETTING = 'ai_model_polish'
 
 type AIProtocol = 'openai' | 'anthropic'
 type AIProviderPreset = {
@@ -117,6 +119,8 @@ const aiApiKey = ref('')
 const aiBaseUrl = ref('https://api.deepseek.com')
 const aiModel = ref('deepseek-v4-flash')
 const aiReasoningEffort = ref('')
+const aiReplyModel = ref('')
+const aiPolishModel = ref('')
 
 const AI_EFFORT_OPTIONS = [
   { value: '', label: '不指定' },
@@ -209,7 +213,7 @@ const aiStatusProviderName = computed(() => aiStatus.value.provider === 'custom'
   ? aiCustomName.value.trim() || '第三方中转站'
   : AI_PROVIDERS.find(item => item.id === aiStatus.value.provider)?.name || aiStatus.value.provider || selectedAIProvider.value.name)
 
-watch([aiProvider, aiProtocol, aiCustomName, aiApiKey, aiBaseUrl, aiModel, aiReasoningEffort, aiTestMessage], () => {
+watch([aiProvider, aiProtocol, aiCustomName, aiApiKey, aiBaseUrl, aiModel, aiReasoningEffort, aiReplyModel, aiPolishModel, aiTestMessage], () => {
   if (!aiTesting.value) aiTestResult.value = null
 })
 
@@ -294,14 +298,16 @@ onMounted(async () => {
 
 async function loadAIConfig() {
   try {
-    const [providerRes, protocolRes, customNameRes, apiKeyRes, baseUrlRes, modelRes, effortRes] = await Promise.all([
+    const [providerRes, protocolRes, customNameRes, apiKeyRes, baseUrlRes, modelRes, effortRes, replyModelRes, polishModelRes] = await Promise.all([
       getSetting({ settingKey: AI_PROVIDER_SETTING }),
       getSetting({ settingKey: AI_PROTOCOL_SETTING }),
       getSetting({ settingKey: AI_CUSTOM_NAME_SETTING }),
       getSetting({ settingKey: AI_API_KEY_SETTING }),
       getSetting({ settingKey: AI_BASE_URL_SETTING }),
       getSetting({ settingKey: AI_MODEL_SETTING }),
-      getSetting({ settingKey: AI_REASONING_EFFORT_SETTING })
+      getSetting({ settingKey: AI_REASONING_EFFORT_SETTING }),
+      getSetting({ settingKey: AI_MODEL_REPLY_SETTING }),
+      getSetting({ settingKey: AI_MODEL_POLISH_SETTING })
     ])
 
     const storedBaseUrl = baseUrlRes.code === 200 && baseUrlRes.data ? baseUrlRes.data.settingValue || '' : ''
@@ -326,6 +332,8 @@ async function loadAIConfig() {
     aiModel.value = storedModel || preset?.model || ''
     const storedEffort = effortRes.code === 200 && effortRes.data ? effortRes.data.settingValue || '' : ''
     aiReasoningEffort.value = storedEffort === 'low' || storedEffort === 'medium' || storedEffort === 'high' ? storedEffort : ''
+    aiReplyModel.value = replyModelRes.code === 200 && replyModelRes.data ? replyModelRes.data.settingValue || '' : ''
+    aiPolishModel.value = polishModelRes.code === 200 && polishModelRes.data ? polishModelRes.data.settingValue || '' : ''
     showAIAdvanced.value = aiProvider.value === 'custom'
   } catch (e) {
     console.error('获取AI配置失败:', e)
@@ -660,6 +668,16 @@ async function handleSaveAIConfig() {
         settingKey: AI_REASONING_EFFORT_SETTING,
         settingValue: aiReasoningEffort.value,
         settingDesc: 'AI推理强度（low/medium/high，留空表示不指定）'
+      }),
+      saveSetting({
+        settingKey: AI_MODEL_REPLY_SETTING,
+        settingValue: aiReplyModel.value.trim(),
+        settingDesc: '买家自动回复场景模型（留空继承全局模型）'
+      }),
+      saveSetting({
+        settingKey: AI_MODEL_POLISH_SETTING,
+        settingValue: aiPolishModel.value.trim(),
+        settingDesc: '文案润色/生成场景模型（留空继承全局模型）'
       })
     ])
 
@@ -680,6 +698,8 @@ function handleResetAIConfig() {
   selectAIProvider(AI_PROVIDERS.find(item => item.id === 'deepseek') || AI_PROVIDERS[0]!)
   aiCustomName.value = ''
   aiReasoningEffort.value = ''
+  aiReplyModel.value = ''
+  aiPolishModel.value = ''
 }
 
 async function handleSaveEmbeddingConfig() {
@@ -1412,6 +1432,22 @@ async function saveMenuLayout() {
               <p v-if="selectedAIProvider.docs" class="settings__label-hint">
                 官方文档：<a :href="selectedAIProvider.docs" target="_blank" rel="noopener noreferrer">{{ selectedAIProvider.docs }}</a>
               </p>
+
+              <div class="settings__field">
+                <label class="settings__label">场景模型
+                  <span class="settings__label-hint">可选；买家回复量大时用快模型，文案生成用强模型，留空则继承上方全局模型</span>
+                </label>
+                <div class="settings__scene-models">
+                  <div>
+                    <span>买家自动回复</span>
+                    <input v-model="aiReplyModel" type="text" class="settings__input" :placeholder="aiModel || '继承全局模型'" :disabled="aiApiKeySaving" />
+                  </div>
+                  <div>
+                    <span>文案润色 / 生成</span>
+                    <input v-model="aiPolishModel" type="text" class="settings__input" :placeholder="aiModel || '继承全局模型'" :disabled="aiApiKeySaving" />
+                  </div>
+                </div>
+              </div>
               <div class="settings__endpoint-preview">
                 <span>最终请求地址</span>
                 <code>{{ aiEndpointPreview || '请输入有效的 Base URL' }}</code>
@@ -2859,6 +2895,22 @@ async function saveMenuLayout() {
 
 .settings__ai-form {
   margin-top: 16px;
+}
+
+.settings__scene-models {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.settings__scene-models > div {
+  display: grid;
+  gap: 6px;
+}
+
+.settings__scene-models span {
+  color: #475467;
+  font-size: 12px;
 }
 
 .settings__ai-preset-summary {
