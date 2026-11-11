@@ -12,13 +12,13 @@ public interface DeliveryTaskService {
 
     List<XianyuGoodsOrder> claimDueTasks(String workerId, int limit);
 
-    void complete(Long taskId);
+    void complete(Long taskId, String workerId);
 
-    void retryOrFail(Long taskId, String errorMessage);
+    void retryOrFail(Long taskId, String workerId, String errorMessage);
 
     void deferForRisk(Long taskId, LocalDateTime retryAt, String errorMessage);
 
-    void markReviewRequired(Long taskId, String errorMessage);
+    void markReviewRequired(Long taskId, String workerId, String errorMessage);
 
     void requeue(Long taskId);
 

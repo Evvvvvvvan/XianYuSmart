@@ -159,8 +159,12 @@ export function useMessageManager() {
         messageList.value = []
       }
     } finally {
-      loading.value = false
-      silentLoading.value = false
+      // 手动刷新与静默轮询各自持有独立加载态，不能互相清除。
+      if (silent) {
+        silentLoading.value = false
+      } else {
+        loading.value = false
+      }
     }
   }
 

@@ -36,26 +36,40 @@ public interface MerchantTaskMapper extends BaseMapper<MerchantTask> {
 
     @Select("SELECT * FROM merchant_task WHERE ((status = 0 AND scheduled_time <= NOW(3)) " +
             "OR (status = -1 AND attempt_count < max_attempts AND next_retry_time <= NOW(3)) " +
-            "OR (status = 1 AND attempt_count < max_attempts AND updated_time <= DATE_SUB(NOW(3), INTERVAL 10 MINUTE))) " +
+            "OR (status = 1 AND attempt_count < max_attempts " +
+            "    AND (lease_expire_time <= NOW(3) " +
+            "         OR (lease_expire_time IS NULL AND updated_time <= DATE_SUB(NOW(3), INTERVAL 10 MINUTE))))) " +
             "ORDER BY scheduled_time, id LIMIT #{limit}")
     List<MerchantTask> selectDue(@Param("limit") int limit);
 
-    @Update("UPDATE merchant_task SET status = 1, attempt_count = attempt_count + 1 " +
-            "WHERE id = #{id} AND (status IN (0, -1) OR (status = 1 AND updated_time <= DATE_SUB(NOW(3), INTERVAL 10 MINUTE)))")
-    int claim(@Param("id") Long id);
+    // 领取即写入租约归属，后续完成/失败必须带同一个 workerId。
+    @Update("UPDATE merchant_task SET status = 1, attempt_count = attempt_count + 1, " +
+            "lease_owner = #{workerId}, " +
+            "lease_expire_time = DATE_ADD(NOW(3), INTERVAL #{leaseSeconds} SECOND) " +
+            "WHERE id = #{id} AND (status IN (0, -1) " +
+            "OR (status = 1 AND (lease_expire_time <= NOW(3) " +
+            "    OR (lease_expire_time IS NULL AND updated_time <= DATE_SUB(NOW(3), INTERVAL 10 MINUTE)))))")
+    int claim(@Param("id") Long id, @Param("workerId") String workerId,
+              @Param("leaseSeconds") int leaseSeconds);
 
-    @Update("UPDATE merchant_task SET status = 2, result_json = #{resultJson}, error_message = NULL, next_retry_time = NULL WHERE id = #{id}")
-    int complete(@Param("id") Long id, @Param("resultJson") String resultJson);
+    @Update("UPDATE merchant_task SET status = 2, result_json = #{resultJson}, error_message = NULL, next_retry_time = NULL, " +
+            "lease_owner = NULL, lease_expire_time = NULL WHERE id = #{id} AND lease_owner = #{workerId}")
+    int complete(@Param("id") Long id, @Param("workerId") String workerId,
+                 @Param("resultJson") String resultJson);
 
-    @Update("UPDATE merchant_task SET status = -1, error_message = #{errorMessage}, next_retry_time = #{nextRetryTime} WHERE id = #{id}")
-    int fail(@Param("id") Long id, @Param("errorMessage") String errorMessage,
+    @Update("UPDATE merchant_task SET status = -1, error_message = #{errorMessage}, next_retry_time = #{nextRetryTime}, " +
+            "lease_owner = NULL, lease_expire_time = NULL WHERE id = #{id} AND lease_owner = #{workerId}")
+    int fail(@Param("id") Long id, @Param("workerId") String workerId,
+             @Param("errorMessage") String errorMessage,
              @Param("nextRetryTime") LocalDateTime nextRetryTime);
 
-    @Update("UPDATE merchant_task SET status = 0, attempt_count = 0, scheduled_time = NOW(3), next_retry_time = NULL, error_message = NULL WHERE id = #{id}")
+    @Update("UPDATE merchant_task SET status = 0, attempt_count = 0, scheduled_time = NOW(3), next_retry_time = NULL, " +
+            "error_message = NULL, lease_owner = NULL, lease_expire_time = NULL WHERE id = #{id}")
     int requeue(@Param("id") Long id);
 
     @Update("UPDATE merchant_task SET status = 0, attempt_count = GREATEST(attempt_count - 1, 0), " +
-            "scheduled_time = #{retryAt}, next_retry_time = NULL, error_message = #{message} WHERE id = #{id}")
+            "scheduled_time = #{retryAt}, next_retry_time = NULL, error_message = #{message}, " +
+            "lease_owner = NULL, lease_expire_time = NULL WHERE id = #{id}")
     int defer(@Param("id") Long id, @Param("retryAt") LocalDateTime retryAt,
               @Param("message") String message);
 

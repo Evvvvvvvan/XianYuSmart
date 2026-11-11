@@ -749,7 +749,7 @@ export function useAutoDelivery() {
         receiptFollowUpMessages: JSON.stringify(receiptMessages),
         receiptFollowUpIntervalSeconds: followUpInterval,
         autoDeliveryImageUrl: configForm.value.autoDeliveryImageUrl.trim(),
-        autoConfirmShipment: 1
+        autoConfirmShipment: configForm.value.autoConfirmShipment ?? 1
       }
 
       const response = await saveOrUpdateAutoDeliveryConfig(req)
@@ -803,7 +803,12 @@ export function useAutoDelivery() {
     } catch (error: any) {
       console.error('操作失败:', error)
       if (selectedGoods.value) {
+        // 回滚列表副本，避免选中项与列表显示不一致。
         selectedGoods.value.xianyuAutoDeliveryOn = value ? 0 : 1
+        const goodsItem = goodsList.value.find(item => item.item.xyGoodId === selectedGoods.value?.item.xyGoodId)
+        if (goodsItem) {
+          goodsItem.xianyuAutoDeliveryOn = value ? 0 : 1
+        }
       }
     }
   }

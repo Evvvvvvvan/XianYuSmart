@@ -73,6 +73,8 @@ const startPolling = () => {
             break
           case 'confirmed':
             statusText.value = '登录成功！正在获取信息...'
+            // 先停轮询再处理，否则 2 秒内会再次进入本分支，导致重复创建账号。
+            stopPolling()
             await handleLoginSuccess()
             break
           case 'expired':

@@ -42,7 +42,8 @@ public class XianyuAccount {
     private String deviceId;
     
     /**
-     * 账号状态 1:正常 -1:需要手机号验证
+     * 账号状态 1:正常 -2:需要验证（滑块/手机号/凭证失效，异常待处理）
+     * 历史数据中可能存在 -1，仅作兼容读取，新写入统一为 -2。
      */
     private Integer status;
 

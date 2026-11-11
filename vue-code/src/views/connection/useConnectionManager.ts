@@ -92,6 +92,10 @@ export function useConnectionManager() {
     try {
       const response = await getConnectionStatus(accountId)
       if (response.code === 0 || response.code === 200) {
+        // 请求期间可能已切换账号，丢弃过期响应，避免 A 的凭证显示在 B 上。
+        if (selectedAccountId.value !== accountId) {
+          return
+        }
         connectionStatus.value = response.data as ConnectionStatus
         // 同步更新 allConnectionStatuses
         allConnectionStatuses.value.set(accountId, connectionStatus.value)

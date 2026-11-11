@@ -188,8 +188,12 @@ public class GoodsAutomationService {
                 int intervalSeconds = buyerMessageService.normalizeReceiptFollowUpInterval(
                         config.getReceiptFollowUpIntervalSeconds());
                 LocalDateTime nextTime = completed ? null : LocalDateTime.now().plusSeconds(intervalSeconds);
-                goodsOrderMapper.updateReceiptFollowUpProgress(
-                        order.getId(), nextCount, completed ? 1 : 0, nextTime, sentCount);
+                if (goodsOrderMapper.updateReceiptFollowUpProgress(
+                        order.getId(), nextCount, completed ? 1 : 0, nextTime, sentCount) != 1) {
+                    // 进度已被其它节点推进（消息已计入），跳过以免重复记成功。
+                    log.warn("【账号{}】确认收货后话术进度已变化，跳过: orderId={}", accountId, order.getOrderId());
+                    continue;
+                }
                 operationLogService.log(accountId, OperationConstants.Type.SEND, OperationConstants.Module.ORDER,
                         "确认收货后话术发送成功", OperationConstants.Status.SUCCESS,
                         OperationConstants.TargetType.ORDER, order.getOrderId(), messages.get(sentCount),

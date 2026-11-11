@@ -73,12 +73,14 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
     }
 
     @Override
-    public void complete(Long taskId) {
-        orderMapper.completeTask(taskId);
+    public void complete(Long taskId, String workerId) {
+        if (orderMapper.completeTask(taskId, workerId) != 1) {
+            log.warn("订单任务租约已失效，跳过完成写入: taskId={}, workerId={}", taskId, workerId);
+        }
     }
 
     @Override
-    public void retryOrFail(Long taskId, String errorMessage) {
+    public void retryOrFail(Long taskId, String workerId, String errorMessage) {
         XianyuGoodsOrder task = orderMapper.selectById(taskId);
         if (task == null) {
             return;
@@ -88,7 +90,9 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
         String status = exhausted ? DeliveryStatus.FAILED.name() : DeliveryStatus.RETRY_WAIT.name();
         LocalDateTime nextRetryTime = exhausted ? null : LocalDateTime.now().plusSeconds(Math.min(300L, 5L << attempts));
         String safeMessage = errorMessage == null ? "自动发货失败" : errorMessage.substring(0, Math.min(errorMessage.length(), 500));
-        orderMapper.retryOrFailTask(taskId, status, nextRetryTime, safeMessage);
+        if (orderMapper.retryOrFailTask(taskId, workerId, status, nextRetryTime, safeMessage) != 1) {
+            log.warn("订单任务租约已失效，跳过重试写入: taskId={}, workerId={}", taskId, workerId);
+        }
     }
 
     @Override
@@ -99,10 +103,12 @@ public class DeliveryTaskServiceImpl implements DeliveryTaskService {
     }
 
     @Override
-    public void markReviewRequired(Long taskId, String errorMessage) {
+    public void markReviewRequired(Long taskId, String workerId, String errorMessage) {
         String safeMessage = errorMessage == null ? "发送结果不确定，请人工核对" :
                 errorMessage.substring(0, Math.min(errorMessage.length(), 500));
-        orderMapper.markTaskReviewRequired(taskId, safeMessage);
+        if (orderMapper.markTaskReviewRequired(taskId, safeMessage) != 1) {
+            log.warn("订单任务已完结或状态不符，跳过人工核对写入: taskId={}, workerId={}", taskId, workerId);
+        }
     }
 
     @Override

@@ -138,8 +138,18 @@ public class WebSocketServiceImpl implements WebSocketService {
 
     @Override
     public boolean startWebSocket(Long accountId) {
-        manuallyStoppedAccounts.remove(accountId);
+        resetBackoffIfManuallyRestarted(accountId);
         return startWebSocketInternal(accountId);
+    }
+
+    /**
+     * 只有"人工停机后再次启动"才重置退避；自动重连走同一入口，不能清空计数。
+     */
+    private void resetBackoffIfManuallyRestarted(Long accountId) {
+        if (manuallyStoppedAccounts.remove(accountId)) {
+            reconnectAttemptCounts.remove(accountId);
+            captchaRetryCounts.remove(accountId);
+        }
     }
 
     @Override
@@ -220,7 +230,7 @@ public class WebSocketServiceImpl implements WebSocketService {
 
     @Override
     public boolean startWebSocketWithToken(Long accountId, String accessToken) {
-        manuallyStoppedAccounts.remove(accountId);
+        resetBackoffIfManuallyRestarted(accountId);
         try {
             log.info("========== 使用手动Token启动WebSocket连接 ==========");
             log.info("【账号{}】accountId={}", accountId, accountId);
@@ -456,10 +466,20 @@ public class WebSocketServiceImpl implements WebSocketService {
     }
 
     private boolean stopWebSocketInternal(Long accountId, boolean manualStop) {
+        // 与 startWebSocketLocked 使用同一把账号锁，避免心跳线程的拆卸
+        // 把刚建立的新连接从映射表里移除并关闭。
+        synchronized (connectionLocks.computeIfAbsent(accountId, key -> new Object())) {
+            return stopWebSocketInternalLocked(accountId, manualStop);
+        }
+    }
+
+    private boolean stopWebSocketInternalLocked(Long accountId, boolean manualStop) {
         try {
             log.info("停止WebSocket连接: accountId={}", accountId);
             if (manualStop) {
                 manuallyStoppedAccounts.add(accountId);
+                // 人工停机后重新启动应从正常重连开始，而不是沿用旧的滑块退避。
+                captchaRetryCounts.remove(accountId);
             }
 
             // 停止心跳任务
@@ -738,7 +758,9 @@ public class WebSocketServiceImpl implements WebSocketService {
                     attemptCount.set(0);
                 }
                 captchaRetryCounts.remove(accountId);
-                                log.info("【账号{}】✅ Token刷新并重连成功", accountId);
+                // 主动重启已完成，清除标志，避免下一次自然掉线被误判为零延迟重启。
+                connectionRestartFlags.remove(accountId);
+                log.info("【账号{}】✅ Token刷新并重连成功", accountId);
             } else {
                 log.error("【账号{}】❌ Token刷新并重连失败，将在{}秒后重试", 
                         accountId, config.getTokenRetryInterval());

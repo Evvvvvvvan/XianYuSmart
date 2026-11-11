@@ -169,8 +169,9 @@ public class WebSocketMessageRouter {
                 log.error("【账号{}】Token失效(401)，需要重新获取Token", accountId);
                 updateCookieStatusIfPresent(accountId, 2);
             } else if (codeValue == 500) {
-                log.error("【账号{}】服务器错误(500)", accountId);
-                updateCookieStatusIfPresent(accountId, 2);
+                // 500 是平台侧瞬时故障，不能据此判定 Cookie 失效：
+                // cookie_status 是硬门禁，置 2 会让该账号的所有接口与重连同时失效。
+                log.error("【账号{}】服务器错误(500)，保持 Cookie 状态不变", accountId);
             } else {
                 log.warn("【账号{}】未知响应码: {}", accountId, code);
             }

@@ -206,15 +206,11 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public void recordLoginFailure(String ip) {
         String key = LOGIN_ATTEMPT_PREFIX + ip;
-        if (!cacheService.containsKey(key)) {
-            // 首次失败，设置10分钟过期
-            cacheService.put(key, cacheService.increment(key), LOGIN_ATTEMPT_WINDOW_MS, TimeUnit.MILLISECONDS);
-        } else {
-            cacheService.increment(key);
-            // 确保过期时间存在
-            if (cacheService.getExpire(key) == -1) {
-                cacheService.expire(key, LOGIN_ATTEMPT_WINDOW_MS, TimeUnit.MILLISECONDS);
-            }
+        // 先用 increment 建立计数器，再补 TTL；不能把 increment 的结果 put 回去，
+        // 那会把 AtomicLong 覆盖成普通数值，导致后续自增被重置而永远锁不住账号。
+        long count = cacheService.increment(key);
+        if (count <= 1 || cacheService.getExpire(key) == -1) {
+            cacheService.expire(key, LOGIN_ATTEMPT_WINDOW_MS, TimeUnit.MILLISECONDS);
         }
     }
 

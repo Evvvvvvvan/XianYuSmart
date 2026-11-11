@@ -53,6 +53,8 @@ export function getGoodsStatusText(status: number): { text: string; type: string
 export function getAccountStatusText(status: number): { text: string; type: string } {
   const statusMap: Record<number, { text: string; type: string }> = {
     1: { text: '正常', type: 'success' },
+    // 后端写入 -2 表示需要验证/异常待处理；-1 为历史数据兼容。
+    '-2': { text: '需要验证', type: 'warning' },
     '-1': { text: '需要验证', type: 'warning' }
   }
   return statusMap[status] || { text: '未知', type: 'info' }

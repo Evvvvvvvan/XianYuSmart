@@ -75,6 +75,10 @@ export function useGoodsManager() {
       }
     } catch (error) {
       console.error('获取同步进度失败:', error)
+      // 轮询失败不能把界面永久留在“同步中”，否则刷新入口会被一直禁用。
+      stopSyncPolling()
+      syncing.value = false
+      refreshing.value = false
     }
   }
 

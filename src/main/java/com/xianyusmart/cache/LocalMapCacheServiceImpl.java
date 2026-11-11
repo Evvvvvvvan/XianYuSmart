@@ -83,6 +83,13 @@ public class LocalMapCacheServiceImpl implements CacheService {
         if (value instanceof AtomicLong) {
             return ((AtomicLong) value).incrementAndGet();
         }
+        if (value instanceof Number number) {
+            // 计数键可能先被 put 成普通数值；继续在旧值上自增并保留原 TTL，
+            // 否则计数器会被反复重置为 1（登录失败锁定因此永远无法触发）。
+            AtomicLong counter = new AtomicLong(number.longValue() + 1);
+            cache.put(key, new CacheEntry(counter, entry.getExpireAt()));
+            return counter.get();
+        }
         // 类型不匹配，重新初始化
         AtomicLong counter = new AtomicLong(1);
         cache.put(key, new CacheEntry(counter, -1));

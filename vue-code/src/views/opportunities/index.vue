@@ -123,7 +123,7 @@ const capture = async () => {
     toast.warning('平台详情暂时受限，已保留真实搜索结果继续整理；发布前请在连接管理确认登录状态')
   }
   step.value = 2
-  maxStep.value = 2
+  maxStep.value = Math.max(maxStep.value, 2)
 }
 
 const next = () => {

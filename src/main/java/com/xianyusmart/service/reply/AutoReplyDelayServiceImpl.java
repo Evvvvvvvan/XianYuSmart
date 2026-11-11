@@ -147,6 +147,15 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
             return;
         }
 
+        // 幂等去重：重连补推会把旧消息再送一次，(账号, 会话, pnmId) 已存在时直接忽略，
+        // 避免"先取消旧任务、再插入重复行"导致正在等待的回复被静默丢弃。
+        String pnmId = messageData.getPnmId();
+        if (pnmId != null && !pnmId.isBlank()
+                && autoReplyRecordMapper.findIdByMessage(accountId, sId, pnmId) != null) {
+            log.info("【账号{}】消息已入队，跳过重复延时任务: sId={}, pnmId={}", accountId, sId, pnmId);
+            return;
+        }
+
         int delaySeconds = configProvider.getDelaySeconds(accountId, messageData.getXyGoodsId());
         log.info("【账号{}】提交延时回复任务: sId={}, delay={}s", accountId, sId, delaySeconds);
         
@@ -235,7 +244,7 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
                 dispatchTask(record.getId(), messages);
             } catch (Exception e) {
                 log.error("恢复延时回复任务失败: recordId={}", record.getId(), e);
-                autoReplyRecordMapper.updateStateAndContent(record.getId(), -1, null);
+                autoReplyRecordMapper.markReplyFailed(record.getId(), null, null);
             }
         }
     }
@@ -303,14 +312,14 @@ public class AutoReplyDelayServiceImpl implements AutoReplyDelayService {
                 autoReplyRecordMapper.cancelById(recordId);
                 return;
             }
-            autoReplyService.executeAutoReply(messages, recordId);
+            autoReplyService.executeAutoReply(messages, recordId, workerId);
             XianyuGoodsAutoReplyRecord result = autoReplyRecordMapper.selectById(recordId);
             if (result != null && Integer.valueOf(2).equals(result.getState())) {
-                autoReplyRecordMapper.updateStateAndContent(recordId, -1, null);
+                autoReplyRecordMapper.markReplyFailed(recordId, null, workerId);
             }
         } catch (Exception e) {
             log.error("【账号{}】执行持久化延时回复异常: sId={}", accountId, sId, e);
-            autoReplyRecordMapper.updateStateAndContent(recordId, -1, null);
+            autoReplyRecordMapper.markReplyFailed(recordId, null, workerId);
         } finally {
             TenantContext.clear();
         }

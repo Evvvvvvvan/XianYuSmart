@@ -26,6 +26,13 @@ public interface AutoReplyService {
     void executeAutoReply(List<ChatMessageData> messageList);
 
     void executeAutoReply(List<ChatMessageData> messageList, Long recordId);
+
+    /**
+     * 执行自动回复并把状态迁移限制在租约持有者上。
+     *
+     * @param leaseOwner 领取该记录时写入的 workerId，为 null 时只做状态守卫
+     */
+    void executeAutoReply(List<ChatMessageData> messageList, Long recordId, String leaseOwner);
     
     /**
      * 检查商品是否开启自动回复

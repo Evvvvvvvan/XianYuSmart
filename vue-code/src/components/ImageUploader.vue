@@ -53,10 +53,11 @@ const handleFileSelect = async (event: Event) => {
 const doUpload = async (file: File) => {
   uploading.value = true
   uploadProgress.value = 0
-  
+  let progressInterval: ReturnType<typeof setInterval> | undefined
+
   try {
     // 模拟上传进度
-    const progressInterval = setInterval(() => {
+    progressInterval = setInterval(() => {
       if (uploadProgress.value < 90) {
         uploadProgress.value += 10
       }
@@ -79,6 +80,10 @@ const doUpload = async (file: File) => {
     emit('error', error.message || '上传失败')
     toast.error(error.message || '图片上传失败')
   } finally {
+    // 失败路径同样要清理定时器，否则每次失败都会留下一个永久计时的 interval。
+    if (progressInterval) {
+      clearInterval(progressInterval)
+    }
     setTimeout(() => {
       uploading.value = false
       uploadProgress.value = 0

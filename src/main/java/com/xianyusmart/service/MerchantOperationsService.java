@@ -81,6 +81,21 @@ public class MerchantOperationsService {
     private final OpportunityImageService opportunityImageService;
     private final ObjectMapper objectMapper;
 
+    /** 任务租约持有者标识，多实例下用于区分执行器。 */
+    private final String workerId = buildWorkerId();
+    private static final int TASK_LEASE_SECONDS = 600;
+
+    private static String buildWorkerId() {
+        String host = System.getenv("HOSTNAME");
+        if (host == null || host.isBlank()) {
+            host = System.getenv("COMPUTERNAME");
+        }
+        if (host == null || host.isBlank()) {
+            host = "local";
+        }
+        return host + "-" + java.util.UUID.randomUUID().toString().substring(0, 8);
+    }
+
     public MerchantOperationsService(MerchantResourceMapper resourceMapper,
                                      MerchantTaskMapper taskMapper,
                                      MerchantDistributionMapper distributionMapper,
@@ -659,14 +674,14 @@ public class MerchantOperationsService {
 
     public void processDueTasks() {
         for (MerchantTask task : taskMapper.selectDue(20)) {
-            if (taskMapper.claim(task.getId()) == 1) {
+            if (taskMapper.claim(task.getId(), workerId, TASK_LEASE_SECONDS) == 1) {
                 executeTask(task);
             }
         }
     }
 
     private void claimAndExecute(MerchantTask task) {
-        if (taskMapper.claim(task.getId()) != 1) {
+        if (taskMapper.claim(task.getId(), workerId, TASK_LEASE_SECONDS) != 1) {
             throw new IllegalStateException("任务已被其他执行器处理");
         }
         executeTask(task);
@@ -687,7 +702,9 @@ public class MerchantOperationsService {
                 case "CONFIRM_SHIPMENT" -> executeConfirmShipment(task);
                 default -> throw new IllegalArgumentException("不支持的任务类型");
             };
-            taskMapper.complete(task.getId(), writeJson(result));
+            if (taskMapper.complete(task.getId(), workerId, writeJson(result)) != 1) {
+                log.warn("运营任务租约已失效，跳过完成写入: taskId={}, workerId={}", task.getId(), workerId);
+            }
             operationLogService.log(task.getXianyuAccountId(), OperationConstants.Type.UPDATE,
                     OperationConstants.Module.MERCHANT_OPERATIONS, task.getTaskType() + "任务执行成功",
                     OperationConstants.Status.SUCCESS, OperationConstants.TargetType.TASK,
@@ -702,7 +719,10 @@ public class MerchantOperationsService {
                     String.valueOf(task.getId()), null, null, trimError(e.getMessage()), null);
         } catch (Exception e) {
             int attempt = task.getAttemptCount() == null ? 1 : task.getAttemptCount() + 1;
-            taskMapper.fail(task.getId(), trimError(e.getMessage()), LocalDateTime.now().plusMinutes(Math.min(60, attempt * 5L)));
+            if (taskMapper.fail(task.getId(), workerId, trimError(e.getMessage()),
+                    LocalDateTime.now().plusMinutes(Math.min(60, attempt * 5L))) != 1) {
+                log.warn("运营任务租约已失效，跳过失败写入: taskId={}, workerId={}", task.getId(), workerId);
+            }
             operationLogService.log(task.getXianyuAccountId(), OperationConstants.Type.UPDATE,
                     OperationConstants.Module.MERCHANT_OPERATIONS, task.getTaskType() + "任务执行失败",
                     OperationConstants.Status.FAIL, OperationConstants.TargetType.TASK,

@@ -98,7 +98,7 @@ public class DeliveryTaskScheduler {
             String blockReason = buyerProfileService.automationBlockReason(
                     task.getXianyuAccountId(), task.getBuyerUserId());
             if (blockReason != null) {
-                deliveryTaskService.markReviewRequired(task.getId(), blockReason);
+                deliveryTaskService.markReviewRequired(task.getId(), workerId, blockReason);
                 return;
             }
             String sId = task.getSid();
@@ -112,7 +112,7 @@ public class DeliveryTaskScheduler {
 
             XianyuGoodsOrder result = orderMapper.selectById(task.getId());
             if (result != null && Integer.valueOf(1).equals(result.getState())) {
-                deliveryTaskService.complete(task.getId());
+                deliveryTaskService.complete(task.getId(), workerId);
             } else if (result != null && DeliveryStatus.RETRY_WAIT.name().equals(result.getDeliveryStatus())
                     && "RISK_GUARD_WAIT".equals(result.getLastErrorCode())) {
                 // 风控等待已经设置准确恢复时间，不能再按普通失败增加次数。
@@ -120,13 +120,13 @@ public class DeliveryTaskScheduler {
             } else if (result != null && DeliveryStatus.REVIEW_REQUIRED.name().equals(result.getDeliveryStatus())) {
                 log.warn("订单发货结果待人工核对: taskId={}, orderId={}", task.getId(), task.getOrderId());
             } else if (kamiItemMapper.countByOrderAndStatus(task.getOrderId(), KamiStatus.REVIEW_REQUIRED.getCode()) > 0) {
-                deliveryTaskService.markReviewRequired(task.getId(), result != null ? result.getFailReason() : null);
+                deliveryTaskService.markReviewRequired(task.getId(), workerId, result != null ? result.getFailReason() : null);
             } else {
-                deliveryTaskService.retryOrFail(task.getId(), result != null ? result.getFailReason() : null);
+                deliveryTaskService.retryOrFail(task.getId(), workerId, result != null ? result.getFailReason() : null);
             }
         } catch (Exception e) {
             log.error("订单任务执行异常: taskId={}, orderId={}", task.getId(), task.getOrderId(), e);
-            deliveryTaskService.retryOrFail(task.getId(), e.getMessage());
+            deliveryTaskService.retryOrFail(task.getId(), workerId, e.getMessage());
         } finally {
             TenantContext.clear();
         }

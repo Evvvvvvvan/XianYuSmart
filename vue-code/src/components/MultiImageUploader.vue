@@ -55,9 +55,10 @@ const handleFileChange = async (index: number, event: Event) => {
 
   uploadingIndex.value = index
   uploadProgress.value = 0
+  let progressInterval: ReturnType<typeof setInterval> | undefined
 
   try {
-    const progressInterval = setInterval(() => {
+    progressInterval = setInterval(() => {
       if (uploadProgress.value < 90) uploadProgress.value += 10
     }, 100)
 
@@ -81,6 +82,9 @@ const handleFileChange = async (index: number, event: Event) => {
   } catch (error: any) {
     toast.error(error.message || '图片上传失败')
   } finally {
+    if (progressInterval) {
+      clearInterval(progressInterval)
+    }
     setTimeout(() => {
       uploadingIndex.value = -1
       uploadProgress.value = 0

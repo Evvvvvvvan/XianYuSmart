@@ -172,22 +172,24 @@ public interface XianyuGoodsOrderMapper {
     int claimTasks(@Param("ids") List<Long> ids, @Param("workerId") String workerId,
                    @Param("leaseSeconds") int leaseSeconds);
 
+    // 只有仍持有租约的 worker 才能完成任务，防止租约被抢占后旧 worker 覆盖新结果。
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'COMPLETED', delivered_quantity = expected_quantity, " +
-            "next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL WHERE id = #{id}")
-    int completeTask(@Param("id") Long id);
+            "next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL, last_error_code = NULL, last_error_message = NULL " +
+            "WHERE id = #{id} AND lease_owner = #{workerId}")
+    int completeTask(@Param("id") Long id, @Param("workerId") String workerId);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = #{status}, next_retry_time = #{nextRetryTime}, " +
             "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_FAILED', last_error_message = #{errorMessage}, " +
             "exception_revision = exception_revision + IF(#{status} IN ('FAILED', 'REVIEW_REQUIRED'), 1, 0) " +
-            "WHERE id = #{id} AND delivery_status NOT IN ('REVIEW_REQUIRED', 'COMPLETED')")
-    int retryOrFailTask(@Param("id") Long id, @Param("status") String status,
+            "WHERE id = #{id} AND lease_owner = #{workerId} AND delivery_status NOT IN ('REVIEW_REQUIRED', 'COMPLETED')")
+    int retryOrFailTask(@Param("id") Long id, @Param("workerId") String workerId, @Param("status") String status,
                         @Param("nextRetryTime") java.time.LocalDateTime nextRetryTime,
                         @Param("errorMessage") String errorMessage);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'RETRY_WAIT', " +
             "attempt_count = GREATEST(attempt_count - 1, 0), next_retry_time = #{retryAt}, " +
             "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'RISK_GUARD_WAIT', " +
-            "last_error_message = #{message} WHERE id = #{id}")
+            "last_error_message = #{message} WHERE id = #{id} AND delivery_status = 'PROCESSING'")
     int deferForRisk(@Param("id") Long id, @Param("retryAt") java.time.LocalDateTime retryAt,
                      @Param("message") String message);
 
@@ -197,7 +199,7 @@ public interface XianyuGoodsOrderMapper {
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'REVIEW_REQUIRED', next_retry_time = NULL, " +
             "lease_owner = NULL, lease_expire_time = NULL, last_error_code = 'DELIVERY_UNCERTAIN', last_error_message = #{errorMessage}, " +
-            "exception_revision = exception_revision + 1 WHERE id = #{id}")
+            "exception_revision = exception_revision + 1 WHERE id = #{id} AND delivery_status <> 'COMPLETED'")
     int markTaskReviewRequired(@Param("id") Long id, @Param("errorMessage") String errorMessage);
 
     @Update("UPDATE xianyu_goods_order SET delivery_status = 'PENDING', next_retry_time = NOW(3), " +
@@ -274,12 +276,15 @@ public interface XianyuGoodsOrderMapper {
             "delivery_message_next_retry_time = NULL, lease_owner = NULL, lease_expire_time = NULL, " +
             "exception_revision = exception_revision + 1 " +
             "WHERE delivery_message_state = 3 AND delivery_message_next_retry_time <= NOW(3) " +
+            "AND delivery_status <> 'COMPLETED' " +
             "AND NOT EXISTS (SELECT 1 FROM xianyu_kami_usage_record r " +
             "WHERE r.xianyu_account_id = xianyu_goods_order.xianyu_account_id " +
             "AND r.order_id = xianyu_goods_order.order_id AND r.delivery_status = 'DELIVERED') LIMIT #{limit}")
     int markStaleCardHeldMessagesReviewRequired(@Param("limit") int limit);
 
-    @Update("UPDATE xianyu_goods_order SET delivery_message_state = 1, delivery_message_next_retry_time = NULL WHERE id = #{id}")
+    // 仅允许把"发送中"的私聊标记为已发送，避免并发发送者或超时重试互相覆盖。
+    @Update("UPDATE xianyu_goods_order SET delivery_message_state = 1, delivery_message_next_retry_time = NULL " +
+            "WHERE id = #{id} AND delivery_message_state = 2")
     int markDeliveryMessageSent(@Param("id") Long id);
 
     @Update("UPDATE xianyu_goods_order SET delivery_message_state = 2, " +

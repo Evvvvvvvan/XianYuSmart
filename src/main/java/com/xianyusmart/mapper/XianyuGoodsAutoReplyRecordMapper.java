@@ -21,12 +21,30 @@ public interface XianyuGoodsAutoReplyRecordMapper {
     int insert(XianyuGoodsAutoReplyRecord record);
     
     /**
-     * 更新记录状态和回复内容
+     * 回复成功：仅允许把持租约（或未记录租约）的“执行中”记录标记为成功。
+     * 这样旧的 worker 不会在租约被抢占后覆盖新 worker 的结果。
      */
-    @Update("UPDATE xianyu_goods_auto_reply_record SET state = #{state}, reply_content = #{replyContent}, " +
-            "lease_owner = NULL, lease_expire_time = NULL, " +
-            "exception_revision = exception_revision + IF(#{state} = -1, 1, 0) WHERE id = #{id}")
-    int updateStateAndContent(@Param("id") Long id, @Param("state") Integer state, @Param("replyContent") String replyContent);
+    @Update("UPDATE xianyu_goods_auto_reply_record SET state = 1, reply_content = #{replyContent}, " +
+            "lease_owner = NULL, lease_expire_time = NULL " +
+            "WHERE id = #{id} AND state = 2 AND (#{leaseOwner} IS NULL OR lease_owner = #{leaseOwner})")
+    int markReplySucceeded(@Param("id") Long id, @Param("replyContent") String replyContent,
+                           @Param("leaseOwner") String leaseOwner);
+
+    /**
+     * 回复失败：待执行或执行中的记录都可以转失败，终态记录不会被覆盖。
+     */
+    @Update("UPDATE xianyu_goods_auto_reply_record SET state = -1, reply_content = #{replyContent}, " +
+            "lease_owner = NULL, lease_expire_time = NULL, exception_revision = exception_revision + 1 " +
+            "WHERE id = #{id} AND state IN (0, 2) AND (#{leaseOwner} IS NULL OR lease_owner = #{leaseOwner})")
+    int markReplyFailed(@Param("id") Long id, @Param("replyContent") String replyContent,
+                        @Param("leaseOwner") String leaseOwner);
+
+    /**
+     * 按（账号, 会话, 消息ID）判断同一买家消息是否已经入队，用于重连重放时的幂等去重。
+     */
+    @Select("SELECT id FROM xianyu_goods_auto_reply_record WHERE xianyu_account_id = #{accountId} " +
+            "AND s_id = #{sId} AND pnm_id = #{pnmId} LIMIT 1")
+    Long findIdByMessage(@Param("accountId") Long accountId, @Param("sId") String sId, @Param("pnmId") String pnmId);
     
     /**
      * 更新触发上下文

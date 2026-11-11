@@ -188,6 +188,9 @@ public class ItemServiceImpl implements ItemService {
             
             List<ItemDTO> allItems = new ArrayList<>();
             int pageNumber = 1;
+            // 只有完整翻完页，才允许把"本页没出现"的本地商品标记为已删除；
+            // 分页中断（请求失败 / 达到 maxPages）时集合不完整，误标记会造成商品状态丢失。
+            boolean paginationComplete = false;
 
             // 自动分页获取所有商品
             while (true) {
@@ -218,6 +221,7 @@ public class ItemServiceImpl implements ItemService {
                 ItemListRespDTO pageData = pageResult.getData();
                 if (pageData.getItems() == null || pageData.getItems().isEmpty()) {
                     log.info("第{}页没有数据，刷新完成", pageNumber);
+                    paginationComplete = true;
                     break;
                 }
 
@@ -228,6 +232,7 @@ public class ItemServiceImpl implements ItemService {
                 if (pageData.getItems().size() < reqDTO.getPageSize()) {
                     log.info("第{}页商品数量({})少于页面大小({})，刷新完成", 
                             pageNumber, pageData.getItems().size(), reqDTO.getPageSize());
+                    paginationComplete = true;
                     break;
                 }
 
@@ -253,8 +258,12 @@ public class ItemServiceImpl implements ItemService {
                     }
                 }
                 
-                // 标记本地有但远程没有的在售商品为已下架
-                goodsInfoService.markOfflineIfNotInRemote(accountId, remoteItemIds);
+                // 标记本地有但远程没有的在售商品为已下架（仅在全量拉取成功时执行）
+                if (paginationComplete) {
+                    goodsInfoService.markOfflineIfNotInRemote(accountId, remoteItemIds);
+                } else {
+                    log.warn("【账号{}】商品分页未完整拉取（已获取{}个），跳过删除标记", accountId, remoteItemIds.size());
+                }
                 
                 // 保存商品并收集成功的商品ID
                 for (ItemDTO item : allItems) {

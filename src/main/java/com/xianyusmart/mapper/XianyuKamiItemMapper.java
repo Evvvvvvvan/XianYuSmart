@@ -81,9 +81,10 @@ public interface XianyuKamiItemMapper extends BaseMapper<XianyuKamiItem> {
     @Update("UPDATE xianyu_kami_item SET status = 1, used_time = NOW(3) WHERE order_id = #{orderId} AND status = 2")
     int commitReservation(@Param("orderId") String orderId);
 
-    @Update("UPDATE xianyu_kami_item item JOIN xianyu_kami_config config ON config.id = item.kami_config_id " +
-            "SET item.status = 0, item.order_id = NULL, item.reserved_time = NULL " +
-            "WHERE item.order_id = #{orderId} AND item.status = 2 AND config.source_type = 'LOCAL'")
+    // 外部供货同样会写入 status=2 的预占行；释放必须按来源无关，否则外部卡密的
+    // 预占永远无法回收，最终把整个卡密库锁在"不可编辑/不可删除"状态。
+    @Update("UPDATE xianyu_kami_item SET status = 0, order_id = NULL, reserved_time = NULL " +
+            "WHERE order_id = #{orderId} AND status = 2")
     int releaseReservation(@Param("orderId") String orderId);
 
     @Update("UPDATE xianyu_kami_item SET status = 3 WHERE order_id = #{orderId} AND status = 2")

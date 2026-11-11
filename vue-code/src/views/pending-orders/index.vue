@@ -63,6 +63,8 @@ const onIntervalChange = () => { if (autoRefresh.value) startAutoRefresh() }
 
 const handleDeliver = async () => {
   if (!selectedAccountId.value) return
+  // 自动发货定时器可能在上一次请求未返回时再次触发，必须单飞，避免重复发货。
+  if (delivering.value) return
   delivering.value = true
   lastDeliverCount.value = null
   try {

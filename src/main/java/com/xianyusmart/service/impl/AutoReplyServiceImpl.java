@@ -79,6 +79,11 @@ public class AutoReplyServiceImpl implements AutoReplyService {
 
     @Override
     public void executeAutoReply(List<ChatMessageData> messageList, Long existingRecordId) {
+        executeAutoReply(messageList, existingRecordId, null);
+    }
+
+    @Override
+    public void executeAutoReply(List<ChatMessageData> messageList, Long existingRecordId, String leaseOwner) {
         if (messageList == null || messageList.isEmpty()) {
             log.warn("消息列表为空，无法执行自动回复");
             return;
@@ -164,7 +169,7 @@ public class AutoReplyServiceImpl implements AutoReplyService {
             
             if (!replyResult.isSuccess() || replyResult.getItems() == null || replyResult.getItems().isEmpty()) {
                 log.warn("【账号{}】回复策略未生成有效内容", accountId);
-                updateRecordState(record.getId(), -1, null);
+                updateRecordState(record.getId(), -1, null, leaseOwner);
                 return;
             }
             
@@ -239,14 +244,14 @@ public class AutoReplyServiceImpl implements AutoReplyService {
             // 9. 更新记录状态
             if (sendSuccess) {
                 log.info("【账号{}】自动回复成功: xyGoodsId={}, sId={}", accountId, xyGoodsId, sId);
-                updateRecordState(record.getId(), 1, allReplyText);
+                updateRecordState(record.getId(), 1, allReplyText, leaseOwner);
                 
                 if (allReplyText != null && !allReplyText.trim().isEmpty()) {
                     sentMessageSaveService.saveAiAssistantReply(accountId, cid, toId, allReplyText, xyGoodsId);
                 }
             } else {
                 log.error("【账号{}】自动回复发送失败: xyGoodsId={}, sId={}", accountId, xyGoodsId, sId);
-                updateRecordState(record.getId(), -1, allReplyText);
+                updateRecordState(record.getId(), -1, allReplyText, leaseOwner);
             }
             
         } catch (Exception e) {
@@ -277,9 +282,19 @@ public class AutoReplyServiceImpl implements AutoReplyService {
         }
     }
     
-    private void updateRecordState(Long recordId, Integer state, String replyContent) {
+    private void updateRecordState(Long recordId, Integer state, String replyContent, String leaseOwner) {
+        if (recordId == null) {
+            return;
+        }
         try {
-            autoReplyRecordMapper.updateStateAndContent(recordId, state, replyContent);
+            int updated = state != null && state == 1
+                    ? autoReplyRecordMapper.markReplySucceeded(recordId, replyContent, leaseOwner)
+                    : autoReplyRecordMapper.markReplyFailed(recordId, replyContent, leaseOwner);
+            if (updated != 1) {
+                // 状态已被其它 worker 推进（成功/取消/失败），这里放弃写入而不是覆盖终态。
+                log.warn("回复记录状态已变化，跳过写入: recordId={}, targetState={}, leaseOwner={}",
+                        recordId, state, leaseOwner);
+            }
         } catch (Exception e) {
             log.error("更新回复记录状态失败: recordId={}, state={}", recordId, state, e);
         }

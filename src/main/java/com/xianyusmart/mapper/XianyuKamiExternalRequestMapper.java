@@ -42,7 +42,6 @@ public interface XianyuKamiExternalRequestMapper extends BaseMapper<XianyuKamiEx
             UPDATE xianyu_kami_external_request
             SET request_status = 'PROCESSING',
                 attempt_count = attempt_count + 1,
-                exception_revision = exception_revision + 1,
                 error_message = NULL,
                 update_time = NOW(3)
             WHERE id = #{id}

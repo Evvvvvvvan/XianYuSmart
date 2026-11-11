@@ -405,6 +405,7 @@ export function useAutoReply() {
       return
     }
 
+    const previous = selectedGoods.value.xianyuKeywordReplyOn
     try {
       const response = await updateAutoReplyStatus({
         xianyuAccountId: selectedAccountId.value,
@@ -430,7 +431,7 @@ export function useAutoReply() {
     } catch (error: any) {
       console.error('操作失败:', error)
       if (selectedGoods.value) {
-        selectedGoods.value.xianyuKeywordReplyOn = checked ? 0 : 1
+        selectedGoods.value.xianyuKeywordReplyOn = previous
       }
     }
   }
@@ -441,6 +442,7 @@ export function useAutoReply() {
       return
     }
 
+    const previous = selectedGoods.value.humanInterventionOn
     try {
       const response = await updateAutoReplyStatus({
         xianyuAccountId: selectedAccountId.value,
@@ -467,7 +469,7 @@ export function useAutoReply() {
     } catch (error: any) {
       console.error('操作失败:', error)
       if (selectedGoods.value) {
-        selectedGoods.value.humanInterventionOn = checked ? 0 : 1
+        selectedGoods.value.humanInterventionOn = previous
       }
     }
   }
@@ -801,6 +803,7 @@ export function useAutoReply() {
       return
     }
 
+    const previous = selectedGoods.value.xianyuAutoReplyOn
     try {
       const requestContextOn = selectedGoods.value.xianyuAutoReplyContextOn ?? (value ? 1 : 0)
 
@@ -832,7 +835,8 @@ export function useAutoReply() {
     } catch (error: any) {
       console.error('操作失败:', error)
       if (selectedGoods.value) {
-        selectedGoods.value.xianyuAutoReplyOn = value ? 0 : 1
+        // 回滚到请求前的值，而不是取反：并发切换时取反会覆盖另一次成功的结果。
+        selectedGoods.value.xianyuAutoReplyOn = previous
       }
     }
   }
@@ -844,6 +848,7 @@ export function useAutoReply() {
       return
     }
 
+    const previous = selectedGoods.value.xianyuAutoReplyContextOn
     try {
       const response = await updateAutoReplyStatus({
         xianyuAccountId: selectedAccountId.value,
@@ -867,7 +872,7 @@ export function useAutoReply() {
     } catch (error: any) {
       console.error('操作失败:', error)
       if (selectedGoods.value) {
-        selectedGoods.value.xianyuAutoReplyContextOn = value ? 0 : 1
+        selectedGoods.value.xianyuAutoReplyContextOn = previous
       }
     }
   }
