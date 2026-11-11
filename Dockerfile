@@ -71,7 +71,7 @@ RUN groupadd --system xianyusmart && useradd --system --gid xianyusmart --home-d
     && chown -R xianyusmart:xianyusmart /app
 
 # 从构建阶段复制 JAR
-COPY --from=backend-build --chown=xianyusmart:xianyusmart /app/target/xianyusmart-2.1.1.jar app.jar
+COPY --from=backend-build --chown=xianyusmart:xianyusmart /app/target/*.jar app.jar
 COPY --from=backend-build --chown=xianyusmart:xianyusmart /ms-playwright /app/ms-playwright
 
 # 暴露端口
