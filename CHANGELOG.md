@@ -9,7 +9,7 @@
 ### 履约与自动回复
 
 - 履约任务增加租约围栏：`completeTask` / `retryOrFailTask` 必须匹配 `lease_owner`，租约被抢占后旧执行器无法再写入完成/失败结果。
-- `markTaskReviewRequired` 不再把 `COMPLETED` 订单降级为待人工核对；`deferForRisk` 仅对 `PROCESSING` 生效。
+- `markTaskReviewRequired` 不再把 `COMPLETED` 订单降级为待人工核对；`deferForRisk` 只作用于 `PENDING/PROCESSING/RETRY_WAIT`，终态不受影响。
 - 发货私聊 `markDeliveryMessageSent` 要求 `delivery_message_state = 2`，避免超时重试与并发发送者互相覆盖。
 - 自动回复状态迁移拆成"成功/失败"两条带守卫的语句：成功只接受 `state = 2` 且校验租约归属，失败不会覆盖终态。
 - 自动回复延时任务先按 `(账号, 会话, pnmId)` 去重，重连补推的旧消息不再取消正在等待的回复。

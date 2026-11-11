@@ -48,10 +48,12 @@ class StateMachineGuardContractTest {
     }
 
     @Test
-    void riskDeferOnlyAppliesToProcessingOrders() {
+    void riskDeferExcludesTerminalOrders() {
         String sql = updateSql(XianyuGoodsOrderMapper.class, "deferForRisk",
                 Long.class, LocalDateTime.class, String.class);
-        assertTrue(sql.contains("delivery_status = 'PROCESSING'"), sql);
+        // 必须覆盖 PENDING：否则风控期间 PENDING 行没有 next_retry_time，会被每秒重扫成热循环。
+        assertTrue(sql.contains("delivery_status IN ('PENDING', 'PROCESSING', 'RETRY_WAIT')"), sql);
+        assertFalse(sql.contains("'COMPLETED'"), sql);
     }
 
     @Test

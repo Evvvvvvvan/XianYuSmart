@@ -30,7 +30,7 @@ The findings below were produced before the hardening commit. What changed since
 
 | Area | Fix |
 |---|---|
-| Delivery task (ORD-1) | `completeTask` / `retryOrFailTask` now require `lease_owner`; `markTaskReviewRequired` cannot demote `COMPLETED`; `deferForRisk` only applies to `PROCESSING` |
+| Delivery task (ORD-1) | `completeTask` / `retryOrFailTask` now require `lease_owner`; `markTaskReviewRequired` cannot demote `COMPLETED`; `deferForRisk` only applies to `PENDING` / `PROCESSING` / `RETRY_WAIT` |
 | Delivery message (ORD-2) | `markDeliveryMessageSent` requires `delivery_message_state = 2` |
 | Auto-reply (MSG-1) | Success/failure split into guarded statements (`state = 2` + lease owner); terminal states are no longer overwritten; lost lease is logged |
 | Delayed reply (MSG-2) | Dedupe by `(account, sId, pnmId)` before cancelling, so replayed messages cannot drop a pending reply |
