@@ -1,0 +1,968 @@
+# Machine-readable catalog of implicit state machines in xianyuSmart.
+# Companion to README.md. Every `evidence` entry is `file:line` (or `file:line-line`).
+# `guard` is what the code actually enforces; `none` means the transition is unguarded.
+version: 1
+audited_version: "2.1.1"
+machines:
+
+  # ─────────────────────────────── connection & credentials ───────────────────────────────
+  - id: WS-1
+    name: Account connection lifecycle
+    subsystem: connection
+    storage: memory
+    store_ref: WebSocketServiceImpl:78-125 (12 concurrent maps)
+    states: [stopped_manual, connecting, connected, stale_connected, reconnect_wait, token_expired, captcha_wait]
+    drivers: [http_request, scheduler, websocket_callback]
+    transitions:
+      - {from: absent,      to: connecting,       trigger: startWebSocket,              guard: per-account lock, evidence: "WebSocketServiceImpl:140-157"}
+      - {from: connecting,  to: connected,        trigger: connectBlocking+initialize,  guard: none, evidence: "WebSocketServiceImpl:392-404"}
+      - {from: connected,   to: reconnect_wait,   trigger: onClose(remote),             guard: "!intentionalClose", evidence: "WebSocketServiceImpl:357-365"}
+      - {from: connected,   to: reconnect_wait,   trigger: heartbeat_timeout,           guard: "now-lastResp > interval+timeout", evidence: "WebSocketServiceImpl:799-802"}
+      - {from: connected,   to: token_expired,    trigger: "code=401",                  guard: none, evidence: "XianyuWebSocketClient:283-311"}
+      - {from: reconnect_wait, to: connecting,    trigger: timer,                       guard: "no live reconnect task (check-then-put)", evidence: "WebSocketServiceImpl:823-918"}
+      - {from: connected,   to: stopped_manual,   trigger: stopWebSocket,               guard: none, evidence: "WebSocketServiceImpl:454-499"}
+    defects:
+      - id: WS1-D1
+        severity: high
+        summary: stopWebSocketInternal mutates state without connectionLocks; heartbeat thread can remove/close a freshly reconnected client
+        evidence: "WebSocketServiceImpl:458-498, :803-806"
+
+  - id: WS-2
+    name: Socket open/close + handshake
+    subsystem: connection
+    storage: memory
+    store_ref: XianyuWebSocketClient:32, :49
+    states: [closed, open, registering, registered]
+    drivers: [websocket_thread]
+    transitions:
+      - {from: closed,     to: open,         trigger: onOpen,           guard: none, evidence: "XianyuWebSocketClient:153-163"}
+      - {from: open,       to: registered,   trigger: "headers[reg-sid]", guard: none, evidence: "XianyuWebSocketClient:323-333"}
+      - {from: open,       to: closed,       trigger: onClose,          guard: none, evidence: "XianyuWebSocketClient:519-540"}
+    defects:
+      - {id: WS2-D1, severity: med, summary: "two sources of truth: non-volatile field `isConnected` vs method isOpen()/isClosed(); callers use both", evidence: "XianyuWebSocketClient:32,570-573,584,684"}
+
+  - id: WS-3
+    name: Heartbeat liveness
+    subsystem: connection
+    storage: memory
+    store_ref: WebSocketServiceImpl.lastHeartbeatResponseTimes
+    states: [fresh, stale, lost]
+    drivers: [scheduler_1s]
+    transitions:
+      - {from: fresh, to: stale, trigger: no response for interval+timeout, guard: timestamp compare, evidence: "WebSocketServiceImpl:563-618"}
+      - {from: stale, to: lost,  trigger: handleConnectionLost,            guard: none, evidence: "WebSocketServiceImpl:799-806"}
+    defects:
+      - {id: WS3-D1, severity: med, summary: "isConnectionHealthy returns true when no heartbeat response was ever recorded", evidence: "WebSocketServiceImpl:532-540"}
+
+  - id: WS-4
+    name: Token refresh cycle
+    subsystem: credentials
+    storage: memory
+    store_ref: lastTokenRefreshTimes, captchaRetryCounts, tokenRetryTasks
+    states: [fresh, refreshing, retry_wait, captcha_backoff]
+    drivers: [scheduler_60s]
+    transitions:
+      - {from: fresh,           to: refreshing,    trigger: "elapsed >= tokenRefreshInterval", guard: none, evidence: "WebSocketServiceImpl:641-690"}
+      - {from: refreshing,      to: fresh,         trigger: refresh ok,   guard: none, evidence: "WebSocketServiceImpl:730-741"}
+      - {from: refreshing,      to: captcha_backoff, trigger: CaptchaRequiredException, guard: backoff cap, evidence: "WebSocketServiceImpl:749-756,768-773"}
+      - {from: refreshing,      to: retry_wait,    trigger: other error,  guard: none, evidence: "WebSocketServiceImpl:760-761"}
+    defects:
+      - {id: WS4-D1, severity: med, summary: "success path never clears connectionRestartFlags; next natural drop is treated as a manual restart and reconnects with 0 delay", evidence: "WebSocketServiceImpl:679,357-361,830-832"}
+
+  - id: WS-5
+    name: Reconnect backoff
+    subsystem: connection
+    storage: memory
+    store_ref: reconnectAttemptCounts, reconnectTasks
+    states: [idle, scheduled, executing]
+    drivers: [scheduler]
+    transitions:
+      - {from: idle,      to: scheduled, trigger: scheduleReconnect, guard: "no live task (check-then-put)", evidence: "WebSocketServiceImpl:823-847"}
+      - {from: scheduled, to: idle,      trigger: attempt ok,        guard: none, evidence: "WebSocketServiceImpl:880"}
+      - {from: scheduled, to: scheduled, trigger: attempt failed,    guard: attempt cap none (delay capped 60s), evidence: "WebSocketServiceImpl:909-913"}
+    defects:
+      - {id: WS5-D1, severity: low, summary: "check-then-put race can schedule two reconnect tasks; maps are never pruned per account", evidence: "WebSocketServiceImpl:825-829,917"}
+
+  - id: WS-6
+    name: Cookie validity
+    subsystem: credentials
+    storage: db
+    store_ref: xianyu_cookie.cookie_status
+    states: {1: valid, 2: expired, 3: invalid}
+    drivers: [api_calls, websocket_router, token_refresh]
+    transitions:
+      - {from: valid,   to: expired, trigger: "401 or 500 frame / API expiry", guard: none, evidence: "WebSocketMessageRouter:166-175"}
+      - {from: valid,   to: invalid, trigger: risk/invalid credential,          guard: none, evidence: "WebSocketTokenServiceImpl:401,472"}
+      - {from: expired, to: valid,   trigger: hasLogin heal,                    guard: none, evidence: "CookieRefreshServiceImpl:580-600"}
+    defects:
+      - {id: WS6-D1, severity: high, summary: "transient 500 marks cookie expired; all readers filter cookie_status=1 so every API path fails closed", evidence: "WebSocketMessageRouter:170; AccountServiceImpl:190-194,326-330"}
+      - {id: WS6-D2, severity: med, summary: "notify side effect is an untransacted read-modify-write edge detection", evidence: "AccountServiceImpl:412-449"}
+
+  - id: WS-7
+    name: QR login session
+    subsystem: credentials
+    storage: memory
+    store_ref: QRLoginServiceImpl.sessions:41
+    states: [waiting, scanned, success, verification_required, expired, cancelled, error]
+    drivers: [http_poll_2s, qr_callback_thread]
+    transitions:
+      - {from: waiting,  to: scanned,                trigger: scan event,        guard: "status==waiting", evidence: "QRLoginServiceImpl:427-438"}
+      - {from: scanned,  to: success,                trigger: confirm event,     guard: none, evidence: "QRLoginServiceImpl:494-503"}
+      - {from: scanned,  to: verification_required,  trigger: captcha demand,    guard: none, evidence: "QRLoginServiceImpl:494"}
+      - {from: any,      to: expired,                trigger: poll sees expired, guard: "!success", evidence: "QRLoginServiceImpl:556-558"}
+      - {from: any,      to: error,                  trigger: exception,         guard: none, evidence: "QRLoginServiceImpl:657,693,698"}
+    defects:
+      - {id: WS7-D1, severity: med, summary: "error maps to pending in convertToFrontendStatus; verification_required/cancelled have no UI branch so the poll never stops", evidence: "QRLoginServiceImpl:604-620; QRLoginDialog.vue:67-81"}
+      - {id: WS7-D2, severity: med, summary: "cleanupExpiredSessions has no scheduler; sessions (with cookie strings) leak", evidence: "QRLoginServiceImpl:41,452-461"}
+
+  - id: WS-8
+    name: Captcha solve task
+    subsystem: credentials
+    storage: memory
+    store_ref: CaptchaSolveServiceImpl.tasks:46, TaskControl:556-564
+    states: [PENDING, RUNNING, SUCCEEDED, FAILED, TIMEOUT, UNSUPPORTED, CANCELLED]
+    extra_dimensions: {phase: "21 string phases, QUEUED..", attempt: "0..maxAttempts"}
+    drivers: [executor, playwright_runner, http]
+    transitions:
+      - {from: PENDING, to: RUNNING,  trigger: executor start, guard: none, evidence: "CaptchaSolveServiceImpl:236-260"}
+      - {from: RUNNING, to: SUCCEEDED, trigger: solve ok,      guard: "deadline", evidence: "CaptchaSolveServiceImpl:340-390"}
+      - {from: RUNNING, to: TIMEOUT,   trigger: deadline,      guard: "deadlineAt", evidence: "CaptchaSolveServiceImpl:520-540"}
+      - {from: any,     to: CANCELLED, trigger: cancel,        guard: none, evidence: "CaptchaSolveServiceImpl:400-430"}
+    defects:
+      - {id: WS8-D1, severity: med, summary: "Status.UNSUPPORTED unreachable (runner never returns it)", evidence: "CaptchaSolveServiceImpl:382; CaptchaBrowserRunner.Outcome"}
+      - {id: WS8-D2, severity: med, summary: "phase pipeline non-monotonic: STARTING_BROWSER published before CHECKING_ENVIRONMENT", evidence: "CaptchaSolveServiceImpl:250; PlaywrightCaptchaBrowserRunner:443"}
+
+  - id: WS-9
+    name: Sync watermark
+    subsystem: connection
+    storage: db
+    store_ref: xianyu_account.websocket_sync_pts/seq/timestamp
+    states: [monotonic_pts]
+    drivers: [websocket_message_thread]
+    transitions:
+      - {from: pts, to: higher_pts, trigger: ack, guard: "pts < ? (memory + SQL)", evidence: "WebSocketSyncCursor:16-29; XianyuAccountMapper:24-28"}
+    defects:
+      - {id: WS9-D1, severity: low, summary: "lower cursor silently ignored; no metric/alert on a frozen watermark", evidence: "XianyuAccountMapper:26"}
+
+  # ─────────────────────────────── order fulfilment ───────────────────────────────
+  - id: ORD-1
+    name: Delivery task machine (delivery_status) with lease
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_goods_order.delivery_status + lease_owner/lease_expire_time/attempt_count
+    states: [PENDING, PROCESSING, RETRY_WAIT, FAILED, REVIEW_REQUIRED, COMPLETED, SKIPPED, DELIVERED_unreachable, CONFIRMING_unreachable]
+    drivers: [scheduler_1s, http_retry, delivery_flow]
+    transitions:
+      - {from: absent,            to: PENDING,          trigger: discover,        guard: none, evidence: "DeliveryTaskServiceImpl:36-41"}
+      - {from: absent,            to: SKIPPED,          trigger: auto-delivery off, guard: none, evidence: "PendingOrderPollService:78"}
+      - {from: PENDING|RETRY_WAIT, to: PROCESSING,      trigger: claim,           guard: "due + FOR UPDATE + lease_expire", evidence: "XianyuGoodsOrderMapper:162-173"}
+      - {from: PROCESSING,        to: COMPLETED,        trigger: complete,        guard: "none (no lease_owner check)", evidence: "XianyuGoodsOrderMapper:175-177"}
+      - {from: PROCESSING,        to: RETRY_WAIT,       trigger: fail (<max),     guard: "status NOT IN (REVIEW_REQUIRED,COMPLETED)", evidence: "XianyuGoodsOrderMapper:178-185"}
+      - {from: PROCESSING,        to: FAILED,           trigger: fail (>=max),    guard: "same", evidence: "DeliveryTaskServiceImpl:81-92"}
+      - {from: PROCESSING,        to: RETRY_WAIT,       trigger: risk defer,      guard: none (attempt_count-1), evidence: "XianyuGoodsOrderMapper:187-192"}
+      - {from: any,               to: REVIEW_REQUIRED,  trigger: markReviewRequired, guard: none, evidence: "XianyuGoodsOrderMapper:198-201"}
+      - {from: FAILED|RETRY_WAIT, to: PENDING,          trigger: requeue,         guard: "state<>1", evidence: "XianyuGoodsOrderMapper:203-212"}
+    defects:
+      - {id: ORD1-D1, severity: high, summary: "no lease fencing on complete/retryOrFail; stale worker overwrites the new owner", evidence: "XianyuGoodsOrderMapper:175-185"}
+      - {id: ORD1-D2, severity: high, summary: "terminal states re-entrant (REVIEW_REQUIRED/RETRY_WAIT/FAILED can overwrite COMPLETED)", evidence: "XianyuGoodsOrderMapper:198-201,187-192,138-151"}
+      - {id: ORD1-D3, severity: med, summary: "DELIVERED and CONFIRMING are never written but rendered by the UI", evidence: "enums/DeliveryStatus.java; vue-code/src/views/orders/order-status.ts:12-22"}
+      - {id: ORD1-D4, severity: med, summary: "attempt_count incremented twice on claim (SQL + Java)", evidence: "XianyuGoodsOrderMapper:170; DeliveryTaskServiceImpl:69-71"}
+      - {id: ORD1-D5, severity: med, summary: "dead states + no SKIP LOCKED; ORDER BY create_time only", evidence: "XianyuGoodsOrderMapper:162-166"}
+
+  - id: ORD-2
+    name: Delivery private message machine
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_goods_order.delivery_message_state/_content/_attempt_count/_next_retry_time
+    states: {0: ready, 1: sent, 2: in_flight, 3: held_card, 4: held_fixed, 5: committed}
+    drivers: [delivery_flow, scheduler_15s, buyer_confirm]
+    transitions:
+      - {from: absent, to: 0, trigger: queueDeliveryMessage,  guard: prepareDeliveryMessage, evidence: "BuyerMessageService:139-150"}
+      - {from: absent, to: 3, trigger: hold (card),           guard: content not blank, evidence: "BuyerMessageService:155-174"}
+      - {from: absent, to: 4, trigger: hold (fixed),          guard: content not blank, evidence: "BuyerMessageService:155-174"}
+      - {from: 4,      to: 5, trigger: confirmFixedHeld,      guard: "state=4", evidence: "XianyuGoodsOrderMapper:262-265"}
+      - {from: "3|5",  to: 0, trigger: activate,              guard: "content NOT NULL AND state IN (3,5)", evidence: "XianyuGoodsOrderMapper:250-255"}
+      - {from: "0|2",  to: 2, trigger: claim,                 guard: "state IN (0,2) AND due", evidence: "XianyuGoodsOrderMapper:285-289"}
+      - {from: 2,      to: 1, trigger: send ok,               guard: none, evidence: "XianyuGoodsOrderMapper:282-283"}
+      - {from: "0|2",  to: 0, trigger: send failed,           guard: "state IN (0,2)", evidence: "XianyuGoodsOrderMapper:291-294"}
+      - {from: 4,      to: 0, trigger: stale 30 min,          guard: "due", evidence: "XianyuGoodsOrderMapper:267-270"}
+      - {from: 3,      to: (delivery_status=REVIEW_REQUIRED), trigger: stale no DELIVERED usage, guard: "NOT EXISTS", evidence: "XianyuGoodsOrderMapper:272-281"}
+    defects:
+      - {id: ORD2-D1, severity: high, summary: "state 2 is a 2-minute timer with no owner token; markDeliveryMessageSent unguarded → duplicate card message", evidence: "XianyuGoodsOrderMapper:282-289"}
+      - {id: ORD2-D2, severity: med, summary: "no attempt cap, no terminal failed state; retries forever every 5 min", evidence: "BuyerMessageService:285-289"}
+      - {id: ORD2-D3, severity: med, summary: "state 5 has no UI/API/doc surface; recovery depends solely on the 15s retry job", evidence: "XianyuGoodsOrderMapper:300-307; GoodsAutomationScheduler:71"}
+
+  - id: ORD-3
+    name: Fulfilment saga (boolean tuple)
+    subsystem: fulfilment
+    storage: db + stack
+    store_ref: OrderServiceImpl:730-845 (cardDelivery, cardReservationCommitted, deliveryMessageHeld, chatDeliveryEnabled, voucherDeliveryEnabled)
+    states: [combinatorial_32, handled_6]
+    drivers: [http_request]
+    transitions:
+      - {from: start,     to: kami_reserved, trigger: reserve,  guard: none, evidence: "OrderServiceImpl:487-560, AutoDeliveryServiceImpl:457-459"}
+      - {from: reserved,  to: consigned,     trigger: consign,  guard: result enum, evidence: "OrderServiceImpl:740-800"}
+      - {from: consigned, to: committed,     trigger: commit+state=1, guard: none, evidence: "OrderServiceImpl:803-818"}
+      - {from: any,       to: compensated,   trigger: exception, guard: boolean tuple, evidence: "OrderServiceImpl:820-845"}
+    defects:
+      - {id: ORD3-D1, severity: high, summary: "5 booleans = 32 combinations, ~6 branches; unhandled combinations have no assertion", evidence: "OrderServiceImpl:820-845"}
+
+  - id: ORD-4
+    name: Kami item reservation
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_kami_item.status
+    states: {0: available, 1: delivered, 2: reserved, 3: review}
+    drivers: [delivery_flow, admin]
+    transitions:
+      - {from: 0, to: 2, trigger: reserve,      guard: "status=0 FOR UPDATE", evidence: "XianyuKamiItemMapper:60-79"}
+      - {from: 2, to: 1, trigger: commit,       guard: "status=2", evidence: "XianyuKamiItemMapper:81-82"}
+      - {from: 2, to: 0, trigger: release,      guard: "status=2 AND config.source_type='LOCAL'", evidence: "XianyuKamiItemMapper:84-87"}
+      - {from: 2, to: 3, trigger: review,       guard: "status=2", evidence: "XianyuKamiItemMapper:89-90"}
+      - {from: "1|3", to: 0, trigger: markUnused, guard: "status IN (1,3)", evidence: "XianyuKamiItemMapper:57-58"}
+    defects:
+      - {id: ORD4-D1, severity: high, summary: "releaseReservation only matches LOCAL configs; API-sourced reservations leak forever and block config edits", evidence: "XianyuKamiItemMapper:84-87; KamiConfigServiceImpl:620"}
+      - {id: ORD4-D2, severity: med, summary: "status 3 has no \"resolve as delivered\" exit; only reset to available (resale risk)", evidence: "XianyuKamiItemMapper:57-58"}
+
+  - id: ORD-5
+    name: External kami provisioning request
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_kami_external_request.request_status
+    states: [PROCESSING, SUCCESS, FAILED, REVIEW_REQUIRED]
+    drivers: [delivery_flow, operator]
+    transitions:
+      - {from: absent,     to: PROCESSING,      trigger: insertIfAbsent, guard: "unique(tenant,config,order)", evidence: "XianyuKamiExternalRequestMapper:11-22"}
+      - {from: PROCESSING, to: SUCCESS,         trigger: provider ok,    guard: "status='PROCESSING'", evidence: "XianyuKamiExternalRequestMapper:57-65"}
+      - {from: PROCESSING, to: "FAILED|REVIEW_REQUIRED", trigger: provider error, guard: "status='PROCESSING'", evidence: "ExternalKamiProvisionService:76-87"}
+      - {from: "FAILED|stale PROCESSING", to: PROCESSING, trigger: retry, guard: "attempt<3 AND (FAILED OR stale 2min)", evidence: "XianyuKamiExternalRequestMapper:41-55"}
+    defects:
+      - {id: ORD5-D1, severity: high, summary: "REVIEW_REQUIRED has no exit transition in code; order/config permanently blocked (409)", evidence: "ExternalKamiProvisionService:116-119"}
+      - {id: ORD5-D2, severity: med, summary: "claimRetry bumps exception_revision on every attempt, invalidating operator acks", evidence: "XianyuKamiExternalRequestMapper:48"}
+
+  - id: ORD-6
+    name: Order outcome integer
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_goods_order.state
+    states: {-1: failed, 0: pending, 1: success}
+    drivers: [delivery_flow]
+    transitions:
+      - {from: "0|-1", to: 1,  trigger: delivery ok,   guard: none, evidence: "XianyuGoodsOrderMapper:138-151"}
+      - {from: "0|1",  to: -1, trigger: delivery fail, guard: none, evidence: "XianyuGoodsOrderMapper:148-151"}
+      - {from: -1,     to: 0,  trigger: requeue,       guard: "state<>1", evidence: "XianyuGoodsOrderMapper:207-212"}
+    defects:
+      - {id: ORD6-D1, severity: high, summary: "second source of truth for 'delivered'; only the mapper CASE keeps it aligned with delivery_status", evidence: "XianyuGoodsOrderMapper:139,144,149,238,251"}
+
+  - id: ORD-7
+    name: Confirm state
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_goods_order.confirm_state
+    states: {0: unconfirmed, 1: confirmed}
+    drivers: [delivery_flow, http_confirm]
+    transitions:
+      - {from: 0, to: 1, trigger: updateConfirmState / confirmFixedHeldDeliveryMessage, guard: none, evidence: "XianyuGoodsOrderMapper:222-223,262-265"}
+    defects:
+      - {id: ORD7-D1, severity: med, summary: "unconditional UPDATE, no state guard, three writers, and coupled to delivery_message_state=5 on one path only", evidence: "OrderServiceImpl:805; AutoDeliveryServiceImpl:569,726"}
+
+  - id: ORD-8
+    name: Rate status
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_goods_order.rate_status
+    states: {0: not_rated, 1: rated, -1: failed}
+    drivers: [scheduler_60s, http_manual]
+    transitions:
+      - {from: any, to: 1,  trigger: rate ok,   guard: none, evidence: "GoodsAutomationService:329,360"}
+      - {from: any, to: -1, trigger: rate fail, guard: none, evidence: "GoodsAutomationService:360"}
+    defects:
+      - {id: ORD8-D1, severity: med, summary: "write-only control flow: eligibility is re-derived from the platform, so -1 never retries by itself", evidence: "GoodsAutomationService:285; XianyuGoodsOrderMapper:229-234"}
+
+  - id: ORD-9
+    name: Receipt follow-up drip
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_goods_order.receipt_follow_up_completed/_sent_count/_next_time + buyer_confirmed_receipt
+    states: [inactive, due, claimed, in_progress, completed]
+    drivers: [scheduler_5s]
+    transitions:
+      - {from: due,      to: claimed,   trigger: claimReceiptFollowUp, guard: "sent_count match AND completed=0", evidence: "XianyuGoodsOrderMapper:321-324"}
+      - {from: claimed,  to: completed, trigger: last message sent,    guard: "nextCount >= size", evidence: "GoodsAutomationService:186-192"}
+      - {from: claimed,  to: in_progress, trigger: send ok,            guard: "optimistic count", evidence: "XianyuGoodsOrderMapper:326-332"}
+    defects:
+      - {id: ORD9-D1, severity: med, summary: "updateReceiptFollowUpProgress return ignored → duplicate send on lost optimistic update", evidence: "GoodsAutomationService:191-192"}
+
+  - id: ORD-10
+    name: Exception revision + acknowledgement
+    subsystem: fulfilment
+    storage: db
+    store_ref: exception_revision (3 tables) + xianyu_exception_acknowledgement
+    states: [open_vN, acked_vN]
+    drivers: [failure writes, operator ack]
+    transitions:
+      - {from: open_vN,  to: open_vN+1, trigger: another failure, guard: per-writer bump, evidence: "XianyuGoodsOrderMapper:140,150,181,200,275"}
+      - {from: open_vN,  to: acked_vN,  trigger: acknowledgeException, guard: "INSERT..SELECT with revision+status match", evidence: "OperationsDiagnosticsService:277-322"}
+    defects:
+      - {id: ORD10-D1, severity: med, summary: "revision bumped by inconsistent writer set (some failures, some retries) → acks both suppressed and invalidated", evidence: "XianyuKamiExternalRequestMapper:48; XianyuGoodsOrderMapper:181"}
+
+  # ─────────────────────────────── messaging & auto-reply ───────────────────────────────
+  - id: MSG-1
+    name: Auto-reply record
+    subsystem: messaging
+    storage: db
+    store_ref: xianyu_goods_auto_reply_record.state
+    states: {0: pending, 2: claimed, 1: success, -1: failed, -2: cancelled}
+    drivers: [websocket_thread, scheduler_1s, executor]
+    transitions:
+      - {from: absent, to: 0,  trigger: submitDelayTask,    guard: none, evidence: "AutoReplyDelayServiceImpl:243-259"}
+      - {from: 0,      to: -2, trigger: new message same session, guard: "state=0", evidence: "XianyuGoodsAutoReplyRecordMapper:61-64"}
+      - {from: "0|stale 2", to: 2, trigger: claim,          guard: "state=0 OR (2 AND expired)", evidence: "XianyuGoodsAutoReplyRecordMapper:56-59"}
+      - {from: 2,      to: 1,  trigger: reply ok,            guard: none, evidence: "AutoReplyServiceImpl:242"}
+      - {from: 2,      to: -1, trigger: reply failed/exception, guard: none, evidence: "AutoReplyServiceImpl:249; AutoReplyDelayServiceImpl:238,309,313"}
+      - {from: "0|2",  to: -2, trigger: takeover/blocked,    guard: "state IN (0,2)", evidence: "XianyuGoodsAutoReplyRecordMapper:65-67"}
+    defects:
+      - {id: MSG1-D1, severity: high, summary: "updateStateAndContent has no lease guard (no fencing); state write failure is swallowed → duplicate reply after lease expiry", evidence: "XianyuGoodsAutoReplyRecordMapper:24-29; AutoReplyServiceImpl:280-286"}
+      - {id: MSG1-D2, severity: high, summary: "replay of a message cancels the live pending reply before the dedupe INSERT resolves", evidence: "AutoReplyDelayServiceImpl:158-174,185-197; XianyuGoodsAutoReplyRecordMapper:17-23"}
+      - {id: MSG1-D3, severity: med, summary: "next_retry_time read but never written; attempt_count incremented but never read → no backoff, no cap", evidence: "XianyuGoodsAutoReplyRecordMapper:52-59"}
+
+  - id: MSG-2
+    name: Delayed reply task (memory + durable row)
+    subsystem: messaging
+    storage: memory + db
+    store_ref: AutoReplyDelayServiceImpl.pendingTasks/pendingMessages:103-116
+    states: [scheduled, dispatched, cancelled]
+    drivers: [websocket_thread, scheduler_1s, pool]
+    transitions:
+      - {from: absent,    to: scheduled,  trigger: submitDelayTask, guard: none, evidence: "AutoReplyDelayServiceImpl:153-170"}
+      - {from: scheduled, to: cancelled,  trigger: newer message,   guard: none, evidence: "AutoReplyDelayServiceImpl:177-197"}
+      - {from: scheduled, to: dispatched, trigger: timer or recovery, guard: "claim()==1", evidence: "AutoReplyDelayServiceImpl:290-299"}
+    defects:
+      - {id: MSG2-D1, severity: low, summary: "in-memory list is a cache; trigger_context persists the full list so restart recovery is complete", evidence: "AutoReplyDelayServiceImpl:263-278,229-243"}
+
+  - id: MSG-3
+    name: Human takeover (persisted)
+    subsystem: messaging
+    storage: db + memory
+    store_ref: xianyu_human_intervention_record + takeoverMap
+    states: [active, expired]
+    drivers: [seller_reply, scheduler_60s]
+    transitions:
+      - {from: inactive, to: active,  trigger: seller manual reply, guard: intervention enabled, evidence: "AutoReplyDelayServiceImpl:200-223; HumanTakeoverManager:86-105"}
+      - {from: active,   to: expired, trigger: read after end_time, guard: timestamp, evidence: "HumanTakeoverManager:120-145"}
+    defects:
+      - {id: MSG3-D1, severity: med, summary: "cache-first lookup hides other instances' takeovers for up to 10 min; duplicate DB rows per takeover", evidence: "HumanTakeoverManager:96-99,120-133"}
+
+  - id: MSG-4
+    name: Manual mode (dead code)
+    subsystem: messaging
+    storage: memory
+    store_ref: ManualModeServiceImpl.manualModeConversations:25
+    states: [auto, manual]
+    drivers: [nobody]
+    transitions:
+      - {from: auto,   to: manual, trigger: enterManualMode, guard: none, evidence: "ManualModeServiceImpl:62-69"}
+      - {from: manual, to: auto,   trigger: exitManualMode/timeout, guard: manualModeTimeout, evidence: "ManualModeServiceImpl:71-96"}
+    defects:
+      - {id: MSG4-D1, severity: high, summary: "zero callers, no controller; still scheduled. If wired up it collides with MSG-3 on a different key space", evidence: "ManualModeServiceImpl:104-107"}
+
+  - id: MSG-5
+    name: Platform write-operation risk guard
+    subsystem: messaging
+    storage: memory + file
+    store_ref: RiskControlServiceImpl rateLimits/circuits
+    states: [NORMAL, RATE_WAIT, CIRCUIT_OPEN, RECOVERING]
+    drivers: [api_wrapper]
+    transitions:
+      - {from: NORMAL,       to: RATE_WAIT,     trigger: second write in 60s, guard: window, evidence: "RiskControlServiceImpl:186-200"}
+      - {from: "NORMAL|RATE_WAIT", to: CIRCUIT_OPEN, trigger: RGV587, guard: "max(existing, now+600s)", evidence: "RiskControlServiceImpl:211-226"}
+      - {from: CIRCUIT_OPEN, to: NORMAL,        trigger: expiry or clearCircuit, guard: timestamp, evidence: "RiskControlServiceImpl:276-284,228-232"}
+    defects:
+      - {id: MSG5-D1, severity: med, summary: "RECOVERING declared but never produced; per-JVM state, whole-file snapshot clobbering across nodes", evidence: "RiskControlService:91-96; RiskControlServiceImpl:336-374"}
+      - {id: MSG5-D2, severity: med, summary: "all write operations share one circuit per account", evidence: "RiskControlServiceImpl:30-38"}
+
+  - id: MSG-6
+    name: Buyer automation gate
+    subsystem: messaging
+    storage: db
+    store_ref: xianyu_buyer_profile.automation_blocked
+    states: {0: allowed, 1: blocked}
+    drivers: [operator, delivery_flow]
+    transitions:
+      - {from: allowed, to: blocked, trigger: operator block, guard: none, evidence: "BuyerProfileService.automationBlockReason"}
+    defects: []
+
+  - id: MSG-7
+    name: Send retry loop
+    subsystem: messaging
+    storage: stack
+    store_ref: EnhancedMessageSendServiceImpl:53-110
+    states: [attempt_n, success, not_connected, retry_exhausted]
+    drivers: [websocket_thread]
+    transitions:
+      - {from: attempt_n, to: attempt_n+1, trigger: send failed, guard: "attempt < maxAttempts", evidence: "EnhancedMessageSendServiceImpl:66-104"}
+    defects:
+      - {id: MSG7-D1, severity: med, summary: "fixed delay, Thread.sleep on the WS handler thread (100-permit semaphore shared)", evidence: "EnhancedMessageSendServiceImpl:80-100; XianyuWebSocketClient:44"}
+
+  # ─────────────────────────────── automation & operations ───────────────────────────────
+  - id: OPS-1
+    name: Merchant task
+    subsystem: operations
+    storage: db
+    store_ref: merchant_task.status (+ attempt_count, next_retry_time)
+    states: {0: pending, 1: running, 2: success, -1: failed}
+    drivers: [scheduler_60s, http]
+    transitions:
+      - {from: absent,                 to: 0, trigger: createTask, guard: "unique(tenant,type,request_key)", evidence: "MerchantOperationsService:432-447; V14"}
+      - {from: "0|-1|stale 1",         to: 1, trigger: claim,      guard: "attempt<max AND (due|reclaim)", evidence: "MerchantTaskMapper:37-45"}
+      - {from: 1,                      to: 2, trigger: complete,   guard: none, evidence: "MerchantTaskMapper:47-48"}
+      - {from: 1,                      to: -1, trigger: fail,      guard: none, evidence: "MerchantTaskMapper:50-52"}
+      - {from: "0|1|-1",               to: 0, trigger: requeue,    guard: none (attempt_count=0), evidence: "MerchantTaskMapper:54-55"}
+    defects:
+      - {id: OPS1-D1, severity: high, summary: "no fencing → duplicate publish; requeue resets the attempt budget", evidence: "MerchantOperationsService:690-705,982"}
+      - {id: OPS1-D2, severity: med, summary: "scheduleDueRules is insert+updateNextRun without idempotency for rule tasks", evidence: "MerchantOperationsService:643-658"}
+
+  - id: OPS-2
+    name: Distribution settlement
+    subsystem: operations
+    storage: db
+    store_ref: merchant_distribution.settlement_status
+    states: {0: unsettled, 1: settled}
+    drivers: [http]
+    transitions:
+      - {from: 0, to: 1, trigger: settle, guard: "settlement_status=0", evidence: "MerchantDistributionMapper:39-40"}
+    defects:
+      - {id: OPS2-D1, severity: low, summary: "settle does not require publication; no reversal state", evidence: "MerchantOperationsService:628-632"}
+
+  - id: OPS-3
+    name: Notification delivery log
+    subsystem: operations
+    storage: db
+    store_ref: xianyu_notification_log.send_status + channel last_success/error
+    states: {0: failed, 1: ok}
+    drivers: [event, async_executor]
+    transitions:
+      - {from: absent, to: 1, trigger: 2xx + provider ok, guard: none, evidence: "NotificationCenterService:192-201"}
+      - {from: absent, to: 0, trigger: error,             guard: none, evidence: "NotificationCenterService:203-210"}
+    defects:
+      - {id: OPS3-D1, severity: med, summary: "notificationExecutor uses DiscardPolicy; overload silently drops events, no retry, no dead-letter", evidence: "AsyncConfig:78-104"}
+
+  - id: OPS-4
+    name: Scheduler single-flight
+    subsystem: operations
+    storage: memory
+    store_ref: GoodsAutomationScheduler:18-21 (4x AtomicBoolean), MerchantOperationsScheduler:17, WebSocketRecoveryScheduler:25
+    states: [idle, running]
+    drivers: [scheduler]
+    transitions:
+      - {from: idle, to: running, trigger: tick, guard: compareAndSet, evidence: "GoodsAutomationScheduler:29-83"}
+    defects:
+      - {id: OPS4-D1, severity: med, summary: "per-JVM only, no cluster lock, no last-run/failure record", evidence: "GoodsAutomationScheduler:18-21"}
+
+  - id: OPS-5
+    name: Daily polish gate
+    subsystem: automation
+    storage: db
+    store_ref: xianyu_goods_config.last_polish_time
+    states: [due, not_due]
+    drivers: [scheduler_60s]
+    transitions:
+      - {from: due, to: not_due, trigger: polish ok / already polished, guard: calendar date, evidence: "GoodsAutomationService:114-118,579-608,633-647"}
+    defects:
+      - {id: OPS5-D1, severity: low, summary: "success inferred from localized error text; BIGINT millis among DATETIME(3) columns", evidence: "GoodsAutomationService:641-647; V3:50"}
+
+  - id: OPS-6
+    name: Item detail sync progress
+    subsystem: automation
+    storage: memory
+    store_ref: ItemDetailSyncServiceImpl.SyncProgress:47-60
+    states: [running, completed, cancelled]
+    drivers: [async_worker, http]
+    transitions:
+      - {from: absent,    to: running,   trigger: startSync,  guard: "control but not atomic (isSyncing check-then-put)", evidence: "ItemDetailSyncServiceImpl:63-86"}
+      - {from: running,   to: completed, trigger: loop end,   guard: none, evidence: "ItemDetailSyncServiceImpl:128-130,136-139"}
+      - {from: running,   to: cancelled, trigger: cancelSync, guard: none, evidence: "ItemDetailSyncServiceImpl:285-292"}
+    defects:
+      - {id: OPS6-D1, severity: med, summary: "three booleans for three states (isRunning and isCompleted both true after completion); losing start removes the winner's accountSyncMap entry", evidence: "ItemDetailSyncServiceImpl:47-60,128-142,295"}
+
+  - id: OPS-7
+    name: Self-update task
+    subsystem: operations
+    storage: files
+    store_ref: status.json + request.json + installing.task
+    states: [IDLE, REQUESTED, CHECKING, DOWNLOADING, VERIFYING, INSTALLING, RESTARTING, HEALTH_CHECKING, SUCCESS, FAILED]
+    drivers: [http, systemd_path_unit, shell_agent]
+    transitions:
+      - {from: IDLE, to: REQUESTED,          trigger: requestUpdate, guard: "agent.ready + newer version", evidence: "SystemUpdateService:89-127"}
+      - {from: REQUESTED, to: CHECKING,      trigger: path unit,     guard: flock, evidence: "xianyusmart-update-agent.sh:166-179"}
+      - {from: "CHECKING..HEALTH_CHECKING", to: SUCCESS, trigger: healthy, guard: "/actuator/health UP", evidence: "xianyusmart-update-agent.sh:111-120"}
+      - {from: active, to: FAILED,           trigger: trap or stale 10 min, guard: "staleness + request deletion", evidence: "SystemUpdateService:155-176; agent:122-141"}
+    defects:
+      - {id: OPS7-D1, severity: med, summary: "three state files, no shared enum; app-side stale timeout can delete the request while install continues; status not task-id-scoped", evidence: "SystemUpdateService:39-40,137-176"}
+
+  - id: OPS-8
+    name: Goods lifecycle
+    subsystem: automation
+    storage: db
+    store_ref: xianyu_goods_info.status
+    states: {0: on_sale, 1: off_shelf, 2: sold, -1: deleted, -9: platform_dead}
+    drivers: [sync, operations]
+    transitions:
+      - {from: absent, to: 0,  trigger: insert,        guard: none, evidence: "GoodsInfoServiceImpl:133"}
+      - {from: any,    to: -1, trigger: remote missing, guard: none, evidence: "GoodsInfoServiceImpl:409"}
+    defects:
+      - {id: OPS8-D1, severity: med, summary: "domain documented only in a DTO comment and the Vue label map; writers for 1/2/-9 not found in audited services", evidence: "ItemListFromDbReqDTO:19; vue-code/src/utils/index.ts:42-49"}
+
+  - id: OPS-9
+    name: Account status
+    subsystem: credentials
+    storage: db
+    store_ref: xianyu_account.status
+    states: {1: normal, "-2": needs_verification_written, "-1": needs_phone_documented_only}
+    drivers: [credential_refresh, token_refresh, admin]
+    transitions:
+      - {from: any, to: -2, trigger: captcha required / refresh failed, guard: none, evidence: "WebSocketTokenServiceImpl:822-830; CookieRefreshServiceImpl:556-559"}
+      - {from: -2,  to: 1,  trigger: credential success, guard: "status==-2", evidence: "WebSocketTokenServiceImpl:837-849; CookieRefreshServiceImpl:580-600"}
+    defects:
+      - {id: OPS9-D1, severity: high, summary: "writes -2 while javadoc and UI say -1; -2 is excluded from every reconnect/refresh query and has no UI branch → invisible absorbing state", evidence: "XianyuAccount:45; vue-code/src/utils/index.ts:53-59; XianyuAccountMapper:16-21"}
+
+  - id: OPS-10
+    name: User status / login token
+    subsystem: platform
+    storage: db
+    store_ref: sys_user.status, sys_login_token.expire_time
+    states: [active, expired_token]
+    drivers: [auth]
+    transitions:
+      - {from: absent, to: 1, trigger: registration, guard: none, evidence: "AuthServiceImpl:88"}
+      - {from: valid,  to: expired, trigger: request after expire_time, guard: string date compare, evidence: "AuthServiceImpl:174-176"}
+    defects: []
+
+  - id: OPS-11
+    name: Kami stock alert throttle
+    subsystem: automation
+    storage: memory
+    store_ref: KamiConfigServiceImpl.stockOutEmailSentTime:72
+    states: [armed, sent]
+    drivers: [scheduler]
+    transitions:
+      - {from: armed, to: sent, trigger: low stock, guard: timestamp window, evidence: "KamiConfigServiceImpl:451-457"}
+    defects:
+      - {id: OPS11-D1, severity: low, summary: "per-JVM throttle; alert state lost on restart", evidence: "KamiConfigServiceImpl:72"}
+
+  # ─────────────────────────────── frontend ───────────────────────────────
+  - id: FE-AUTH
+    name: Authenticated session + route guard
+    subsystem: frontend
+    storage: memory + localStorage
+    store_ref: utils/permission.ts:4,16 + router/index.ts:178-201
+    states: [unknown, loading, loaded, admin, unauth, error_collapsed_to_unauth]
+    drivers: [router_guard, http]
+    transitions:
+      - {from: unknown, to: loading, trigger: beforeEach, guard: "!isLoggedIn() → /login", evidence: "router/index.ts:178-188"}
+      - {from: loading, to: loaded,  trigger: loadCurrentUser, guard: dedupe promise, evidence: "utils/permission.ts:8-21"}
+      - {from: loaded,  to: unauth,  trigger: fetch throws, guard: any error ⇒ login, evidence: "router/index.ts:198-200"}
+    defects:
+      - {id: FEA-D1, severity: high, summary: "three auth truths (permissionState, AppLayout.isAdmin, token); no ERROR state; ping-pong between /login and firstAccessiblePath", evidence: "AppLayout.vue:27,33; utils/permission.ts:51-54; login/index.vue:39-42"}
+
+  - id: FE-CONN
+    name: Connection status snapshot + 4 pollers
+    subsystem: frontend
+    storage: memory
+    store_ref: useConnectionManager.ts:31,126 + components/ConnectionDetail.vue:266 + ConnectionDetail.vue:298 + ConnectionDetailDialog.vue:273(dead)
+    states: [connected, disconnected, cookie_1|2|3, risk_NORMAL|RATE_WAIT|CIRCUIT_OPEN]
+    drivers: [timers_10s]
+    transitions:
+      - {from: any, to: any, trigger: server snapshot, guard: none, evidence: "useConnectionManager.ts:68-112"}
+    defects:
+      - {id: FEC-D1, severity: high, summary: "unconditional assignment after await → account A's late response overwrites account B's detail; 7 duplicated cookieStatus mappers; `status` string unused", evidence: "useConnectionManager.ts:95; ConnectionDetail.vue:201-212"}
+
+  - id: FE-QR
+    name: QR login polling (3 live copies, 1 dead)
+    subsystem: frontend
+    storage: memory
+    store_ref: QRLoginDialog.vue:57-88, QRUpdateDialog.vue:52-90, RefreshCookieDialog.vue:53-82(dead)
+    states: [pending, scanned, confirmed, expired]
+    drivers: [timers_2s]
+    transitions:
+      - {from: pending,  to: scanned,   trigger: poll, guard: none, evidence: "QRLoginDialog.vue:71-72"}
+      - {from: scanned,  to: confirmed, trigger: poll, guard: none, evidence: "QRLoginDialog.vue:74-77"}
+      - {from: any,      to: expired,   trigger: poll, guard: "stops polling", evidence: "QRLoginDialog.vue:78-81"}
+    defects:
+      - {id: FEQ-D1, severity: high, summary: "confirmed handler awaited without stopping the 2s poll → duplicate account creation / double cookie write (only QRUpdateDialog guards)", evidence: "QRLoginDialog.vue:74-77,100-140"}
+      - {id: FEQ-D2, severity: med, summary: "unknown statuses (verification_required/cancelled) never end the poll; expired has no regenerate transition; statusText duplicates status", evidence: "QRLoginDialog.vue:67-81"}
+
+  - id: FE-GOODS-SYNC
+    name: Bulk goods sync progress
+    subsystem: frontend
+    storage: memory
+    store_ref: useGoodsManager.ts:48-50
+    states: [idle, refreshing, syncing, stuck]
+    drivers: [timer_1s]
+    transitions:
+      - {from: idle, to: syncing, trigger: refresh accepted, guard: none, evidence: "useGoodsManager.ts:150-166"}
+      - {from: syncing, to: idle,  trigger: isCompleted || !isRunning, guard: none, evidence: "useGoodsManager.ts:65-73"}
+    defects:
+      - {id: FEG-D1, severity: high, summary: "poll error leaves syncing=true forever (button disabled); checkSyncing imported but never called so a returning user has no rehydration", evidence: "useGoodsManager.ts:76-78,14"}
+
+  - id: FE-PUBLISH-WIZARD
+    name: Publish / opportunities wizards
+    subsystem: frontend
+    storage: memory
+    store_ref: product-publish/index.vue:12-13, opportunities/index.vue:21-22
+    states: [step_1..4, maxStep_high_water_mark]
+    drivers: [user]
+    transitions:
+      - {from: step_n, to: step_n+1, trigger: next(), guard: "per-step validation inside next() only", evidence: "product-publish/index.vue:94-104"}
+      - {from: any,    to: any,      trigger: goStep(), guard: "target <= maxStep", evidence: "product-publish/index.vue:102-104"}
+    defects:
+      - {id: FEW-D1, severity: high, summary: "goStep performs no validation (reachable invalid step); opportunities.capture resets maxStep=2 (regression)", evidence: "opportunities/index.vue:126,136-138"}
+
+  - id: FE-AUTOREPLY-TOGGLES
+    name: Auto-reply switch cluster
+    subsystem: frontend
+    storage: db
+    store_ref: useAutoReply.ts:798-879,402-511
+    states: [off, on, unset]
+    drivers: [user]
+    transitions:
+      - {from: off, to: on,  trigger: toggle,     guard: none, evidence: "useAutoReply.ts:798-839"}
+      - {from: on,  to: off, trigger: toggle fail, guard: none (absolute inversion), evidence: "useAutoReply.ts:836-838"}
+    defects:
+      - {id: FEA-D1, severity: high, summary: "partial-aggregate PUTs + absolute-value rollback → server state no click sequence asked for; context switch is tri-state", evidence: "useAutoReply.ts:809,817-819,837,849-856"}
+
+  - id: FE-PENDING-ORDERS
+    name: Pending-order auto-refresh/auto-deliver
+    subsystem: frontend
+    storage: memory
+    store_ref: pending-orders/index.vue:15-23
+    states: [manual, auto_refresh, auto_deliver]
+    drivers: [timers_5-60s]
+    transitions:
+      - {from: off, to: auto_deliver, trigger: toggleAutoDeliver, guard: none, evidence: "pending-orders/index.vue:78-84"}
+    defects:
+      - {id: FEP-D1, severity: high, summary: "handleDeliver has no re-entrancy guard while an interval fires it; interval change does not restart the deliver loop; loop survives account switch", evidence: "pending-orders/index.vue:64-84,62"}
+
+  - id: FE-AUTODELIVERY-CONFIG
+    name: Auto-delivery config editor (dirty snapshot + generations)
+    subsystem: frontend
+    storage: memory
+    store_ref: useAutoDelivery.ts:78-80,114-134
+    states: [clean, dirty, saving, error]
+    drivers: [user]
+    transitions:
+      - {from: clean, to: dirty, trigger: field edit, guard: "snapshot !== ''", evidence: "useAutoDelivery.ts:128-129"}
+      - {from: dirty, to: clean, trigger: save ok, guard: 11 preconditions, evidence: "useAutoDelivery.ts:672-773"}
+    defects:
+      - {id: FEAD-D1, severity: med, summary: "saveConfig hardcodes autoConfirmShipment=1, silently enabling a side effect; toggles revert only the selected copy, not the list copy", evidence: "useAutoDelivery.ts:751,806-808"}
+
+  - id: FE-UI-LOOPS
+    name: Other polling/derived UI machines
+    subsystem: frontend
+    storage: memory
+    store_ref: messages/workspace.vue:248, messages/index.vue:147(dead), ContextDialog.vue:144, ImageUploader.vue:59, MultiImageUploader.vue:60, UpdateDialog.vue:128, CaptchaGuideDialog.vue:400
+    states: [polling, terminal]
+    drivers: [timers_1-10s]
+    transitions: []
+    defects:
+      - {id: FEU-D1, severity: high, summary: "ContextDialog 1s poll replaces the paginated list → scroll position and pages destroyed", evidence: "ContextDialog.vue:156-175"}
+      - {id: FEU-D2, severity: med, summary: "image upload progress interval leaks on every failed upload", evidence: "ImageUploader.vue:78-80; MultiImageUploader.vue:81-82"}
+      - {id: FEU-D3, severity: med, summary: "loading + silentLoading always cleared together (mutual desync); dead 3s poller on an unrouted page", evidence: "useMessageManager.ts:161-164; views/messages/index.vue:147-160"}
+
+  - id: WS-10
+    name: Account status
+    subsystem: credentials
+    storage: db
+    store_ref: xianyu_account.status
+    states: {1: normal, "-2": needs_verification_written, "-1": needs_phone_documented_only}
+    drivers: [credential_refresh, token_refresh, admin]
+    transitions:
+      - {from: any, to: -2, trigger: captcha required or refresh failed, guard: none, evidence: "WebSocketTokenServiceImpl:822-830; CookieRefreshServiceImpl:556-559"}
+      - {from: -2,  to: 1,  trigger: credential success, guard: "status==-2", evidence: "WebSocketTokenServiceImpl:837-849; CookieRefreshServiceImpl:580-600"}
+    defects:
+      - {id: WS10-D1, severity: high, summary: "writes -2 while javadoc and UI say -1; -2 excluded from reconnect/keepalive/refresh queries and has no UI branch", evidence: "XianyuAccount:45; vue-code/src/utils/index.ts:53-59; XianyuAccountMapper:16-21"}
+      - {id: WS10-D2, severity: med, summary: "read-modify-write updateById clobbers concurrent column updates; no transition audit", evidence: "WebSocketTokenServiceImpl:822-830"}
+
+  - id: WS-11
+    name: Login lockout
+    subsystem: platform
+    storage: memory
+    store_ref: LocalMapCacheServiceImpl login-attempt counter
+    states: [unlocked, locked_unreachable]
+    drivers: [http_login]
+    transitions:
+      - {from: unlocked, to: locked, trigger: 5 failures from one IP, guard: "count < MAX_LOGIN_ATTEMPTS(5)", evidence: "AuthServiceImpl:190-219"}
+    defects:
+      - {id: WS11-D1, severity: med, summary: "counter stuck at 1: put(key, increment(key)) overwrites the AtomicLong with a Long so every later increment resets to 1; lockout never engages", evidence: "AuthServiceImpl:211; LocalMapCacheServiceImpl:86-89"}
+
+  - id: ORD-11
+    name: Platform order mirror
+    subsystem: fulfilment
+    storage: db
+    store_ref: xianyu_order.order_status
+    states: {1: waiting_payment, 2: waiting_delivery, 3: delivered, 4: completed, 5: closed}
+    drivers: [platform_sync]
+    transitions:
+      - {from: any, to: any, trigger: sync overwrite, guard: none, evidence: "OrderStatusEnum; vue-code/src/constants/orderStatus.ts"}
+    defects:
+      - {id: ORD11-D1, severity: low, summary: "OrderStatusEnum has zero references in the repo; the same table is maintained a second time in TypeScript", evidence: "enums/OrderStatusEnum.java"}
+
+  - id: OPS-12
+    name: Platform user / permission
+    subsystem: platform
+    storage: db
+    store_ref: sys_user.status + sys_user_permission rows
+    states: [active, default_catalog]
+    drivers: [registration, admin]
+    transitions:
+      - {from: absent, to: 1, trigger: registration, guard: none, evidence: "AuthServiceImpl:88"}
+    defects:
+      - {id: OPS12-D1, severity: high, summary: "PermissionCatalog.defaultCodes() returns the full catalogue, so a default user is indistinguishable from a superuser", evidence: "PermissionCatalog:81-83; remaining-services SM-12"}
+
+  - id: OPS-13
+    name: Keyword reply rule
+    subsystem: automation
+    storage: db
+    store_ref: xianyu_keyword_reply_rule.match_mode
+    states: {1: keyword, 2: fallback, other: dead}
+    drivers: [http]
+    transitions:
+      - {from: any, to: any, trigger: updateMatchMode, guard: none, evidence: "KeywordReplyController:73-84"}
+    defects:
+      - {id: OPS13-D1, severity: med, summary: "any integer accepted while only 1/2 are matched; a rule saved as 3 is permanently dead but visible; blank keywords create catch-all rules", evidence: "XianyuKeywordReplyRuleMapper:21,24"}
+
+  - id: OPS-14
+    name: SKU snapshot epoch
+    subsystem: automation
+    storage: db
+    store_ref: xianyu_goods_sku / xianyu_goods_sku_property
+    states: [present, absent]
+    drivers: [item_sync]
+    transitions:
+      - {from: present, to: absent, trigger: delete-then-insert on sync, guard: transaction, evidence: "GoodsSkuServiceImpl"}
+    defects: []
+
+  - id: OPS-15
+    name: Rating content pool
+    subsystem: automation
+    storage: db
+    store_ref: xianyu_goods_order.rate_source + rating content pool
+    states: [AUTO, MANUAL, PLATFORM]
+    drivers: [scheduler, http]
+    transitions:
+      - {from: AUTO, to: PLATFORM, trigger: platform already rated, guard: none, evidence: "GoodsAutomationService:329"}
+      - {from: AUTO, to: MANUAL, trigger: operator rate, guard: none, evidence: "GoodsAutomationService:340-360"}
+    defects:
+      - {id: OPS15-D1, severity: low, summary: "rate_source is free text; nothing enforces the three values", evidence: "V4:5-6"}
+
+  - id: OPS-16
+    name: Kami stock alert throttle
+    subsystem: automation
+    storage: memory
+    store_ref: KamiConfigServiceImpl.stockOutEmailSentTime:72
+    states: [armed, sent]
+    drivers: [scheduler]
+    transitions:
+      - {from: armed, to: sent, trigger: low stock, guard: timestamp window, evidence: "KamiConfigServiceImpl:451-457"}
+    defects:
+      - {id: OPS16-D1, severity: low, summary: "per-JVM throttle; alert state lost on restart", evidence: "KamiConfigServiceImpl:72"}
+
+  - id: OPS-17
+    name: AI settings to runtime rebuild
+    subsystem: platform
+    storage: db + memory caches
+    store_ref: sys_setting keys + DynamicAIChatClientManager / DynamicVectorStoreManager
+    states: [current, stale_runtime]
+    drivers: [http]
+    transitions:
+      - {from: current, to: stale_runtime, trigger: setting change outside the whitelist, guard: hardcoded key set, evidence: "SysSettingService; remaining-services SM-13"}
+    defects:
+      - {id: OPS17-D1, severity: med, summary: "whitelist omits existing keys (ai_image_*, sys_prompt, similarity_threshold), so the runtime is never rebuilt for them", evidence: "remaining-services SM-13"}
+
+  - id: FE-LOGIN
+    name: Login view mode
+    subsystem: frontend
+    storage: memory
+    store_ref: views/login/index.vue:8
+    states: [checking, login, register]
+    drivers: [user]
+    transitions:
+      - {from: checking, to: login,    trigger: user exists,   guard: none, evidence: "login/index.vue:45-48"}
+      - {from: checking, to: register, trigger: no user,       guard: none, evidence: "login/index.vue:48"}
+      - {from: checking, to: login,    trigger: probe error,   guard: none, evidence: "login/index.vue:49-54"}
+    defects:
+      - {id: FEL-D1, severity: low, summary: "no ERROR state: a probe failure silently shows the login form instead of registration", evidence: "login/index.vue:49-54"}
+
+  - id: FE-CAPTCHA-CLIENT
+    name: Captcha dialog client
+    subsystem: frontend
+    storage: memory
+    store_ref: CaptchaGuideDialog.vue:64-90
+    states: [PENDING, RUNNING, SUCCEEDED, FAILED, TIMEOUT, UNSUPPORTED, CANCELLED] 
+    drivers: [timer_1s, manual_frame_0.7s, http]
+    transitions:
+      - {from: RUNNING, to: SUCCEEDED, trigger: poll, guard: single reducer, evidence: "CaptchaGuideDialog.vue:214-243"}
+    defects:
+      - {id: FEC2-D1, severity: med, summary: "no client-side deadline; a hung RUNNING task polls forever", evidence: "CaptchaGuideDialog.vue:397-401"}
+
+  - id: FE-UPDATE
+    name: Update dialog
+    subsystem: frontend
+    storage: memory
+    store_ref: UpdateDialog.vue:22,128
+    states: [IDLE, REQUESTED, CHECKING, DOWNLOADING, VERIFYING, INSTALLING, RESTARTING, HEALTH_CHECKING, SUCCESS, FAILED]
+    drivers: [timer_2s, http]
+    transitions:
+      - {from: any, to: any, trigger: server status, guard: dialogSession, evidence: "UpdateDialog.vue:109-170"}
+    defects:
+      - {id: FEU2-D1, severity: med, summary: "status label has no runtime fallback; FAILED is not terminal for polling when the backend keeps active=true", evidence: "UpdateDialog.vue:62-64,117"}
+
+  - id: FE-PULL-REFRESH
+    name: Goods pull-to-refresh gesture
+    subsystem: frontend
+    storage: memory
+    store_ref: goods/index.vue:224
+    states: [idle, pulling, ready, refreshing]
+    drivers: [touch]
+    transitions:
+      - {from: idle, to: pulling, trigger: touchmove <60px, guard: scrollTop==0, evidence: "goods/index.vue:254-269"}
+      - {from: ready, to: refreshing, trigger: touchend >=60px, guard: distance, evidence: "goods/index.vue:275-291"}
+    defects:
+      - {id: FEPR-D1, severity: low, summary: "refreshing collapses as soon as the sync job is registered, so it never reflects real progress", evidence: "goods/index.vue:279; useGoodsManager.ts:161-162"}
+
+  - id: FE-OPP-WIZARD
+    name: Opportunities wizard
+    subsystem: frontend
+    storage: memory
+    store_ref: opportunities/index.vue:21-22
+    states: [step_1..4, maxStep]
+    drivers: [user]
+    transitions:
+      - {from: step_1, to: step_2, trigger: capture, guard: selection non-empty, evidence: "opportunities/index.vue:112-127"}
+      - {from: step_n, to: step_n+1, trigger: next, guard: per-step validation, evidence: "opportunities/index.vue:130-133"}
+    defects:
+      - {id: FEOPP-D1, severity: med, summary: "capture sets maxStep=2 instead of Math.max, regressing progress after a second capture", evidence: "opportunities/index.vue:126"}
+
+  - id: FE-ORDERS-ACTIONS
+    name: Delivery row actions
+    subsystem: frontend
+    storage: memory
+    store_ref: orders/useOrderManager.ts:12-17
+    states: [idle, confirming, retrying, markingDelivered, resending]
+    drivers: [user]
+    transitions:
+      - {from: idle, to: confirming, trigger: confirm shipment, guard: "orderId only (not canConfirmShipment)", evidence: "useOrderManager.ts:262-281"}
+    defects:
+      - {id: FEOA-D1, severity: med, summary: "handler bypasses the canConfirmShipment guard used for rendering; resend has no follow-up reload", evidence: "useOrderManager.ts:263,305-324"}
+
+  - id: FE-MSG-POLL
+    name: Message list polling
+    subsystem: frontend
+    storage: memory
+    store_ref: useMessageManager.ts:11-12
+    states: [loading, silentLoading]
+    drivers: [timer_10s, timer_3s_dead]
+    transitions:
+      - {from: idle, to: loading, trigger: manual refresh, guard: none, evidence: "useMessageManager.ts:118-119"}
+      - {from: idle, to: silentLoading, trigger: poll, guard: account selected, evidence: "useMessageManager.ts:120-122"}
+    defects:
+      - {id: FEMP-D1, severity: med, summary: "both flags cleared in one finally, so each operation clears the other's spinner", evidence: "useMessageManager.ts:161-164"}
+
+  - id: FE-KAMI-DIALOGS
+    name: Kami config dialogs
+    subsystem: frontend
+    storage: memory
+    store_ref: kami-config/index.vue:38-69
+    states: [five_independent_booleans, create_or_edit]
+    drivers: [user]
+    transitions:
+      - {from: closed, to: create, trigger: openCreateDialog, guard: none, evidence: "kami-config/index.vue:139-142"}
+      - {from: closed, to: edit,   trigger: openSourceConfigDialog, guard: selectedConfig, evidence: "kami-config/index.vue:144-158"}
+    defects:
+      - {id: FEKD-D1, severity: med, summary: "dialogs can stack; mode lives in a second variable that some close paths never reset", evidence: "kami-config/index.vue:730-734"}
+
+  - id: FE-SETTINGS
+    name: Settings panels
+    subsystem: frontend
+    storage: memory
+    store_ref: settings/index.vue:34
+    states: [account, menu, ai, prompt, email, backup, about]
+    drivers: [user]
+    transitions:
+      - {from: any, to: any, trigger: menu click, guard: "template-only writer + side effect", evidence: "settings/index.vue:1202"}
+    defects:
+      - {id: FESET-D1, severity: med, summary: "panel transition carries a side effect in the template; fake progress reaches 100% before the request starts", evidence: "settings/index.vue:985-993,1060-1068"}
+
+  - id: FE-UPLOAD
+    name: Image upload progress
+    subsystem: frontend
+    storage: memory
+    store_ref: ImageUploader.vue:26, MultiImageUploader.vue:32
+    states: [uploading, progress_0_90, done]
+    drivers: [timer_100ms, http]
+    transitions:
+      - {from: idle, to: uploading, trigger: file selected, guard: type/size, evidence: "ImageUploader.vue:31-51"}
+      - {from: uploading, to: done, trigger: upload resolved, guard: "res.code === 200", evidence: "ImageUploader.vue:65-68"}
+    defects:
+      - {id: FEUP-D1, severity: med, summary: "progress interval leaks on the error path (clearInterval only on success)", evidence: "ImageUploader.vue:78-80; MultiImageUploader.vue:81-82"}
+
+  - id: FE-OPS-LOCK
+    name: Operations action lock
+    subsystem: frontend
+    storage: memory
+    store_ref: operations/index.vue:42
+    states: [idle, busy]
+    drivers: [user]
+    transitions:
+      - {from: idle, to: busy, trigger: any row action, guard: "!pendingAction", evidence: "operations/index.vue:87-95"}
+    defects:
+      - {id: FEOL-D1, severity: low, summary: "one global string lock disables every table while one row works", evidence: "operations/index.vue:87-95"}
+
+  - id: FE-BUYER
+    name: Buyer detail drawer
+    subsystem: frontend
+    storage: memory
+    store_ref: buyers/index.vue:30-37
+    states: [closed, orders_tab, messages_tab, ratings_tab]
+    drivers: [user]
+    transitions:
+      - {from: closed, to: orders_tab, trigger: openDetail, guard: generation bump, evidence: "buyers/index.vue:126-146"}
+      - {from: orders_tab, to: ratings_tab, trigger: showOrderRating, guard: "!ratingMap[id]?.synced", evidence: "buyers/index.vue:159-183"}
+    defects:
+      - {id: FEB-D1, severity: med, summary: "detailLoading cleared without a generation check; one shared ratingLoading for N orders", evidence: "buyers/index.vue:143-145"}
+
+  - id: FE-PRICE-COMP
+    name: Price-comparison seller profiles
+    subsystem: frontend
+    storage: memory
+    store_ref: price-comparison/index.vue:24-26
+    states: [absent, loading, loaded, error]
+    drivers: [user]
+    transitions:
+      - {from: absent, to: loading, trigger: showSellerProfile, guard: "not cached and not loading", evidence: "price-comparison/index.vue:72-97"}
+    defects:
+      - {id: FEPC-D1, severity: low, summary: "no generation, so a late response repopulates profiles cleared by a new search", evidence: "price-comparison/index.vue:121-124"}
+
+  - id: FE-ADMIN-EDITOR
+    name: Admin-user editor
+    subsystem: frontend
+    storage: memory
+    store_ref: admin-users/index.vue:19
+    states: [closed_undefined, create_null, edit_user]
+    drivers: [user]
+    transitions:
+      - {from: closed, to: create, trigger: openCreate, guard: none, evidence: "admin-users/index.vue:58-67"}
+      - {from: closed, to: edit,   trigger: openEdit, guard: none, evidence: "admin-users/index.vue:69-78"}
+    defects:
+      - {id: FEAU-D1, severity: med, summary: "null vs undefined is the only create/closed discriminator; save performs no username/password validation", evidence: "admin-users/index.vue:32,96-113"}
+
+  # ─────────────────────────────── configurations (not machines) ───────────────────────────────
+configurations:
+  - {name: voucher_delivery_enabled, values: [0,1], note: "at least one channel must be enabled (checked in Java + CHECK constraint V7:127-130)"}
+  - {name: chat_delivery_enabled, values: [0,1], note: same}
+  - {name: xianyu_auto_rate_on, values: {0: off, 1: always, 2: after_buyer}, note: "migrated 1→2 by V8"}
+  - {name: xianyu_auto_polish_on, values: [0,1]}
+  - {name: automation_blocked, values: [0,1], note: "gate, not a lifecycle"}
+  - {name: alert_enabled, values: [0,1]}
+  - {name: enabled (notification channel / merchant resource), values: [0,1], note: "resource status 2 is also used, see OPS/C2"}
+  - {name: delivery_mode, values: {1: fixed_content, 2: card}, note: "CHECK constraint V7:127"}
